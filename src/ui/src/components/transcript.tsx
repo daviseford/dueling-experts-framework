@@ -21,7 +21,7 @@ export function Transcript({ turns, thinking, thinkingElapsed }: TranscriptProps
   }, [turnCount, thinkingAgent])
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-2 px-5 py-4">
         {turns.map((turn) => (
           <TurnCard key={turn.id} turn={turn} />

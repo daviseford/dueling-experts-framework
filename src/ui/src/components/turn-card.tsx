@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useState, memo } from "react"
+import Markdown from "react-markdown"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -96,12 +97,18 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t border-border/50 px-4 py-3">
-            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/90">
-              {turn.content}
-            </pre>
+            <TurnContent content={turn.content} />
           </div>
         </CollapsibleContent>
       </div>
     </Collapsible>
   )
 }
+
+const TurnContent = memo(function TurnContent({ content }: { content: string }) {
+  return (
+    <div className="prose prose-sm prose-invert max-w-none text-[13px] leading-relaxed text-foreground/90 prose-headings:text-foreground prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-h3:font-medium prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono prose-code:text-foreground/80 prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:my-2 prose-pre:rounded-md prose-pre:bg-background/80 prose-pre:p-3 prose-strong:text-foreground prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline prose-blockquote:border-l-muted-foreground/30 prose-blockquote:text-muted-foreground prose-hr:border-border/50">
+      <Markdown>{content}</Markdown>
+    </div>
+  )
+})

@@ -27,7 +27,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <SessionHeader
         topic={topic}
         disabled={isCompleted}
