@@ -47,6 +47,18 @@ function formatTimestamp(ts: string): string {
   }
 }
 
+function truncateContent(content: string): string {
+  if (!content) return ""
+  // Take the first non-empty line, strip markdown headers/formatting
+  const line = content
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .find(l => l.length > 0 && !l.startsWith("---") && !l.startsWith("```"))
+  if (!line) return ""
+  const clean = line.replace(/^#+\s*/, "").replace(/\*\*/g, "")
+  return clean.length > 120 ? clean.slice(0, 120) + "…" : clean
+}
+
 interface TurnCardProps {
   turn: Turn
   defaultOpen?: boolean
@@ -89,8 +101,13 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
             <span className="font-mono text-[11px] text-muted-foreground">
               #{turn.turn}
             </span>
-            <span className="flex-1" />
-            <span className="font-mono text-[10px] text-muted-foreground/60">
+            {!open && (
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
+                {truncateContent(turn.content)}
+              </span>
+            )}
+            {open && <span className="flex-1" />}
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
               {formatTimestamp(turn.timestamp)}
             </span>
           </button>
