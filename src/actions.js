@@ -90,11 +90,11 @@ async function safePath(targetRepo, filePath) {
   // Resolve symlinks on the existing portion of the path to prevent symlink traversal.
   // Walk up from the resolved path to find the deepest existing ancestor,
   // then verify it's still within targetRepo.
+  const realRepo = await realpath(targetRepo);
   let check = resolved;
   while (check !== dirname(check)) {
     try {
       const real = await realpath(check);
-      const realRepo = await realpath(targetRepo);
       const realRel = relative(realRepo, real);
       if (realRel.startsWith('..') || isAbsolute(realRel)) {
         throw new Error(`Path traversal via symlink rejected: ${filePath}`);

@@ -330,9 +330,9 @@ async function recoverEphemeralState(session) {
     // Track consensus state: if the last decided was uncontested, it's still pending
     if (status === 'decided') {
       if (pendingDecided && pendingDecided !== from) {
-        // Both agents agreed — consensus was reached
+        // Both agents agreed — consensus was reached, implementation follows
         pendingDecided = null;
-        inReviewPhase = false;
+        inReviewPhase = true;
       } else {
         pendingDecided = from;
       }

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listTurnFiles } from './session.js';
 import { validate } from './validation.js';
@@ -90,9 +90,9 @@ function reviewPrompt(agent, topic, decisions, actionResults) {
   if (actionResults && actionResults.length > 0) {
     resultsText = actionResults.map((r, i) => {
       const status = r.ok ? 'OK' : `FAILED: ${r.error}`;
-      const desc = r.action.type === 'shell'
-        ? `shell: ${r.action.cmd}`
-        : `${r.action.type}: ${r.action.path || ''}`;
+      const desc = r.type === 'shell'
+        ? `shell: ${r.cmd}`
+        : `${r.type}: ${r.path || ''}`;
       return `${i + 1}. [${status}] ${desc}`;
     }).join('\n');
   } else {
@@ -221,7 +221,6 @@ export async function assemble(session) {
  * Load action results from the artifacts directory.
  */
 async function loadActionResults(sessionDir) {
-  const { readdir } = await import('node:fs/promises');
   const artifactsDir = join(sessionDir, 'artifacts');
   let files;
   try {
