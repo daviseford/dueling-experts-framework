@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { atomicWrite } from './util.js';
 
 /**
  * Create a new session directory and session.json.
@@ -64,12 +65,10 @@ export async function update(sessionDir, fields) {
 }
 
 /**
- * Write JSON atomically: write to .tmp then rename.
+ * Write JSON atomically with fsync via shared utility.
  */
 async function atomicWriteJson(filePath, data) {
-  const tmpPath = filePath + '.tmp';
-  await writeFile(tmpPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
-  await rename(tmpPath, filePath);
+  await atomicWrite(filePath, JSON.stringify(data, null, 2) + '\n');
 }
 
 /**
@@ -86,15 +85,28 @@ export async function releaseLock(targetRepo) {
 
 /**
  * Install a SIGINT handler for clean shutdown.
+ * Sets session to 'interrupted' (recoverable) and kills child processes.
  */
-export function installShutdownHandler(sessionDir, targetRepo) {
+export function installShutdownHandler(sessionDir, targetRepo, session = null) {
   let shuttingDown = false;
   process.on('SIGINT', async () => {
     if (shuttingDown) process.exit(1); // Double Ctrl+C — hard exit
     shuttingDown = true;
     console.log('\nShutting down gracefully...');
     try {
-      await update(sessionDir, { session_status: 'completed' });
+      // Kill the running agent child process
+      const child = session?._currentChild;
+      if (child && !child.killed) {
+        if (process.platform === 'win32') {
+          import('node:child_process').then(({ exec }) => {
+            exec(`taskkill /pid ${child.pid} /T /F`);
+          }).catch(() => {});
+        } else {
+          child.kill('SIGTERM');
+        }
+      }
+
+      await update(sessionDir, { session_status: 'interrupted' });
       await releaseLock(targetRepo);
     } catch { /* best effort */ }
     process.exit(0);

@@ -1,7 +1,8 @@
-import { readdir, readFile, access, rm } from 'node:fs/promises';
+import { readdir, readFile, access, rm, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run } from './orchestrator.js';
 import { load, releaseLock, acquireLock, installShutdownHandler } from './session.js';
+import { isProcessAlive } from './util.js';
 
 /**
  * Check for recoverable sessions on startup.
@@ -11,10 +12,17 @@ export async function checkForRecovery(targetRepo) {
   const sessionsDir = join(targetRepo, '.acb', 'sessions');
   const lockPath = join(targetRepo, '.acb', 'lock');
 
-  // If lockfile exists, another session may be running — skip recovery
+  // If lockfile exists, check whether the owning process is still alive
   try {
     await access(lockPath);
-    return false;
+    const pidStr = await readFile(lockPath, 'utf8');
+    const pid = parseInt(pidStr.trim(), 10);
+    if (!isNaN(pid) && isProcessAlive(pid)) {
+      return false; // Another session is genuinely running
+    }
+    // Stale lockfile — owning process is dead, clean it up
+    console.log('Detected stale lockfile (process no longer running). Removing.');
+    await unlink(lockPath);
   } catch {
     // No lockfile — can proceed with recovery check
   }
@@ -36,7 +44,7 @@ export async function checkForRecovery(targetRepo) {
       const raw = await readFile(sessionPath, 'utf8');
       const data = JSON.parse(raw);
 
-      if (data.session_status === 'active' || data.session_status === 'paused') {
+      if (data.session_status === 'active' || data.session_status === 'paused' || data.session_status === 'interrupted') {
         recoverable.push({
           id: data.id,
           dir: sessionDir,
@@ -116,11 +124,22 @@ async function doResume(targetRepo, sessionDir) {
   await rm(join(runtimeDir, 'output.md'), { force: true });
   await rm(join(runtimeDir, 'prompt.md'), { force: true });
 
+  // Clean orphaned .tmp files in turns/ (from crashes between write and rename)
+  const turnsDir = join(sessionDir, 'turns');
+  try {
+    const files = await readdir(turnsDir);
+    const tmpFiles = files.filter(f => f.endsWith('.tmp'));
+    await Promise.all(tmpFiles.map(f => unlink(join(turnsDir, f))));
+    if (tmpFiles.length > 0) {
+      console.log(`Cleaned ${tmpFiles.length} orphaned .tmp file(s) from turns/`);
+    }
+  } catch { /* turns dir may not exist */ }
+
   // Load session and resume
   const session = await load(sessionDir);
   session.target_repo = targetRepo;
 
-  installShutdownHandler(sessionDir, targetRepo);
+  installShutdownHandler(sessionDir, targetRepo, session);
 
   let server = null;
   try {

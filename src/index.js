@@ -83,7 +83,7 @@ console.log(`First agent: ${session.next_agent}`);
 console.log(`Session dir: ${session.dir}`);
 console.log('');
 
-installShutdownHandler(session.dir, targetRepo);
+installShutdownHandler(session.dir, targetRepo, session);
 
 // Start server
 let server = null;

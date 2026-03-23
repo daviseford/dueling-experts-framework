@@ -63,6 +63,11 @@ export async function invoke(agentName, session) {
       shell: process.platform === 'win32',
     });
 
+    // Expose child for SIGINT cleanup (stored on session object)
+    if (session._currentChild !== undefined) {
+      session._currentChild = child;
+    }
+
     // Pipe prompt file to stdin. Using createReadStream + pipe ensures EOF
     // is signaled properly when the file is fully read.
     // stdin.write() + end() produced 0 bytes on Windows in testing.

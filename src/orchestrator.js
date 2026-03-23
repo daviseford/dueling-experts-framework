@@ -1,15 +1,19 @@
-import { writeFile, readFile, rename, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
+import { atomicWrite } from './util.js';
 
 /**
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
 export async function run(session, { server } = {}) {
+  // Initialize child process tracking for SIGINT cleanup
+  session._currentChild = null;
+
   let turnCount = session.current_turn;
   let nextAgent = session.next_agent;
   let endRequested = false;
@@ -79,15 +83,20 @@ export async function run(session, { server } = {}) {
 
     // Orchestrator assigns canonical turn number, id, filename
     const canonicalId = `turn-${String(turnCount).padStart(4, '0')}-${nextAgent}`;
+    const normalizedStatus = normalizeStatus(validation.data.status, turnCount);
     const canonicalData = {
       id: canonicalId,
       turn: turnCount,
       from: nextAgent,
       timestamp: new Date().toISOString(),
-      status: validation.data.status,
+      status: normalizedStatus,
     };
     if (validation.data.decisions) {
       canonicalData.decisions = validation.data.decisions;
+    }
+
+    if (normalizedStatus !== validation.data.status) {
+      console.log(`[Turn ${turnCount}] Agent signaled ${validation.data.status} too early — downgrading to complete.`);
     }
 
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
@@ -99,15 +108,9 @@ export async function run(session, { server } = {}) {
       next_agent: oppositeAgent,
     });
 
-    // Check status — require at least 2 turns before allowing done
     if (canonicalData.status === 'done') {
-      if (turnCount < 2) {
-        console.log(`[Turn ${turnCount}] Agent signaled done too early — downgrading to complete.`);
-        canonicalData.status = 'complete';
-      } else {
-        console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
-        break;
-      }
+      console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
+      break;
     }
 
     if (canonicalData.status === 'needs_human') {
@@ -192,6 +195,19 @@ export async function run(session, { server } = {}) {
   }
 }
 
+// --- Status normalization ---
+
+/**
+ * Normalize agent-claimed status to orchestrator canonical status.
+ * Prevents premature "done" when the session hasn't had enough turns.
+ */
+export function normalizeStatus(agentStatus, turnCount) {
+  if (agentStatus === 'done' && turnCount < 2) return 'complete';
+  if (agentStatus === 'done') return 'done';
+  if (agentStatus === 'needs_human') return 'needs_human';
+  return 'complete';
+}
+
 // --- Agent invocation helpers ---
 
 async function invokeOnce(agentName, session) {
@@ -220,14 +236,12 @@ async function writeCanonicalTurn(session, id, data, content) {
   const filename = `${id}.md`;
   const turnsDir = join(session.dir, 'turns');
   await mkdir(turnsDir, { recursive: true }); // ensure dir exists (agents may interfere)
-  const tmpPath = join(turnsDir, `${filename}.tmp`);
   const finalPath = join(turnsDir, filename);
 
   // Build frontmatter manually — do NOT use matter.stringify because it re-parses
   // the content body, allowing agents to inject frontmatter via embedded --- blocks.
   const frontmatter = '---\n' + yaml.dump(data, { lineWidth: -1 }).trim() + '\n---\n';
-  await writeFile(tmpPath, frontmatter + content + '\n', 'utf8');
-  await rename(tmpPath, finalPath);
+  await atomicWrite(finalPath, frontmatter + content + '\n');
 }
 
 async function writeErrorTurn(session, turnCount, agent, reason, rawOutput) {
