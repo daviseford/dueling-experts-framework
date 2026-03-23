@@ -22,11 +22,18 @@ export async function run(session, { server } = {}) {
   // Phase tracking
   let phase = session.phase || 'debate';
 
-  // Consensus tracking for debate phase
+  // Consensus tracking for debate phase — derive from turn history on recovery
   let pendingDecided = null;
 
-  // Review turn counter (counts only review-phase turns)
+  // Review turn counter — derive from turn history on recovery
   let reviewTurnCount = 0;
+
+  // On recovery, reconstruct ephemeral state from turn history
+  if (session.current_turn > 0) {
+    const recovered = await recoverEphemeralState(session);
+    pendingDecided = recovered.pendingDecided;
+    reviewTurnCount = recovered.reviewTurnCount;
+  }
 
   // Interjection queue and pause state (active when server is present)
   const interjectionQueue = [];
@@ -249,6 +256,12 @@ export async function run(session, { server } = {}) {
       });
       console.log(`[Turn ${turnCount}] Injected human interjection.`);
     }
+
+    // Warn about dropped interjections on phase transitions
+    if (phase !== 'debate' && interjectionQueue.length > 0) {
+      console.log(`[Turn ${turnCount}] Warning: ${interjectionQueue.length} queued interjection(s) dropped (not in debate phase).`);
+      interjectionQueue.length = 0;
+    }
   }
 
   // Generate artifacts
@@ -293,6 +306,54 @@ export async function run(session, { server } = {}) {
   }
 }
 
+// --- Recovery helpers ---
+
+/**
+ * Reconstruct ephemeral state from turn history on session recovery.
+ * Returns { pendingDecided, reviewTurnCount }.
+ */
+async function recoverEphemeralState(session) {
+  const turnsDir = join(session.dir, 'turns');
+  const turnFiles = await listTurnFiles(turnsDir);
+
+  let pendingDecided = null;
+  let reviewTurnCount = 0;
+  let inReviewPhase = false;
+
+  for (const file of turnFiles) {
+    const raw = await readFile(join(turnsDir, file), 'utf8');
+    const parsed = validate(raw);
+    if (!parsed.valid) continue;
+
+    const { status, from } = parsed.data;
+
+    // Track consensus state: if the last decided was uncontested, it's still pending
+    if (status === 'decided') {
+      if (pendingDecided && pendingDecided !== from) {
+        // Both agents agreed — consensus was reached
+        pendingDecided = null;
+        inReviewPhase = false;
+      } else {
+        pendingDecided = from;
+      }
+    } else if (status === 'complete' && pendingDecided) {
+      // Contested — clear pending
+      pendingDecided = null;
+    }
+
+    // Count review-phase turns (turns after the phase transitioned to review)
+    if (session.phase === 'review' || session.phase === 'implement') {
+      // If we see a turn from the non-impl agent after consensus, it's a review turn
+      const reviewer = session.impl_model === 'claude' ? 'codex' : 'claude';
+      if (from === reviewer && inReviewPhase) {
+        reviewTurnCount++;
+      }
+    }
+  }
+
+  return { pendingDecided, reviewTurnCount };
+}
+
 // --- Status normalization ---
 
 /**
@@ -302,6 +363,7 @@ export async function run(session, { server } = {}) {
 export function normalizeStatus(agentStatus, turnCount) {
   if (agentStatus === 'done' && turnCount < 2) return 'complete';
   if (agentStatus === 'done') return 'done';
+  if (agentStatus === 'decided' && turnCount < 2) return 'complete';
   if (agentStatus === 'decided') return 'decided';
   if (agentStatus === 'needs_human') return 'needs_human';
   return 'complete';
@@ -385,7 +447,7 @@ async function writeActionResults(session, turnCount, results) {
     error: r.error || null,
     output: r.output ? r.output.slice(0, 2000) : null,
   }));
-  await writeFile(join(artifactsDir, filename), JSON.stringify(serializable, null, 2) + '\n', 'utf8');
+  await atomicWrite(join(artifactsDir, filename), JSON.stringify(serializable, null, 2) + '\n');
 }
 
 async function generateDecisions(session) {

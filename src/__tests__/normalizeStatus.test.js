@@ -17,8 +17,12 @@ describe('normalizeStatus', () => {
     assert.equal(normalizeStatus('needs_human', 5), 'needs_human');
   });
 
-  it('passes through "decided"', () => {
-    assert.equal(normalizeStatus('decided', 1), 'decided');
+  it('downgrades "decided" on turn 1 to "complete"', () => {
+    assert.equal(normalizeStatus('decided', 1), 'complete');
+  });
+
+  it('allows "decided" on turn 2+', () => {
+    assert.equal(normalizeStatus('decided', 2), 'decided');
     assert.equal(normalizeStatus('decided', 5), 'decided');
   });
 

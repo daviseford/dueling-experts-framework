@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
-import { readFile, mkdir } from 'node:fs/promises';
-import { join, resolve, relative, isAbsolute } from 'node:path';
+import { readFile, mkdir, realpath } from 'node:fs/promises';
+import { dirname, resolve, relative, isAbsolute } from 'node:path';
 import { atomicWrite } from './util.js';
 
 const SHELL_TIMEOUT_MS = 60_000;
 const SHELL_MAX_OUTPUT = 5 * 1024 * 1024;
+const MAX_PATH_LENGTH = 500;
 
 /**
  * Parse def-action blocks from agent turn content.
@@ -63,17 +64,52 @@ function parseActionBlock(block) {
 
 /**
  * Validate that a path is safe (no traversal outside targetRepo).
+ * Checks both lexical resolution and realpath (symlink) resolution.
  * Returns the resolved absolute path or throws.
  */
-function safePath(targetRepo, filePath) {
+async function safePath(targetRepo, filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Path is required and must be a non-empty string');
+  }
+  if (filePath.length > MAX_PATH_LENGTH) {
+    throw new Error(`Path exceeds ${MAX_PATH_LENGTH} character limit`);
+  }
+  if (filePath.includes('\0')) {
+    throw new Error('Path contains null byte');
+  }
   if (isAbsolute(filePath)) {
     throw new Error(`Absolute paths not allowed: ${filePath}`);
   }
+
   const resolved = resolve(targetRepo, filePath);
   const rel = relative(targetRepo, resolved);
   if (rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Path traversal rejected: ${filePath}`);
   }
+
+  // Resolve symlinks on the existing portion of the path to prevent symlink traversal.
+  // Walk up from the resolved path to find the deepest existing ancestor,
+  // then verify it's still within targetRepo.
+  let check = resolved;
+  while (check !== dirname(check)) {
+    try {
+      const real = await realpath(check);
+      const realRepo = await realpath(targetRepo);
+      const realRel = relative(realRepo, real);
+      if (realRel.startsWith('..') || isAbsolute(realRel)) {
+        throw new Error(`Path traversal via symlink rejected: ${filePath}`);
+      }
+      break;
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        // Path doesn't exist yet — check parent
+        check = dirname(check);
+        continue;
+      }
+      throw err;
+    }
+  }
+
   return resolved;
 }
 
@@ -88,15 +124,17 @@ export async function executeActions(actions, targetRepo) {
     try {
       switch (action.type) {
         case 'write-file': {
-          const dest = safePath(targetRepo, action.path);
-          await mkdir(join(dest, '..'), { recursive: true });
+          if (!action.path) throw new Error('write-file requires a "path" field');
+          const dest = await safePath(targetRepo, action.path);
+          await mkdir(dirname(dest), { recursive: true });
           await atomicWrite(dest, action.body ?? '');
           results.push({ action, ok: true });
           break;
         }
 
         case 'edit-file': {
-          const dest = safePath(targetRepo, action.path);
+          if (!action.path) throw new Error('edit-file requires a "path" field');
+          const dest = await safePath(targetRepo, action.path);
           const existing = await readFile(dest, 'utf8');
           if (!action.search) {
             throw new Error('edit-file requires a "search" field');
@@ -104,7 +142,8 @@ export async function executeActions(actions, targetRepo) {
           if (!existing.includes(action.search)) {
             throw new Error(`Search string not found in ${action.path}`);
           }
-          const updated = existing.replace(action.search, action.body ?? '');
+          // Use function form to prevent $-pattern interpretation in replacement
+          const updated = existing.replace(action.search, () => action.body ?? '');
           await atomicWrite(dest, updated);
           results.push({ action, ok: true });
           break;
@@ -115,15 +154,17 @@ export async function executeActions(actions, targetRepo) {
             throw new Error('shell action requires a "cmd" field');
           }
           const cwd = action.cwd
-            ? safePath(targetRepo, action.cwd)
+            ? await safePath(targetRepo, action.cwd)
             : targetRepo;
+          console.log(`[action] shell: ${action.cmd}`);
           const output = await runShell(action.cmd, cwd);
           results.push({ action, ok: true, output });
           break;
         }
 
         case 'mkdir': {
-          const dest = safePath(targetRepo, action.path);
+          if (!action.path) throw new Error('mkdir requires a "path" field');
+          const dest = await safePath(targetRepo, action.path);
           await mkdir(dest, { recursive: true });
           results.push({ action, ok: true });
           break;
@@ -142,6 +183,8 @@ export async function executeActions(actions, targetRepo) {
 
 function runShell(cmd, cwd) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
     const child = spawn(cmd, {
       cwd,
       shell: true,
@@ -150,33 +193,52 @@ function runShell(cmd, cwd) {
 
     let stdout = '';
     let stderr = '';
+    let killedForOutput = false;
 
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
-      if (stdout.length > SHELL_MAX_OUTPUT) child.kill('SIGTERM');
+      if (stdout.length > SHELL_MAX_OUTPUT) {
+        killedForOutput = true;
+        child.kill('SIGTERM');
+      }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      if (stderr.length < SHELL_MAX_OUTPUT) {
+        stderr += chunk.toString();
+      }
     });
 
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       child.kill('SIGTERM');
       reject(new Error(`Shell command timed out after ${SHELL_TIMEOUT_MS}ms: ${cmd}`));
     }, SHELL_TIMEOUT_MS);
 
-    child.on('close', (exitCode) => {
+    function finish(result) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      if (exitCode !== 0) {
-        reject(new Error(`Shell command failed (exit ${exitCode}): ${stderr.slice(0, 500) || stdout.slice(0, 500)}`));
+      if (result.error) {
+        reject(result.error);
       } else {
-        resolve(stdout);
+        resolve(result.output);
+      }
+    }
+
+    child.on('close', (exitCode) => {
+      if (killedForOutput) {
+        finish({ error: new Error(`Shell command output exceeded ${SHELL_MAX_OUTPUT} bytes: ${cmd}`) });
+      } else if (exitCode !== 0) {
+        finish({ error: new Error(`Shell command failed (exit ${exitCode}): ${stderr.slice(0, 500) || stdout.slice(0, 500)}`) });
+      } else {
+        finish({ output: stdout });
       }
     });
 
     child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
+      finish({ error: err });
     });
   });
 }
