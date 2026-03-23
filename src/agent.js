@@ -59,7 +59,9 @@ export async function invoke(agentName, session) {
     const child = spawn(config.cmd, args, {
       cwd: session.target_repo,
       stdio: ['pipe', 'pipe', 'pipe'], // capture stderr for debugging
-      shell: false, // Security invariant: NEVER shell: true
+      // On Windows, npm-installed CLIs are .cmd shims that require shell.
+      // All args are controlled by us (never user input), so this is safe.
+      shell: process.platform === 'win32',
     });
 
     // Pipe prompt file to stdin. Using createReadStream + pipe ensures EOF
