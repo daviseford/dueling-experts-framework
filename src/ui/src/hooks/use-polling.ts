@@ -10,6 +10,7 @@ interface PollingState {
   thinking: ThinkingState | null
   thinkingElapsed: string
   statusText: string
+  sessionTimer: string
 }
 
 const POLL_INTERVAL = 3000
@@ -21,6 +22,16 @@ function elapsedStr(since: string): string {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
+function formatDuration(ms: number): string {
+  const totalSecs = Math.floor(ms / 1000)
+  const h = Math.floor(totalSecs / 3600)
+  const m = Math.floor((totalSecs % 3600) / 60)
+  const s = totalSecs % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 export function usePolling(): PollingState {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed">("active")
@@ -29,8 +40,10 @@ export function usePolling(): PollingState {
   const [thinking, setThinking] = useState<ThinkingState | null>(null)
   const [thinkingElapsed, setThinkingElapsed] = useState("")
   const [statusText, setStatusText] = useState("Connecting...")
+  const [sessionTimer, setSessionTimer] = useState("0s")
 
   const fetchInFlightRef = useRef(false)
+  const sessionStartRef = useRef<number>(Date.now())
   const lastTurnCountRef = useRef(0)
   const pollingStoppedRef = useRef(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -105,12 +118,15 @@ export function usePolling(): PollingState {
     }
   }, [poll])
 
-  // Elapsed time ticker for thinking indicator
+  // Elapsed time ticker for thinking indicator + session timer
   useEffect(() => {
     elapsedIntervalRef.current = setInterval(() => {
       const t = thinkingRef.current
       if (t) {
         setThinkingElapsed(elapsedStr(t.since))
+      }
+      if (!pollingStoppedRef.current) {
+        setSessionTimer(formatDuration(Date.now() - sessionStartRef.current))
       }
     }, ELAPSED_INTERVAL)
 
@@ -119,5 +135,5 @@ export function usePolling(): PollingState {
     }
   }, [])
 
-  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText }
+  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer }
 }

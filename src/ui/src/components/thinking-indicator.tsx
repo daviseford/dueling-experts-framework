@@ -1,5 +1,6 @@
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import type { ThinkingState } from "@/lib/types"
 
@@ -16,12 +17,6 @@ const HEADER_STYLES: Record<string, string> = {
 const BADGE_STYLES: Record<string, string> = {
   claude: "bg-blue-900/50 text-blue-300 border-blue-700/50",
   codex: "bg-green-900/50 text-green-300 border-green-700/50",
-}
-
-function elapsedStr(since: string): string {
-  const secs = Math.round((Date.now() - new Date(since).getTime()) / 1000)
-  if (secs < 60) return `${secs}s`
-  return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
 interface ThinkingIndicatorProps {
@@ -51,11 +46,11 @@ export function ThinkingIndicator({ thinking, elapsed }: ThinkingIndicatorProps)
         </Badge>
       </CardHeader>
       <CardContent className="p-4">
-        <span className="text-sm text-muted-foreground">
-          <span className="inline-block animate-pulse">Thinking</span>
-          {" "}
-          <span>{elapsed || elapsedStr(thinking.since)}</span>
-        </span>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" />
+          <span>Thinking</span>
+          <span className="font-mono text-xs">{elapsed}</span>
+        </div>
       </CardContent>
     </Card>
   )

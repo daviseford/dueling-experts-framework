@@ -17,6 +17,7 @@ export default function App() {
     thinking,
     thinkingElapsed,
     statusText,
+    sessionTimer,
   } = usePolling()
 
   const isCompleted = sessionStatus === "completed"
@@ -39,7 +40,12 @@ export default function App() {
         thinkingElapsed={thinkingElapsed}
       />
       <InterjectionInput disabled={isCompleted} />
-      <StatusBar statusText={statusText} turnCount={turnCount} />
+      <StatusBar
+        statusText={statusText}
+        turnCount={turnCount}
+        sessionStatus={sessionStatus}
+        sessionTimer={sessionTimer}
+      />
       <Toaster position="bottom-right" />
     </div>
   )

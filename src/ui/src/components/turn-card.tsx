@@ -1,6 +1,13 @@
+import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
+import { ChevronDown } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 // TODO: make configurable
@@ -27,48 +34,62 @@ const BADGE_STYLES: Record<string, string> = {
 
 interface TurnCardProps {
   turn: Turn
+  defaultOpen?: boolean
 }
 
-export function TurnCard({ turn }: TurnCardProps) {
+export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
+  const [open, setOpen] = useState(defaultOpen)
   const isError = turn.status === "error"
   const label = LABEL_MAP[turn.from] || turn.from.toUpperCase()
 
   return (
-    <Card
-      className={cn(
-        "overflow-hidden",
-        isError && "border-red-600"
-      )}
-    >
-      <CardHeader
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card
         className={cn(
-          "flex flex-row items-center justify-between px-3 py-2",
-          isError
-            ? "bg-red-950/60 text-red-400"
-            : HEADER_STYLES[turn.from] || "bg-muted text-muted-foreground"
+          "overflow-hidden",
+          isError && "border-red-600"
         )}
       >
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
+        <CollapsibleTrigger asChild>
+          <CardHeader
             className={cn(
-              "text-xs font-semibold",
+              "flex cursor-pointer select-none flex-row items-center justify-between px-3 py-2 transition-colors hover:brightness-125",
               isError
-                ? "border-red-700/50 bg-red-900/50 text-red-300"
-                : BADGE_STYLES[turn.from]
+                ? "bg-red-950/60 text-red-400"
+                : HEADER_STYLES[turn.from] || "bg-muted text-muted-foreground"
             )}
           >
-            {label}
-          </Badge>
-          <span className="text-xs font-medium">Turn {turn.turn}</span>
-        </div>
-        <span className="text-xs opacity-70">{turn.timestamp || ""}</span>
-      </CardHeader>
-      <CardContent className="p-3">
-        <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
-          {turn.content}
-        </pre>
-      </CardContent>
-    </Card>
+            <div className="flex items-center gap-2">
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 transition-transform duration-200",
+                  !open && "-rotate-90"
+                )}
+              />
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs font-semibold",
+                  isError
+                    ? "border-red-700/50 bg-red-900/50 text-red-300"
+                    : BADGE_STYLES[turn.from]
+                )}
+              >
+                {label}
+              </Badge>
+              <span className="text-xs font-medium">Turn {turn.turn}</span>
+            </div>
+            <span className="text-xs opacity-70">{turn.timestamp || ""}</span>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="p-3">
+            <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+              {turn.content}
+            </pre>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   )
 }
