@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
@@ -480,7 +480,7 @@ async function generateDecisions(session) {
   const artifactsDir = join(session.dir, 'artifacts');
   await mkdir(artifactsDir, { recursive: true });
   const decisionsPath = join(artifactsDir, 'decisions.md');
-  await writeFile(decisionsPath, lines.join('\n'), 'utf8');
+  await atomicWrite(decisionsPath, lines.join('\n'));
   console.log(`Decisions log written: ${decisionsPath} (${decisions.length} decision(s))`);
 }
 

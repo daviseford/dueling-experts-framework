@@ -17,7 +17,7 @@ export type SessionPhase = "debate" | "implement" | "review"
 
 export interface TurnsResponse {
   turns: Turn[]
-  session_status: "active" | "paused" | "completed"
+  session_status: "active" | "paused" | "completed" | "interrupted"
   phase: SessionPhase
   topic: string
   turn_count: number
