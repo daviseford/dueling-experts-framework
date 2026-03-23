@@ -8,25 +8,6 @@ origin: .claude/workflows/brainstorms/2026-03-23-agent-collab-requirements.md
 
 # Agent Collaboration: Hybrid Document Handoff
 
-## Enhancement Summary
-
-**Deepened on:** 2026-03-23
-**Sections enhanced:** Architecture, Security, Performance, Simplicity, Frontend Reliability
-**Research agents used:** 6 (Architecture Strategist, Security Sentinel, Performance Oracle, Code Simplicity Reviewer, Frontend Races Reviewer, Best Practices Researcher)
-
-### Key Improvements
-1. Move timeout enforcement to Phase 1 — prevents blocked development during build
-2. Drop running summary for v1 — eliminates 10 extra CLI calls per session at 20-turn scale
-3. Merged 5 phases into 3 — Phase 1 is headless core loop (with timeouts + artifacts), Phase 2 adds UI + interjection, Phase 3 is crash recovery
-4. Add security hardening — CORS/Origin checking, 127.0.0.1 binding, no shell:true (must-build); CSRF (nice-to-have)
-5. Fix 4 high-severity frontend race conditions — recursive setTimeout, merge status+turns endpoint, debounce send
-
-### New Considerations Discovered
-- Orchestrator should own all turn numbering and filenames (agents don't control their own IDs)
-- All session state in single `session.json` (config + runtime, atomic writes)
-- Concurrent sessions resolved: lockfile per repo + dynamic port assignment
-- At 20 max turns (~30KB), no context truncation needed. Add if max_turns grows beyond ~30.
-
 ## Overview
 
 Build a local orchestrator that enables structured, turn-based conversations between Claude Code and Codex CLIs. The orchestrator manages turn order, validates agent output, assembles context, and serves a lightweight watcher UI for human observation and interjection. All state lives in files on disk — no databases, no WebSockets, no external services.
@@ -138,8 +119,6 @@ Both agents are invoked with cwd = target repo, so they can read and navigate th
 
 ### Session Directory Layout
 
-(see origin: Claude response doc, Section 2)
-
 Sessions are created under `<target-repo>/.acb/sessions/`:
 
 ```
@@ -158,8 +137,6 @@ Sessions are created under `<target-repo>/.acb/sessions/`:
 ```
 
 ### Canonical Turn Schema
-
-(see origin: Claude response doc, Section 1)
 
 ```yaml
 ---
@@ -223,16 +200,12 @@ codex exec \
 
 ### Context Assembly (Per Turn)
 
-(see origin: requirements doc R3, Phase 1 Defaults)
-
 Each agent invocation receives:
 1. **Role prompt** — planning mode system prompt (Claude or Codex variant)
 2. **Session brief** — topic and mode from `session.json`
 3. **All prior turns** — all canonical turn files, full content, sorted by turn number
 
-At 20 max turns (~30KB), the full transcript fits in both agents' context windows. No summary compression is needed for v1. If `max_turns` is later raised beyond ~30, introduce running summary + bounded window.
-
-At 20 max turns (~30KB), no truncation is needed. Add truncation logic when `max_turns` grows beyond ~30.
+At 20 max turns (~30KB), the full transcript fits in both agents' context windows. No truncation is needed for v1. If `max_turns` is later raised beyond ~30, introduce running summary + bounded window.
 
 The prompt is structured as:
 ```
@@ -249,8 +222,6 @@ Respond with YAML frontmatter followed by your markdown response. Required front
 ```
 
 ### Watcher UI
-
-(see origin: Claude response doc, Section 3)
 
 **Backend (HTTP server bound to `127.0.0.1`, dynamic port):**
 
@@ -366,8 +337,6 @@ Claude Code loads the target repo's `CLAUDE.md` if one exists. Codex is isolated
 
 ### Failure Handling
 
-(see origin: Claude response doc, Section 5; requirements doc R13)
-
 | Scenario | Action |
 |---|---|
 | Output file missing | Retry once → error turn → pause for human (Phase 2+) or exit loop (Phase 1) |
@@ -389,6 +358,72 @@ Retry policy: 1 automatic retry per turn, immediate (no backoff). Error turns ar
 - Session ends (artifacts generated): `completed`
 
 `session.json` is the single source of truth for session config and runtime state.
+
+### Security Hardening
+
+**Must-build for v1:**
+
+| Concern | Mitigation |
+|---|---|
+| **HTTP server bind address** | Bind to `127.0.0.1` only |
+| **CORS / Origin checking** | Validate `Origin` header on every request; reject non-localhost origins |
+| **Never `shell: true`** | `child_process.spawn` with argument arrays only. Security invariant. |
+| **Path traversal** | Validate `from` field with strict regex `/^(claude\|codex\|human\|system)$/`. Orchestrator owns all filenames. |
+| **YAML safety** | Configure `gray-matter` with `js-yaml` `DEFAULT_SCHEMA`. |
+| **Interjection content limit** | 10K character max on `POST /api/interject` |
+
+**Nice-to-have (add if time permits):**
+
+| Concern | Mitigation |
+|---|---|
+| **CSRF protection** | Random token at startup, embed in HTML, require on POSTs |
+| **`---` escaping** | Escape YAML frontmatter delimiters in interjection content |
+| **`--topic` sanitization** | Reject shell metacharacters in topic strings |
+
+**Platform-dependent (Windows):**
+
+| Concern | Mitigation |
+|---|---|
+| **File permissions** | On Unix, set `0600` on `.acb/` files. On Windows, rely on user-profile ACLs (no `chmod` equivalent via Node). |
+| **Atomic rename** | `fs.rename` is atomic on NTFS for same-volume renames when target doesn't exist (true for immutable turn files). Verify in a startup self-test if needed. |
+
+### Role Prompts
+
+Each agent receives a role prompt as the first section of the assembled prompt file. Role prompts are defined as template strings in `src/context.js` (no separate files for v1). Each prompt has three responsibilities: (1) establish the agent's identity and behavioral constraints, (2) define the output format (YAML frontmatter + markdown), and (3) set the collaboration tone.
+
+**Claude role prompt (planning mode):**
+```
+You are Claude, participating in a structured planning conversation with another AI agent (Codex).
+You are collaborating on: {{topic}}
+
+## Rules
+- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "claude"), timestamp (ISO-8601), status (complete | needs_human | done).
+- Optional frontmatter: decisions (array of strings — key decisions made in this turn).
+- Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
+- Challenge the other agent's assumptions. Don't just agree — push for better solutions.
+- If you need human input to proceed, set status: needs_human and explain what you need in the body.
+- If the plan is complete and ready for implementation, set status: done.
+- Do NOT include anything before the opening --- of the frontmatter.
+```
+
+**Codex role prompt (planning mode):**
+```
+You are Codex, participating in a structured planning conversation with another AI agent (Claude).
+You are collaborating on: {{topic}}
+
+## Rules
+- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "codex"), timestamp (ISO-8601), status (complete | needs_human | done).
+- Optional frontmatter: decisions (array of strings — key decisions made in this turn).
+- Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
+- Challenge the other agent's assumptions. Don't just agree — push for better solutions.
+- If you need human input to proceed, set status: needs_human and explain what you need in the body.
+- If the plan is complete and ready for implementation, set status: done.
+- Do NOT include anything before the opening --- of the frontmatter.
+```
+
+The prompts are intentionally symmetric — the only differences are the agent name and `from` field value. Future modes (`code_review`, `debate`) will have distinct prompts with mode-specific instructions.
+
+**`{{topic}}`** is interpolated from `session.json` at context assembly time.
 
 ## Implementation Phases
 
@@ -752,105 +787,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 | Agent responses are repetitive/low quality | Medium | Medium | Prescriptive role prompts with explicit challenge targets |
 | `fs.rename` not atomic on Windows NTFS | Low | Medium | Use write-to-temp + rename pattern; verify behavior |
 
-## Research Insights
-
-**Deepened on:** 2026-03-23
-**Agents used:** Architecture Strategist, Security Sentinel, Performance Oracle, Code Simplicity Reviewer, Frontend Races Reviewer, Best Practices Researcher
-
-### Key Improvements (Priority Order)
-
-1. **Move timeouts to Phase 1.** Agent CLI hangs are the most likely failure during development. A `setTimeout` + `process.kill()` is ~10 lines and prevents blocked development. *(Architecture, YAGNI)* — **Applied: timeouts are now in Phase 1.**
-
-2. **Drop running summary for v1.** At max 20 turns (~30KB transcript), the full history fits in both agents' context windows. *(YAGNI, Performance)* — **Applied: summary.js removed, all turns sent as context.**
-
-3. **Merge 5 phases into 3.** *(YAGNI, Architecture)* — **Applied: phases consolidated in Implementation Phases section.**
-
-4. **Simplify the state machine.** The 7-state diagram models a sequential while loop. For v1, a loop with an `isPaused` flag is sufficient. The `session_status` field (`active`/`paused`/`completed`) already captures the states that matter for recovery and UI. *(YAGNI, Architecture — note: architecture strategist recommends keeping the state machine but extracting it to a module; YAGNI recommends a simpler loop. The loop is recommended for v1 given the single-user, 20-turn scope.)*
-
-5. **Orchestrator owns `turn`, `id`, and filenames — agents don't control them.** Agents produce content; the orchestrator assigns turn numbers, generates IDs, and writes canonical filenames. Agent-provided `turn`/`id` values are logged but ignored. This prevents state corruption and path traversal. *(Security, Architecture)*
-
-### Security Hardening
-
-**Must-build for v1:**
-
-| Concern | Mitigation |
-|---|---|
-| **HTTP server bind address** | Bind to `127.0.0.1` only (already specified in API contract) |
-| **CORS / Origin checking** | Validate `Origin` header on every request; reject non-localhost origins |
-| **Never `shell: true`** | `child_process.spawn` with argument arrays only. Security invariant. |
-| **Path traversal** | Validate `from` field with strict regex `/^(claude\|codex\|human\|system)$/`. Orchestrator owns all filenames. |
-| **YAML safety** | Configure `gray-matter` with `js-yaml` `DEFAULT_SCHEMA`. |
-| **Interjection content limit** | 10K character max on `POST /api/interject` |
-
-**Nice-to-have (add if time permits):**
-
-| Concern | Mitigation |
-|---|---|
-| **CSRF protection** | Random token at startup, embed in HTML, require on POSTs |
-| **`---` escaping** | Escape YAML frontmatter delimiters in interjection content |
-| **`--topic` sanitization** | Reject shell metacharacters in topic strings |
-
-**Platform-dependent (Windows):**
-
-| Concern | Mitigation |
-|---|---|
-| **File permissions** | On Unix, set `0600` on `.acb/` files. On Windows, rely on user-profile ACLs (no `chmod` equivalent via Node). |
-| **Atomic rename** | `fs.rename` is atomic on NTFS for same-volume renames when target doesn't exist (true for immutable turn files). Verify in a startup self-test if needed. |
-
-### Performance Insights
-
-- **CLI invocations dominate all costs** by 2 orders of magnitude (10-120s per turn vs. <15ms for all file I/O). Only optimizations that reduce CLI calls matter.
-- **If summaries are kept:** Run summary generation concurrently with the next turn, not sequentially. The summary doesn't need to be ready until the *next* agent's prompt is assembled. This eliminates 100-300s of blocking time per 20-turn session.
-- **In-memory turn cache (deferred optimization):** Maintain a `Map<turnId, parsedTurn>` in the HTTP server, populated when turns are written. `GET /api/turns` becomes an array slice — zero file I/O on poll. ~15 lines of code. Not needed for v1 at 20 turns, but recommended if polling frequency increases or multiple tabs are opened.
-- **Apply atomic writes (temp + rename) to `session.json`** in addition to turn files.
-
-### Frontend Reliability (Required for Phase 2)
-
-| Issue | Fix |
-|---|---|
-| **Out-of-order poll responses** | Use recursive `setTimeout` (not `setInterval`). Only one request in flight at a time. Discard responses with a lower turn count than the last processed. |
-| **Status/turns split-brain** | Session status is included in the `/api/turns` response (no separate status endpoint). UI derives paused/active state from the response. |
-| **Double-click sends duplicates** | Disable send button on click, re-enable on response. |
-| **Background tab throttling** | Not needed for v1 — recursive `setTimeout` prevents burst-on-refocus. Zero-cost localhost polling. |
-| **Interjection feedback** | After POST succeeds, interjection appears on next poll (3 seconds). No optimistic rendering in v1. |
-
-### Simplifications Applied
-
-| Item | Change |
-|---|---|
-| `src/summary.js` | Removed. Send all turns as context. |
-| `src/interjection.js` | Replaced with a plain array on the orchestrator. |
-| `src/config.js` | Removed. Inline 4 CLI arg defaults in `index.js`. |
-| `src/artifacts.js` | Removed. Decisions extraction is inline in orchestrator exit path. |
-| `src/agents/claude.js` + `codex.js` | Merged into single `src/agent.js` with config map. |
-| `session.md` + `state.json` | Merged into single `session.json`. |
-| `final-summary.md` | Removed. Davis can summarize manually. |
-| `decisions` field | Made optional. Best-effort extraction. |
-| `error_detail` field | Removed. Error info goes in turn body. |
-| `response_to` field | Removed. |
-| `attachments/` directory | Removed. |
-| Done-confirmation protocol | Removed. `done` = immediate session end. |
-| 100K truncation logic | Removed. Can't trigger at 20 turns. |
-| 500KB output guard | Removed. |
-| Duplicate interjection rejection | Removed. |
-| Optimistic interjection rendering | Removed. 3s poll delay is fine. |
-| `visibilitychange` handler | Removed. Zero-cost localhost polling. |
-| Lockfile PID check + `--force` | Simplified to plain lockfile. |
-| `?after=<turn-id>` | Deferred. |
-| Interjection response | `{ "ok": true }`. |
-| Phases | 5 → 3. |
-
-### Architecture Notes
-
-- **Orchestrator-server coupling:** Define an explicit interface for pause/resume. Recommended: a shared session controller with `waitForHuman()` (returns Promise) and `resumeFromHuman(content)` (resolves it). Keeps coupling narrow and testable.
-- **Single `session.json`** contains both config (topic, mode, max_turns) and runtime state (session_status, current_turn, next_agent, port). One file, one schema. Updated via atomic writes.
-- **Concurrent sessions:** Resolved — one session per repo enforced via `.acb/lock`. Dynamic port avoids port conflicts. See "Concurrency & Port Rules" section.
-- **Claude CLI invocation:** Resolved — stdin redirection only (`claude --print < prompt.md`). No `-m` or `-p` variants. Symmetric with Codex.
-- **Context size:** At 20 max turns (~30KB), no truncation needed. Add truncation when max_turns grows beyond ~30.
-
 ## Deferred to Future Versions
-
-(see origin: requirements doc, Deferred to Planning)
 
 - `code_review` and `debate` session modes
 - Running summary generation (`summary.md`) — not needed at 20-turn max; add when max_turns exceeds ~30
