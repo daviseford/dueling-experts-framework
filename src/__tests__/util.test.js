@@ -10,7 +10,7 @@ describe('atomicWrite', () => {
   let testDir;
 
   before(async () => {
-    testDir = join(tmpdir(), `acb-test-${randomUUID()}`);
+    testDir = join(tmpdir(), `def-test-${randomUUID()}`);
     await mkdir(testDir, { recursive: true });
   });
 

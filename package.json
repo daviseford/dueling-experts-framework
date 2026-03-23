@@ -1,9 +1,9 @@
 {
-  "name": "agent-collab",
+  "name": "debate-engine-framework",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "acb": "./bin/acb"
+    "def": "./bin/def"
   },
   "scripts": {
     "start": "node src/index.js",

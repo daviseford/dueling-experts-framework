@@ -25,7 +25,7 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <Radio className="h-3.5 w-3.5 text-emerald-400" />
-          <h1 className="text-sm font-bold tracking-tight text-foreground">ACB</h1>
+          <h1 className="text-sm font-bold tracking-tight text-foreground">DEF</h1>
         </div>
         {topic && (
           <>

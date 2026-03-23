@@ -8,18 +8,18 @@ import { atomicWrite } from './util.js';
  * Acquires a lockfile — errors if one already exists.
  */
 export async function create({ topic, mode, maxTurns, firstAgent, targetRepo }) {
-  const acbDir = join(targetRepo, '.acb');
-  const lockPath = join(acbDir, 'lock');
+  const defDir = join(targetRepo, '.def');
+  const lockPath = join(defDir, 'lock');
 
-  // Ensure .acb/ exists
-  await mkdir(acbDir, { recursive: true });
+  // Ensure .def/ exists
+  await mkdir(defDir, { recursive: true });
 
   // Acquire lockfile atomically (wx = exclusive create, fails if exists)
   await acquireLock(lockPath);
 
   // Create session directory
   const id = randomUUID();
-  const sessionDir = join(acbDir, 'sessions', id);
+  const sessionDir = join(defDir, 'sessions', id);
   await mkdir(join(sessionDir, 'turns'), { recursive: true });
   await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
   await mkdir(join(sessionDir, 'runtime'), { recursive: true });
@@ -39,7 +39,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, targetRepo }) 
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);
 
-  // Add .acb/ to .gitignore if not already present
+  // Add .def/ to .gitignore if not already present
   await ensureGitignore(targetRepo);
 
   return { ...session, dir: sessionDir, lockPath };
@@ -75,7 +75,7 @@ async function atomicWriteJson(filePath, data) {
  * Remove the lockfile.
  */
 export async function releaseLock(targetRepo) {
-  const lockPath = join(targetRepo, '.acb', 'lock');
+  const lockPath = join(targetRepo, '.def', 'lock');
   try {
     await unlink(lockPath);
   } catch {
@@ -121,7 +121,7 @@ export async function acquireLock(lockPath) {
     await writeFile(lockPath, String(process.pid), { flag: 'wx' });
   } catch (err) {
     if (err.code === 'EEXIST') {
-      throw new Error('A session may already be running. Delete .acb/lock to proceed.');
+      throw new Error('A session may already be running. Delete .def/lock to proceed.');
     }
     throw err;
   }
@@ -151,8 +151,8 @@ async function ensureGitignore(targetRepo) {
   } catch {
     // No .gitignore — we'll create one
   }
-  if (!content.includes('.acb/') && !content.includes('.acb\n')) {
-    const line = content.endsWith('\n') || content === '' ? '.acb/\n' : '\n.acb/\n';
+  if (!content.includes('.def/') && !content.includes('.def\n')) {
+    const line = content.endsWith('\n') || content === '' ? '.def/\n' : '\n.def/\n';
     await writeFile(gitignorePath, content + line, 'utf8');
   }
 }

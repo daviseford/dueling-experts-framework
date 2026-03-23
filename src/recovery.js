@@ -9,8 +9,8 @@ import { isProcessAlive } from './util.js';
  * Returns true if a session was auto-resumed, false otherwise.
  */
 export async function checkForRecovery(targetRepo) {
-  const sessionsDir = join(targetRepo, '.acb', 'sessions');
-  const lockPath = join(targetRepo, '.acb', 'lock');
+  const sessionsDir = join(targetRepo, '.def', 'sessions');
+  const lockPath = join(targetRepo, '.def', 'lock');
 
   // If lockfile exists, check whether the owning process is still alive
   try {
@@ -78,7 +78,7 @@ export async function checkForRecovery(targetRepo) {
  * Resume a specific session by ID.
  */
 export async function resumeSession(targetRepo, sessionId) {
-  const sessionsDir = join(targetRepo, '.acb', 'sessions');
+  const sessionsDir = join(targetRepo, '.def', 'sessions');
 
   let sessionDirs;
   try {
@@ -116,7 +116,7 @@ export async function resumeSession(targetRepo, sessionId) {
 
 async function doResume(targetRepo, sessionDir) {
   // Acquire lockfile atomically
-  const lockPath = join(targetRepo, '.acb', 'lock');
+  const lockPath = join(targetRepo, '.def', 'lock');
   await acquireLock(lockPath);
 
   // Discard incomplete runtime files

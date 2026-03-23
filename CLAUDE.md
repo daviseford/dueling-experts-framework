@@ -7,7 +7,7 @@ See [AGENTS.md](./AGENTS.md) for full architecture, conventions, and agent opera
 ## Quick Reference
 
 ```sh
-npm start -- --topic "Your topic"    # Run ACB
+npm start -- --topic "Your topic"    # Run DEF
 npm test                              # Run tests (node:test)
 npm run dev:ui                        # Dev UI with hot reload
 npm run build:ui                      # Build UI

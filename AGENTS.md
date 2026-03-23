@@ -4,12 +4,12 @@ Instructions for AI coding agents working in this repo.
 
 ## What This Is
 
-ACB (Agent Collaboration Bridge) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. A localhost HTTP server serves a React watcher UI for observation and human interjection.
+DEF (Debate Engine Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. A localhost HTTP server serves a React watcher UI for observation and human interjection.
 
 ## Files That Matter
 
 ```
-bin/acb              → CLI entrypoint (ESM shim)
+bin/def              → CLI entrypoint (ESM shim)
 src/index.js         → Arg parsing, session creation, recovery check
 src/orchestrator.js  → Turn loop: invoke → validate → write → repeat
 src/agent.js         → Spawns claude/codex as child processes
@@ -22,7 +22,7 @@ src/util.js          → atomicWrite (write→fsync→rename), isProcessAlive
 src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/ui)
 ```
 
-Session directories live at `.acb/sessions/<uuid>/` with:
+Session directories live at `.def/sessions/<uuid>/` with:
 - `turns/` — canonical turn files (turn-NNNN-agent.md)
 - `artifacts/` — generated outputs (e.g., decisions.md)
 - `runtime/` — ephemeral prompt.md and output.md

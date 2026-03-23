@@ -27,7 +27,7 @@ describe('assemble', () => {
   let sessionDir;
 
   before(async () => {
-    sessionDir = join(tmpdir(), `acb-test-${randomUUID()}`);
+    sessionDir = join(tmpdir(), `def-test-${randomUUID()}`);
     await mkdir(join(sessionDir, 'turns'), { recursive: true });
   });
 

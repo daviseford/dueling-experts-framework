@@ -10,8 +10,8 @@ const args = process.argv.slice(2);
 const opts = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
-  console.error('Usage: acb --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex]');
-  console.error('       acb --resume <session-id>');
+  console.error('Usage: def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex]');
+  console.error('       def --resume <session-id>');
   process.exit(1);
 }
 
