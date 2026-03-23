@@ -29,7 +29,16 @@ export async function start(session, controller) {
       const { port } = httpServer.address();
       await updateSession(session.dir, { port });
       session.port = port;
-      console.log(`Watcher UI: http://localhost:${port}`);
+      const url = `http://localhost:${port}`;
+      console.log(`Watcher UI: ${url}`);
+
+      // Auto-open browser
+      const openCmd = process.platform === 'win32' ? 'start'
+        : process.platform === 'darwin' ? 'open' : 'xdg-open';
+      import('node:child_process').then(({ exec }) => {
+        exec(`${openCmd} ${url}`);
+      }).catch(() => {});
+
       resolve();
     });
   });
