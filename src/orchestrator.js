@@ -137,7 +137,10 @@ export async function run(session, { server } = {}) {
   // Generate artifacts
   await generateDecisions(session);
   await updateSession(session.dir, { session_status: 'completed' });
+  console.log('');
   console.log('Session completed.');
+  console.log(`  Turns:     ${join(session.dir, 'turns')}`);
+  console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
 
   if (server) {
     setTimeout(() => server.stop(), 5000);
@@ -268,6 +271,7 @@ async function generateDecisions(session) {
 
   const artifactsDir = join(session.dir, 'artifacts');
   await mkdir(artifactsDir, { recursive: true });
-  await writeFile(join(artifactsDir, 'decisions.md'), lines.join('\n'), 'utf8');
-  console.log(`Decisions log written: ${decisions.length} decision(s).`);
+  const decisionsPath = join(artifactsDir, 'decisions.md');
+  await writeFile(decisionsPath, lines.join('\n'), 'utf8');
+  console.log(`Decisions log written: ${decisionsPath} (${decisions.length} decision(s))`);
 }
