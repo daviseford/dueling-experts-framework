@@ -298,9 +298,6 @@
 
         lastTurnCount = data.turn_count;
 
-        // Check if user is scrolled near the bottom before re-render
-        const isAtBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 30;
-
         // Render turns
         transcript.innerHTML = '';
         for (const turn of data.turns) {
@@ -331,10 +328,8 @@
         // Append thinking indicator if an agent is working
         appendThinkingIndicator(data.thinking);
 
-        // Only auto-scroll if user was already at bottom
-        if (isAtBottom) {
-          transcript.scrollTop = transcript.scrollHeight;
-        }
+        // Auto-scroll to bottom on new content
+        transcript.scrollTop = transcript.scrollHeight;
 
         // Stop polling and disable controls if completed
         if (data.session_status === 'completed') {
