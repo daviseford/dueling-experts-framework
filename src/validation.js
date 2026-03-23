@@ -4,8 +4,6 @@ const VALID_STATUS = /^(complete|needs_human|done|error)$/;
 const VALID_FROM = /^(claude|codex|human|system)$/;
 
 // Disable gray-matter's JavaScript/CoffeeScript engines to prevent RCE via agent output.
-// An adversarial agent could return "---js\n require('child_process').exec(...) \n---"
-// which gray-matter would eval(). Block all non-YAML engines explicitly.
 const SAFE_ENGINES = {
   javascript: { parse: () => { throw new Error('JavaScript engine disabled for security'); } },
   js: { parse: () => { throw new Error('JavaScript engine disabled for security'); } },
@@ -14,33 +12,47 @@ const SAFE_ENGINES = {
 };
 
 /**
+ * Extract the frontmatter block from agent output.
+ * Agents often emit preamble text before the "---" delimiter.
+ * Finds the first line that is exactly "---", then extracts from there.
+ * Returns the extracted substring (starting at "---") or null if not found.
+ */
+function extractFrontmatterBlock(raw) {
+  const lines = raw.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      // Security: reject language specifiers (e.g., "---js", "--- js")
+      // The raw line (before trim) must be exactly "---"
+      if (lines[i] !== '---') {
+        return null; // suspicious delimiter — reject
+      }
+      return lines.slice(i).join('\n');
+    }
+  }
+  return null;
+}
+
+/**
  * Parse and validate a turn's YAML frontmatter.
  * Returns { valid, errors, data, content }.
  */
 export function validate(raw, expectedFrom) {
   const errors = [];
 
-  // Strip leading whitespace/newlines (agents may output preamble before frontmatter)
-  const trimmed = raw.replace(/^\s+/, '');
-
-  // Reject frontmatter with language specifiers (e.g., "---js", "--- js")
-  // The opening delimiter must be exactly "---" with nothing else on the line.
-  const firstLine = trimmed.split(/\r?\n/)[0];
-  if (firstLine !== '---') {
+  // Find the frontmatter block (may be preceded by agent preamble)
+  const frontmatterBlock = extractFrontmatterBlock(raw);
+  if (!frontmatterBlock) {
     return {
       valid: false,
-      errors: ['Frontmatter opening delimiter must be exactly "---" (security)'],
+      errors: ['No YAML frontmatter block found (expected a line with exactly "---")'],
       data: null,
       content: raw,
     };
   }
 
-  // Use trimmed input for parsing (gray-matter needs --- on line 1)
-  raw = trimmed;
-
   let parsed;
   try {
-    parsed = matter(raw, { engines: SAFE_ENGINES });
+    parsed = matter(frontmatterBlock, { engines: SAFE_ENGINES });
   } catch (err) {
     return {
       valid: false,
