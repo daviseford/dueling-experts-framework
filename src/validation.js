@@ -61,6 +61,11 @@ export function validate(raw, expectedFrom) {
     errors.push(`Invalid from: "${data.from}". Must be: claude, codex, human, or system`);
   }
 
+  // Warn if agent claims to be someone else (orchestrator overrides, but log it)
+  if (expectedFrom && data.from && data.from !== expectedFrom) {
+    console.warn(`[validation] Agent claimed from="${data.from}" but expected "${expectedFrom}" (will override)`);
+  }
+
   // Validate decisions is an array if present
   if (data.decisions !== undefined && !Array.isArray(data.decisions)) {
     errors.push(`"decisions" must be an array, got: ${typeof data.decisions}`);

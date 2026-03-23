@@ -1,9 +1,9 @@
-import { writeFile, readFile, readdir, rename, mkdir } from 'node:fs/promises';
+import { writeFile, readFile, rename, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import { validate } from './validation.js';
 import { invoke } from './agent.js';
-import { update as updateSession } from './session.js';
+import { update as updateSession, listTurnFiles } from './session.js';
 
 /**
  * Run the orchestrator turn loop.
@@ -239,15 +239,8 @@ async function writeHumanTurn(session, turnCount, content) {
 
 async function generateDecisions(session) {
   const turnsDir = join(session.dir, 'turns');
-  let turnFiles = [];
-  try {
-    turnFiles = await readdir(turnsDir);
-  } catch {
-    return;
-  }
-  turnFiles = turnFiles
-    .filter((f) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
-    .sort();
+  const turnFiles = await listTurnFiles(turnsDir);
+  if (turnFiles.length === 0) return;
 
   const decisions = [];
   for (const file of turnFiles) {

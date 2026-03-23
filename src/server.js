@@ -1,9 +1,9 @@
 import { createServer } from 'node:http';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
-import { update as updateSession } from './session.js';
+import { update as updateSession, listTurnFiles } from './session.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_CONTENT_LENGTH = 10_000;
@@ -120,15 +120,7 @@ async function serveUI(res) {
 
 async function handleGetTurns(res) {
   const turnsDir = join(sessionRef.dir, 'turns');
-  let turnFiles = [];
-  try {
-    turnFiles = await readdir(turnsDir);
-  } catch {
-    // No turns yet
-  }
-  turnFiles = turnFiles
-    .filter((f) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
-    .sort();
+  const turnFiles = await listTurnFiles(turnsDir);
 
   const turns = await Promise.all(
     turnFiles.map(async (file) => {

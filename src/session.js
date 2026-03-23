@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile, access, rename, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -66,7 +66,7 @@ export async function update(sessionDir, fields) {
 /**
  * Write JSON atomically: write to .tmp then rename.
  */
-export async function atomicWriteJson(filePath, data) {
+async function atomicWriteJson(filePath, data) {
   const tmpPath = filePath + '.tmp';
   await writeFile(tmpPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
   await rename(tmpPath, filePath);
@@ -113,6 +113,22 @@ export async function acquireLock(lockPath) {
     }
     throw err;
   }
+}
+
+/**
+ * List canonical turn files in a session's turns directory, sorted by turn number.
+ */
+export async function listTurnFiles(turnsDir) {
+  const { readdir } = await import('node:fs/promises');
+  let files = [];
+  try {
+    files = await readdir(turnsDir);
+  } catch {
+    return [];
+  }
+  return files
+    .filter((f) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
+    .sort();
 }
 
 async function ensureGitignore(targetRepo) {

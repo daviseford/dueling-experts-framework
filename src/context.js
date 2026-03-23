@@ -1,11 +1,12 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { listTurnFiles } from './session.js';
 
 const AGENT_NAMES = { claude: 'Claude', codex: 'Codex' };
-const OTHER_AGENT = { claude: 'Codex', codex: 'Claude' };
 
 function planningPrompt(agent, topic) {
-  return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${OTHER_AGENT[agent]}).
+  const other = agent === 'claude' ? 'Codex' : 'Claude';
+  return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${other}).
 You are collaborating on: ${topic}
 
 ## Rules
@@ -18,18 +19,13 @@ You are collaborating on: ${topic}
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 
-const MODE_PROMPTS = {
-  planning: planningPrompt,
-};
-
 /**
  * Assemble the full prompt for an agent invocation.
  */
 export async function assemble(session) {
   const { topic, mode, next_agent, dir } = session;
 
-  const promptFn = MODE_PROMPTS[mode];
-  if (!promptFn) {
+  if (mode !== 'planning') {
     throw new Error(`Unknown mode: "${mode}". Supported: planning`);
   }
   if (!AGENT_NAMES[next_agent]) {
@@ -38,15 +34,7 @@ export async function assemble(session) {
 
   // Read all existing turns
   const turnsDir = join(dir, 'turns');
-  let turnFiles = [];
-  try {
-    turnFiles = await readdir(turnsDir);
-  } catch {
-    // No turns yet
-  }
-  turnFiles = turnFiles
-    .filter((f) => f.startsWith('turn-') && f.endsWith('.md'))
-    .sort();
+  const turnFiles = await listTurnFiles(turnsDir);
 
   const turns = await Promise.all(
     turnFiles.map((file) => readFile(join(turnsDir, file), 'utf8'))
@@ -54,7 +42,7 @@ export async function assemble(session) {
 
   // Assemble
   const parts = [
-    promptFn(next_agent, topic),
+    planningPrompt(next_agent, topic),
     '',
     '## Session Brief',
     `**Topic:** ${topic}`,
