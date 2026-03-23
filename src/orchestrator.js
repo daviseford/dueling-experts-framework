@@ -219,6 +219,7 @@ async function invokeWithRetry(agentName, session, turnCount) {
 async function writeCanonicalTurn(session, id, data, content) {
   const filename = `${id}.md`;
   const turnsDir = join(session.dir, 'turns');
+  await mkdir(turnsDir, { recursive: true }); // ensure dir exists (agents may interfere)
   const tmpPath = join(turnsDir, `${filename}.tmp`);
   const finalPath = join(turnsDir, filename);
 
