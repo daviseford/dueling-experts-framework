@@ -13,20 +13,31 @@ const SAFE_ENGINES = {
 
 /**
  * Extract the frontmatter block from agent output.
- * Agents often emit preamble text before the "---" delimiter.
- * Finds the first line that is exactly "---", then extracts from there.
+ * Agents often emit preamble text before the "---" delimiter, or use "---"
+ * as a horizontal rule. We find the real frontmatter by looking for "---"
+ * followed by lines that look like YAML key-value pairs (must contain
+ * "from:" and "status:" within the block before the closing "---").
  * Returns the extracted substring (starting at "---") or null if not found.
  */
 function extractFrontmatterBlock(raw) {
   const lines = raw.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === '---') {
-      // Security: reject language specifiers (e.g., "---js", "--- js")
-      // The raw line (before trim) must be exactly "---"
-      if (lines[i] !== '---') {
-        return null; // suspicious delimiter — reject
+    // Must be exactly "---" (reject "---js", "--- js", etc.)
+    if (lines[i] !== '---') continue;
+
+    // Look ahead for the closing "---" and check for required YAML keys
+    let hasFrom = false;
+    let hasStatus = false;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j] === '---') {
+        // Found closing delimiter — is this real frontmatter?
+        if (hasFrom && hasStatus) {
+          return lines.slice(i).join('\n');
+        }
+        break; // Not frontmatter, keep searching for next "---" opener
       }
-      return lines.slice(i).join('\n');
+      if (/^from:\s/.test(lines[j])) hasFrom = true;
+      if (/^status:\s/.test(lines[j])) hasStatus = true;
     }
   }
   return null;
