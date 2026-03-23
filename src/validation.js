@@ -20,11 +20,13 @@ const SAFE_ENGINES = {
 export function validate(raw, expectedFrom) {
   const errors = [];
 
-  // Reject frontmatter with language specifiers (e.g., "---js" instead of "---")
-  if (/^---\S/m.test(raw)) {
+  // Reject frontmatter with language specifiers (e.g., "---js", "--- js")
+  // The opening delimiter must be exactly "---" with nothing else on the line.
+  const firstLine = raw.split(/\r?\n/)[0];
+  if (firstLine !== '---') {
     return {
       valid: false,
-      errors: ['Frontmatter language specifiers are not allowed (security)'],
+      errors: ['Frontmatter opening delimiter must be exactly "---" (security)'],
       data: null,
       content: raw,
     };
@@ -66,9 +68,13 @@ export function validate(raw, expectedFrom) {
     console.warn(`[validation] Agent claimed from="${data.from}" but expected "${expectedFrom}" (will override)`);
   }
 
-  // Validate decisions is an array if present
-  if (data.decisions !== undefined && !Array.isArray(data.decisions)) {
-    errors.push(`"decisions" must be an array, got: ${typeof data.decisions}`);
+  // Validate decisions is an array of strings if present
+  if (data.decisions !== undefined) {
+    if (!Array.isArray(data.decisions)) {
+      errors.push(`"decisions" must be an array, got: ${typeof data.decisions}`);
+    } else if (!data.decisions.every((d) => typeof d === 'string')) {
+      errors.push('"decisions" array must contain only strings');
+    }
   }
 
   return {

@@ -1,6 +1,6 @@
 import { writeFile, readFile, rename, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import matter from 'gray-matter';
+import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
@@ -206,8 +206,10 @@ async function writeCanonicalTurn(session, id, data, content) {
   const tmpPath = join(turnsDir, `${filename}.tmp`);
   const finalPath = join(turnsDir, filename);
 
-  const fileContent = matter.stringify(content, data);
-  await writeFile(tmpPath, fileContent, 'utf8');
+  // Build frontmatter manually — do NOT use matter.stringify because it re-parses
+  // the content body, allowing agents to inject frontmatter via embedded --- blocks.
+  const frontmatter = '---\n' + yaml.dump(data, { lineWidth: -1 }).trim() + '\n---\n';
+  await writeFile(tmpPath, frontmatter + content + '\n', 'utf8');
   await rename(tmpPath, finalPath);
 }
 

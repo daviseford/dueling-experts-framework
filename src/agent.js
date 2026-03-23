@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { assemble } from './context.js';
 
 const TIMEOUT_MS = 120_000; // 120 seconds
+const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
 const AGENTS = {
   claude: {
@@ -65,6 +66,9 @@ export async function invoke(agentName, session) {
 
       child.stdout.on('data', (chunk) => {
         stdout += chunk.toString();
+        if (stdout.length > MAX_OUTPUT_BYTES) {
+          child.kill('SIGTERM');
+        }
       });
 
       const timer = setTimeout(() => {

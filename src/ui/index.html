@@ -317,7 +317,10 @@
       if (!confirm('End this session?')) return;
       endBtn.disabled = true;
       try {
-        await fetch('/api/end-session', { method: 'POST' });
+        await fetch('/api/end-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
       } catch {
         endBtn.disabled = false;
       }

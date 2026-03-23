@@ -99,7 +99,7 @@ async function handleRequest(req, res) {
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
-      await handleEndSession(res);
+      await handleEndSession(req, res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -114,7 +114,11 @@ async function handleRequest(req, res) {
 async function serveUI(res) {
   const htmlPath = join(__dirname, 'ui', 'index.html');
   const html = await readFile(htmlPath, 'utf8');
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  });
   res.end(html);
 }
 
@@ -203,7 +207,13 @@ async function handleInterject(req, res) {
   res.end(JSON.stringify({ ok: true }));
 }
 
-async function handleEndSession(res) {
+async function handleEndSession(req, res) {
+  const contentType = req.headers['content-type'];
+  if (contentType && !contentType.includes('application/json')) {
+    res.writeHead(415, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+    return;
+  }
   controllerRef.requestEnd();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
