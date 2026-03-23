@@ -6,7 +6,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
-import { ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { ChevronRight, ChevronsUpDown } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 // TODO: make configurable
@@ -99,6 +100,17 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
             <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/90">
               {turn.content}
             </pre>
+          </div>
+          <div className="flex justify-center border-t border-border/30 py-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
+              onClick={() => setOpen(false)}
+            >
+              <ChevronsUpDown className="h-3 w-3" />
+              Collapse
+            </Button>
           </div>
         </CollapsibleContent>
       </div>
