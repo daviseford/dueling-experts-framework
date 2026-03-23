@@ -1,6 +1,6 @@
 import matter from 'gray-matter';
 
-const VALID_STATUS = /^(complete|needs_human|done|error)$/;
+const VALID_STATUS = /^(complete|needs_human|done|decided|error)$/;
 const VALID_FROM = /^(claude|codex|human|system)$/;
 
 // Disable gray-matter's JavaScript/CoffeeScript engines to prevent RCE via agent output.
@@ -84,7 +84,7 @@ export function validate(raw, expectedFrom) {
 
   // Validate status enum
   if (data.status && !VALID_STATUS.test(data.status)) {
-    errors.push(`Invalid status: "${data.status}". Must be: complete, needs_human, done, or error`);
+    errors.push(`Invalid status: "${data.status}". Must be: complete, needs_human, done, decided, or error`);
   }
 
   // Validate from field

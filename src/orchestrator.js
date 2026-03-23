@@ -5,6 +5,7 @@ import { validate } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import { atomicWrite } from './util.js';
+import { parseActions, executeActions } from './actions.js';
 
 /**
  * Run the orchestrator turn loop.
@@ -18,6 +19,15 @@ export async function run(session, { server } = {}) {
   let nextAgent = session.next_agent;
   let endRequested = false;
 
+  // Phase tracking
+  let phase = session.phase || 'debate';
+
+  // Consensus tracking for debate phase
+  let pendingDecided = null;
+
+  // Review turn counter (counts only review-phase turns)
+  let reviewTurnCount = 0;
+
   // Interjection queue and pause state (active when server is present)
   const interjectionQueue = [];
   let isPaused = false;
@@ -30,6 +40,7 @@ export async function run(session, { server } = {}) {
     get isPaused() { return isPaused; },
     get endRequested() { return endRequested; },
     get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince } : null; },
+    get phase() { return phase; },
     interject(content) {
       if (isPaused && humanResponseResolve) {
         humanResponseResolve(content);
@@ -49,6 +60,16 @@ export async function run(session, { server } = {}) {
 
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
+
+    // In implement phase, only the impl_model agent takes turns
+    if (phase === 'implement') {
+      nextAgent = session.impl_model;
+    }
+    // In review phase, only the non-impl agent takes turns
+    if (phase === 'review') {
+      const implModel = session.impl_model;
+      nextAgent = implModel === 'claude' ? 'codex' : 'claude';
+    }
 
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
@@ -99,43 +120,126 @@ export async function run(session, { server } = {}) {
     }
 
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
-    console.log(`[Turn ${turnCount}] Written: ${canonicalId} (status: ${canonicalData.status})`);
+    console.log(`[Turn ${turnCount}] [${phase}] Written: ${canonicalId} (status: ${canonicalData.status})`);
 
     const oppositeAgent = nextAgent === 'claude' ? 'codex' : 'claude';
-    await updateSession(session.dir, {
-      current_turn: turnCount,
-      next_agent: oppositeAgent,
-    });
 
-    if (canonicalData.status === 'done') {
-      console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
-      break;
-    }
+    // === Phase-specific post-turn logic ===
 
-    if (canonicalData.status === 'needs_human') {
-      if (server) {
-        isPaused = true;
-        await updateSession(session.dir, { session_status: 'paused' });
-        console.log(`[Turn ${turnCount}] Agent needs human input. Paused.`);
+    if (phase === 'debate') {
+      await updateSession(session.dir, {
+        current_turn: turnCount,
+        next_agent: oppositeAgent,
+      });
 
-        const humanContent = await waitForHuman();
-        isPaused = false;
-        turnCount++;
-        await writeHumanTurn(session, turnCount, humanContent);
-        await updateSession(session.dir, {
-          current_turn: turnCount,
-          session_status: 'active',
-          next_agent: nextAgent, // Same agent resumes (R11)
-        });
-        continue;
+      // Check for consensus signaling
+      if (canonicalData.status === 'decided') {
+        if (pendingDecided && pendingDecided !== nextAgent) {
+          // Both agents agreed — transition to implement
+          console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
+          phase = 'implement';
+          pendingDecided = null;
+          nextAgent = session.impl_model;
+          await updateSession(session.dir, {
+            phase: 'implement',
+            next_agent: nextAgent,
+          });
+          continue;
+        } else {
+          // First decided — record and let the other agent respond
+          pendingDecided = nextAgent;
+          console.log(`[Turn ${turnCount}] ${nextAgent} signals decided. Waiting for ${oppositeAgent} to confirm.`);
+          nextAgent = oppositeAgent;
+        }
+      } else {
+        // If there was a pending decided and this agent didn't confirm, clear it
+        if (pendingDecided && canonicalData.status === 'complete') {
+          console.log(`[Turn ${turnCount}] ${nextAgent} contests consensus. Resuming debate.`);
+          pendingDecided = null;
+        }
+
+        if (canonicalData.status === 'done') {
+          console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
+          break;
+        }
+
+        if (canonicalData.status === 'needs_human') {
+          if (server) {
+            isPaused = true;
+            await updateSession(session.dir, { session_status: 'paused' });
+            console.log(`[Turn ${turnCount}] Agent needs human input. Paused.`);
+
+            const humanContent = await waitForHuman();
+            isPaused = false;
+            turnCount++;
+            await writeHumanTurn(session, turnCount, humanContent);
+            await updateSession(session.dir, {
+              current_turn: turnCount,
+              session_status: 'active',
+              next_agent: nextAgent, // Same agent resumes
+            });
+            continue;
+          }
+
+          console.log(`[Turn ${turnCount}] Agent needs human input. Exiting (no UI).`);
+          break;
+        }
+
+        nextAgent = oppositeAgent;
+      }
+    } else if (phase === 'implement') {
+      // Parse and execute actions from the turn content
+      const actions = parseActions(validation.content);
+      if (actions.length > 0) {
+        console.log(`[Turn ${turnCount}] Executing ${actions.length} action(s)...`);
+        const results = await executeActions(actions, session.target_repo);
+
+        const succeeded = results.filter(r => r.ok).length;
+        const failed = results.filter(r => !r.ok).length;
+        console.log(`[Turn ${turnCount}] Actions: ${succeeded} succeeded, ${failed} failed.`);
+
+        // Store action results for review
+        await writeActionResults(session, turnCount, results);
       }
 
-      console.log(`[Turn ${turnCount}] Agent needs human input. Exiting (no UI).`);
-      break;
+      // Transition to review
+      console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
+      phase = 'review';
+      reviewTurnCount = 0;
+      const reviewer = session.impl_model === 'claude' ? 'codex' : 'claude';
+      nextAgent = reviewer;
+      await updateSession(session.dir, {
+        current_turn: turnCount,
+        phase: 'review',
+        next_agent: reviewer,
+      });
+    } else if (phase === 'review') {
+      reviewTurnCount++;
+
+      if (canonicalData.status === 'done') {
+        console.log(`[Turn ${turnCount}] Reviewer approved. Session complete.`);
+        break;
+      }
+
+      // Reviewer requested fixes
+      if (reviewTurnCount >= session.review_turns) {
+        console.log(`[Turn ${turnCount}] Review turn limit (${session.review_turns}) reached. Ending session.`);
+        break;
+      }
+
+      // Switch back to implement for fixes
+      console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewTurnCount}/${session.review_turns})`);
+      phase = 'implement';
+      nextAgent = session.impl_model;
+      await updateSession(session.dir, {
+        current_turn: turnCount,
+        phase: 'implement',
+        next_agent: nextAgent,
+      });
     }
 
-    // Drain interjection queue (one item per turn boundary)
-    if (interjectionQueue.length > 0) {
+    // Drain interjection queue (one item per turn boundary, debate phase only)
+    if (phase === 'debate' && interjectionQueue.length > 0) {
       const content = interjectionQueue.shift();
       turnCount++;
       await writeHumanTurn(session, turnCount, content);
@@ -145,15 +249,14 @@ export async function run(session, { server } = {}) {
       });
       console.log(`[Turn ${turnCount}] Injected human interjection.`);
     }
-
-    nextAgent = oppositeAgent;
   }
 
   // Generate artifacts
   await generateDecisions(session);
-  await updateSession(session.dir, { session_status: 'completed' });
+  await updateSession(session.dir, { session_status: 'completed', phase });
   console.log('');
   console.log('Session completed.');
+  console.log(`  Phase:     ${phase}`);
   console.log(`  Turns:     ${join(session.dir, 'turns')}`);
   console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
 
@@ -199,6 +302,7 @@ export async function run(session, { server } = {}) {
 export function normalizeStatus(agentStatus, turnCount) {
   if (agentStatus === 'done' && turnCount < 2) return 'complete';
   if (agentStatus === 'done') return 'done';
+  if (agentStatus === 'decided') return 'decided';
   if (agentStatus === 'needs_human') return 'needs_human';
   return 'complete';
 }
@@ -267,6 +371,21 @@ async function writeHumanTurn(session, turnCount, content) {
     status: 'complete',
   };
   await writeCanonicalTurn(session, id, data, content);
+}
+
+async function writeActionResults(session, turnCount, results) {
+  const artifactsDir = join(session.dir, 'artifacts');
+  await mkdir(artifactsDir, { recursive: true });
+  const filename = `action-results-${String(turnCount).padStart(4, '0')}.json`;
+  const serializable = results.map(r => ({
+    type: r.action.type,
+    path: r.action.path || null,
+    cmd: r.action.cmd || null,
+    ok: r.ok,
+    error: r.error || null,
+    output: r.output ? r.output.slice(0, 2000) : null,
+  }));
+  await writeFile(join(artifactsDir, filename), JSON.stringify(serializable, null, 2) + '\n', 'utf8');
 }
 
 async function generateDecisions(session) {

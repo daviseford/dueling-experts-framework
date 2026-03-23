@@ -7,7 +7,7 @@ import { atomicWrite } from './util.js';
  * Create a new session directory and session.json.
  * Acquires a lockfile — errors if one already exists.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, targetRepo }) {
+export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }) {
   const defDir = join(targetRepo, '.def');
   const lockPath = join(defDir, 'lock');
 
@@ -34,6 +34,9 @@ export async function create({ topic, mode, maxTurns, firstAgent, targetRepo }) 
     session_status: 'active',
     current_turn: 0,
     next_agent: firstAgent,
+    phase: 'debate',
+    impl_model: implModel || 'claude',
+    review_turns: reviewTurns || 6,
     port: null,
   };
 

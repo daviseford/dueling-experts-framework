@@ -17,6 +17,11 @@ describe('normalizeStatus', () => {
     assert.equal(normalizeStatus('needs_human', 5), 'needs_human');
   });
 
+  it('passes through "decided"', () => {
+    assert.equal(normalizeStatus('decided', 1), 'decided');
+    assert.equal(normalizeStatus('decided', 5), 'decided');
+  });
+
   it('defaults unknown statuses to "complete"', () => {
     assert.equal(normalizeStatus('complete', 1), 'complete');
     assert.equal(normalizeStatus('garbage', 3), 'complete');

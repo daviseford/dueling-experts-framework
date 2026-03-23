@@ -229,6 +229,7 @@ async function handleGetTurns(res) {
   res.end(JSON.stringify({
     turns,
     session_status: sessionStatus,
+    phase: controllerRef.phase || 'debate',
     topic: sessionRef.topic,
     turn_count: turns.length,
     thinking: controllerRef.thinking || null,

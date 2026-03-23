@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 const opts = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
-  console.error('Usage: def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex]');
+  console.error('Usage: def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
   console.error('       def --resume <session-id>');
   process.exit(1);
 }
@@ -29,6 +29,16 @@ if (opts.mode && !VALID_MODES.includes(opts.mode)) {
 if (opts.first && !VALID_AGENTS.includes(opts.first)) {
   console.error(`Error: --first must be one of: ${VALID_AGENTS.join(', ')}`);
   process.exit(1);
+}
+if (opts.implModel && !VALID_AGENTS.includes(opts.implModel)) {
+  console.error(`Error: --impl-model must be one of: ${VALID_AGENTS.join(', ')}`);
+  process.exit(1);
+}
+if (opts.reviewTurns !== undefined) {
+  if (isNaN(opts.reviewTurns) || opts.reviewTurns < 1 || opts.reviewTurns > 50) {
+    console.error('Error: --review-turns must be a number between 1 and 50');
+    process.exit(1);
+  }
 }
 
 const targetRepo = resolve(process.cwd());
@@ -68,6 +78,8 @@ try {
     mode: opts.mode || 'planning',
     maxTurns: opts.maxTurns || 20,
     firstAgent: opts.first || 'claude',
+    implModel: opts.implModel || 'claude',
+    reviewTurns: opts.reviewTurns || 6,
     targetRepo,
   });
 } catch (err) {
@@ -80,6 +92,8 @@ console.log(`Topic: ${session.topic}`);
 console.log(`Mode: ${session.mode}`);
 console.log(`Max turns: ${session.max_turns}`);
 console.log(`First agent: ${session.next_agent}`);
+console.log(`Impl model: ${session.impl_model}`);
+console.log(`Review turns: ${session.review_turns}`);
 console.log(`Session dir: ${session.dir}`);
 console.log('');
 
@@ -127,6 +141,12 @@ function parseArgs(argv) {
         break;
       case '--resume':
         result.resume = argv[++i];
+        break;
+      case '--impl-model':
+        result.implModel = argv[++i];
+        break;
+      case '--review-turns':
+        result.reviewTurns = parseInt(argv[++i], 10);
         break;
     }
   }

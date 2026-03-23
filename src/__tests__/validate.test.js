@@ -43,6 +43,13 @@ describe('validate', () => {
     assert.ok(result.errors.some(e => e.includes('Invalid from')));
   });
 
+  it('accepts decided status', () => {
+    const raw = validTurn.replace('status: complete', 'status: decided');
+    const result = validate(raw);
+    assert.equal(result.valid, true);
+    assert.equal(result.data.status, 'decided');
+  });
+
   it('validates decisions as array of strings', () => {
     const withDecisions = validTurn.replace('status: complete', 'status: complete\ndecisions:\n  - Use polling\n  - Add tests');
     const result = validate(withDecisions);
