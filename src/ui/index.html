@@ -211,6 +211,11 @@
 
         // Skip DOM re-render if turn count unchanged
         if (data.turn_count === lastTurnCount && data.session_status !== 'completed') {
+          // Show waiting message while first turn is generating
+          if (data.turn_count === 0 && data.session_status === 'active' && !transcript.hasChildNodes()) {
+            transcript.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:14px;">'
+              + 'Waiting for first agent response... this can take up to 2 minutes.</div>';
+          }
           return;
         }
 
