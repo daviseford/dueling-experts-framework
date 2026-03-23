@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemble } from './context.js';
 
-const TIMEOUT_MS = 120_000; // 120 seconds
+const TIMEOUT_MS = 180_000; // 180 seconds — claude --print can take 90-120s for large prompts
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
 const AGENTS = {
@@ -61,9 +62,11 @@ export async function invoke(agentName, session) {
       shell: false, // Security invariant: NEVER shell: true
     });
 
-    // Write prompt to stdin and close it explicitly.
-    child.stdin.write(prompt);
-    child.stdin.end();
+    // Pipe prompt file to stdin. Using createReadStream + pipe ensures EOF
+    // is signaled properly when the file is fully read.
+    // stdin.write() + end() produced 0 bytes on Windows in testing.
+    const promptStream = createReadStream(promptPath);
+    promptStream.pipe(child.stdin);
 
     let stdout = '';
     let stderr = '';
