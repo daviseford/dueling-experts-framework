@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -77,7 +77,6 @@ export async function update(sessionDir, fields) {
 export async function atomicWriteJson(filePath, data) {
   const tmpPath = filePath + '.tmp';
   await writeFile(tmpPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
-  const { rename } = await import('node:fs/promises');
   await rename(tmpPath, filePath);
 }
 
@@ -87,11 +86,27 @@ export async function atomicWriteJson(filePath, data) {
 export async function releaseLock(targetRepo) {
   const lockPath = join(targetRepo, '.acb', 'lock');
   try {
-    const { unlink } = await import('node:fs/promises');
     await unlink(lockPath);
   } catch {
     // Already removed or doesn't exist — fine
   }
+}
+
+/**
+ * Install a SIGINT handler for clean shutdown.
+ */
+export function installShutdownHandler(sessionDir, targetRepo) {
+  let shuttingDown = false;
+  process.on('SIGINT', async () => {
+    if (shuttingDown) process.exit(1); // Double Ctrl+C — hard exit
+    shuttingDown = true;
+    console.log('\nShutting down gracefully...');
+    try {
+      await update(sessionDir, { session_status: 'completed' });
+      await releaseLock(targetRepo);
+    } catch { /* best effort */ }
+    process.exit(0);
+  });
 }
 
 async function ensureGitignore(targetRepo) {

@@ -1,7 +1,7 @@
-import { readdir, readFile, access, unlink, rm } from 'node:fs/promises';
+import { readdir, readFile, writeFile, access, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run } from './orchestrator.js';
-import { load, releaseLock, update as updateSession } from './session.js';
+import { load, releaseLock, installShutdownHandler } from './session.js';
 
 /**
  * Check for recoverable sessions on startup.
@@ -36,7 +36,6 @@ export async function checkForRecovery(targetRepo) {
       const raw = await readFile(sessionPath, 'utf8');
       const data = JSON.parse(raw);
 
-      // Only recover active or paused sessions (NOT completed)
       if (data.session_status === 'active' || data.session_status === 'paused') {
         recoverable.push({
           id: data.id,
@@ -79,7 +78,6 @@ export async function checkForRecovery(targetRepo) {
 export async function resumeSession(targetRepo, sessionId) {
   const sessionsDir = join(targetRepo, '.acb', 'sessions');
 
-  // Find session dir matching the ID
   let sessionDirs;
   try {
     sessionDirs = await readdir(sessionsDir);
@@ -115,39 +113,21 @@ export async function resumeSession(targetRepo, sessionId) {
 }
 
 async function doResume(targetRepo, sessionDir) {
-  const { writeFile } = await import('node:fs/promises');
-
   // Acquire lockfile
   const lockPath = join(targetRepo, '.acb', 'lock');
   await writeFile(lockPath, String(process.pid), 'utf8');
 
   // Discard incomplete runtime files
   const runtimeDir = join(sessionDir, 'runtime');
-  try {
-    await rm(join(runtimeDir, 'output.md'), { force: true });
-    await rm(join(runtimeDir, 'prompt.md'), { force: true });
-  } catch {
-    // No runtime files to clean
-  }
+  await rm(join(runtimeDir, 'output.md'), { force: true });
+  await rm(join(runtimeDir, 'prompt.md'), { force: true });
 
   // Load session and resume
   const session = await load(sessionDir);
-  session.target_repo = targetRepo; // Update in case repo moved
+  session.target_repo = targetRepo;
 
-  // Set up SIGINT handler
-  let shuttingDown = false;
-  process.on('SIGINT', async () => {
-    if (shuttingDown) process.exit(1);
-    shuttingDown = true;
-    console.log('\nShutting down gracefully...');
-    try {
-      await updateSession(sessionDir, { session_status: 'completed' });
-      await releaseLock(targetRepo);
-    } catch { /* best effort */ }
-    process.exit(0);
-  });
+  installShutdownHandler(sessionDir, targetRepo);
 
-  // Start server if available
   let server = null;
   try {
     server = await import('./server.js');

@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { create, releaseLock } from './session.js';
+import { create, releaseLock, installShutdownHandler } from './session.js';
 import { run } from './orchestrator.js';
 
 // Parse CLI args
@@ -14,14 +14,14 @@ if (!opts.topic && !opts.resume) {
 
 const targetRepo = resolve(process.cwd());
 
-// Handle --resume (Phase 3)
+// Handle --resume
 if (opts.resume) {
-  const { checkForRecovery, resumeSession } = await import('./recovery.js');
+  const { resumeSession } = await import('./recovery.js');
   await resumeSession(targetRepo, opts.resume);
   process.exit(0);
 }
 
-// Check for recoverable sessions (Phase 3)
+// Check for recoverable sessions
 try {
   const { checkForRecovery } = await import('./recovery.js');
   const recovered = await checkForRecovery(targetRepo);
@@ -29,7 +29,7 @@ try {
     process.exit(0);
   }
 } catch {
-  // recovery.js not yet available in Phase 1 — continue
+  // recovery module not loaded — continue
 }
 
 // Create new session
@@ -55,31 +55,14 @@ console.log(`First agent: ${session.next_agent}`);
 console.log(`Session dir: ${session.dir}`);
 console.log('');
 
-// SIGINT handler for clean shutdown
-let shuttingDown = false;
-process.on('SIGINT', async () => {
-  if (shuttingDown) {
-    process.exit(1); // Double Ctrl+C — hard exit
-  }
-  shuttingDown = true;
-  console.log('\nShutting down gracefully...');
-  try {
-    const { update } = await import('./session.js');
-    await update(session.dir, { session_status: 'completed' });
-    await releaseLock(targetRepo);
-  } catch {
-    // Best effort
-  }
-  process.exit(0);
-});
+installShutdownHandler(session.dir, targetRepo);
 
-// Start server (Phase 2)
+// Start server
 let server = null;
 try {
-  const serverModule = await import('./server.js');
-  server = serverModule;
+  server = await import('./server.js');
 } catch {
-  // server.js not available in Phase 1 — headless mode
+  // Headless mode
 }
 
 // Run the turn loop

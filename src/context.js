@@ -1,32 +1,25 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const ROLE_PROMPTS = {
-  planning: {
-    claude: (topic) => `You are Claude, participating in a structured planning conversation with another AI agent (Codex).
+const AGENT_NAMES = { claude: 'Claude', codex: 'Codex' };
+const OTHER_AGENT = { claude: 'Codex', codex: 'Claude' };
+
+function planningPrompt(agent, topic) {
+  return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${OTHER_AGENT[agent]}).
 You are collaborating on: ${topic}
 
 ## Rules
-- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "claude"), timestamp (ISO-8601), status (complete | needs_human | done).
+- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status (complete | needs_human | done).
 - Optional frontmatter: decisions (array of strings — key decisions made in this turn).
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
 - Challenge the other agent's assumptions. Don't just agree — push for better solutions.
 - If you need human input to proceed, set status: needs_human and explain what you need in the body.
 - If the plan is complete and ready for implementation, set status: done.
-- Do NOT include anything before the opening --- of the frontmatter.`,
+- Do NOT include anything before the opening --- of the frontmatter.`;
+}
 
-    codex: (topic) => `You are Codex, participating in a structured planning conversation with another AI agent (Claude).
-You are collaborating on: ${topic}
-
-## Rules
-- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "codex"), timestamp (ISO-8601), status (complete | needs_human | done).
-- Optional frontmatter: decisions (array of strings — key decisions made in this turn).
-- Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
-- Challenge the other agent's assumptions. Don't just agree — push for better solutions.
-- If you need human input to proceed, set status: needs_human and explain what you need in the body.
-- If the plan is complete and ready for implementation, set status: done.
-- Do NOT include anything before the opening --- of the frontmatter.`,
-  },
+const MODE_PROMPTS = {
+  planning: planningPrompt,
 };
 
 /**
@@ -35,14 +28,12 @@ You are collaborating on: ${topic}
 export async function assemble(session) {
   const { topic, mode, next_agent, dir } = session;
 
-  // Role prompt
-  const modePrompts = ROLE_PROMPTS[mode];
-  if (!modePrompts) {
+  const promptFn = MODE_PROMPTS[mode];
+  if (!promptFn) {
     throw new Error(`Unknown mode: "${mode}". Supported: planning`);
   }
-  const rolePrompt = modePrompts[next_agent];
-  if (!rolePrompt) {
-    throw new Error(`No role prompt for agent "${next_agent}" in mode "${mode}"`);
+  if (!AGENT_NAMES[next_agent]) {
+    throw new Error(`Unknown agent: "${next_agent}". Supported: claude, codex`);
   }
 
   // Read all existing turns
@@ -65,7 +56,7 @@ export async function assemble(session) {
 
   // Assemble
   const parts = [
-    rolePrompt(topic),
+    promptFn(next_agent, topic),
     '',
     '## Session Brief',
     `**Topic:** ${topic}`,

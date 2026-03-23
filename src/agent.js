@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { writeFile, readFile, open } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assemble } from './context.js';
 
 const TIMEOUT_MS = 120_000; // 120 seconds
 
@@ -38,7 +39,6 @@ export async function invoke(agentName, session) {
   const outputPath = join(runtimeDir, 'output.md');
 
   // Write assembled prompt
-  const { assemble } = await import('./context.js');
   const prompt = await assemble(session);
   await writeFile(promptPath, prompt, 'utf8');
 
@@ -47,11 +47,11 @@ export async function invoke(agentName, session) {
     ? config.args(outputPath)
     : config.args;
 
-  return new Promise(async (resolve) => {
-    // Open prompt file as readable fd for stdin
-    const fd = await open(promptPath, 'r');
-    const stdinStream = fd.createReadStream();
+  // Open prompt file as readable fd for stdin
+  const fd = await open(promptPath, 'r');
+  const stdinStream = fd.createReadStream();
 
+  return new Promise((resolve) => {
     const child = spawn(config.cmd, args, {
       cwd: session.target_repo,
       stdio: [stdinStream, 'pipe', 'ignore'], // stderr ignored (Codex thinking tokens)
@@ -68,7 +68,6 @@ export async function invoke(agentName, session) {
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
-      // Force kill after 5s if SIGTERM doesn't work
       setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* already dead */ }
       }, 5000);
@@ -82,7 +81,6 @@ export async function invoke(agentName, session) {
       if (config.captureStdout) {
         output = stdout;
       } else {
-        // Read from -o output file
         try {
           output = await readFile(outputPath, 'utf8');
         } catch {

@@ -1,8 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile, readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 import { validate } from './validation.js';
 import { update as updateSession } from './session.js';
 

@@ -12,17 +12,7 @@ export function validate(raw, expectedFrom) {
 
   let parsed;
   try {
-    parsed = matter(raw, {
-      engines: {
-        yaml: {
-          parse: (str) => {
-            const yaml = matter.engines.yaml;
-            // Use default safe schema via gray-matter's built-in yaml engine
-            return yaml.parse(str);
-          },
-        },
-      },
-    });
+    parsed = matter(raw);
   } catch (err) {
     return {
       valid: false,
@@ -49,14 +39,6 @@ export function validate(raw, expectedFrom) {
   // Validate from field
   if (data.from && !VALID_FROM.test(data.from)) {
     errors.push(`Invalid from: "${data.from}". Must be: claude, codex, human, or system`);
-  }
-
-  // Validate from matches expected agent (if provided)
-  if (expectedFrom && data.from && data.from !== expectedFrom) {
-    // Log but don't fail — orchestrator will override
-    errors.push(`Agent claimed from="${data.from}" but expected "${expectedFrom}" (will override)`);
-    // Downgrade to warning — don't block validation for this
-    errors.pop();
   }
 
   // Validate decisions is an array if present

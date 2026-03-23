@@ -1,30 +1,29 @@
-import { writeFile, readFile, readdir, rename } from 'node:fs/promises';
+import { writeFile, readFile, readdir, rename, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import matter from 'gray-matter';
 import { validate } from './validation.js';
 import { invoke } from './agent.js';
-import { update as updateSession, atomicWriteJson } from './session.js';
+import { update as updateSession } from './session.js';
 
 /**
- * Run the orchestrator turn loop (Phase 1: headless).
- * Phase 2 adds: server, interjection queue, pause/resume, endRequested.
+ * Run the orchestrator turn loop.
+ * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
 export async function run(session, { server } = {}) {
   let turnCount = session.current_turn;
   let nextAgent = session.next_agent;
   let endRequested = false;
 
-  // Phase 2: interjection queue and pause state
+  // Interjection queue and pause state (active when server is present)
   const interjectionQueue = [];
   let isPaused = false;
   let humanResponseResolve = null;
 
-  // Expose control interface for server (Phase 2)
   const controller = {
     get isPaused() { return isPaused; },
     get endRequested() { return endRequested; },
     interject(content) {
       if (isPaused && humanResponseResolve) {
-        // Direct resume — bypass queue
         humanResponseResolve(content);
         humanResponseResolve = null;
       } else {
@@ -36,7 +35,6 @@ export async function run(session, { server } = {}) {
     },
   };
 
-  // Start server if provided
   if (server) {
     await server.start(session, controller);
   }
@@ -44,85 +42,29 @@ export async function run(session, { server } = {}) {
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
 
-    // Invoke agent
+    // Invoke agent with one retry on failure
     console.log(`[Turn ${turnCount}] Invoking ${nextAgent}...`);
-    let result = await invoke(nextAgent, { ...session, next_agent: nextAgent });
+    let result = await invokeWithRetry(nextAgent, session, turnCount);
 
-    // Handle timeout/error with one retry
-    if (result.timedOut || result.exitCode !== 0 || !result.output.trim()) {
-      const reason = result.timedOut
-        ? 'timeout (120s)'
-        : result.exitCode !== 0
-          ? `exit code ${result.exitCode}`
-          : 'empty output';
-      console.log(`[Turn ${turnCount}] ${nextAgent} failed: ${reason}. Retrying...`);
-
-      result = await invoke(nextAgent, { ...session, next_agent: nextAgent });
-
-      if (result.timedOut || result.exitCode !== 0 || !result.output.trim()) {
-        // Write error turn and exit (Phase 1) or pause (Phase 2)
-        const errorReason = result.timedOut ? 'timeout' : `exit code ${result.exitCode}`;
-        await writeErrorTurn(session, turnCount, nextAgent, errorReason, result.output);
-        await updateSession(session.dir, {
-          current_turn: turnCount,
-          session_status: server ? 'paused' : 'completed',
-        });
-
-        if (server) {
-          // Phase 2: pause for human
-          isPaused = true;
-          console.log(`[Turn ${turnCount}] Paused after error. Waiting for human...`);
-          const humanContent = await waitForHuman();
-          isPaused = false;
-          turnCount++;
-          await writeHumanTurn(session, turnCount, humanContent);
-          await updateSession(session.dir, {
-            current_turn: turnCount,
-            session_status: 'active',
-          });
-          // Same agent retries after human input
-          continue;
-        }
-
-        console.log(`[Turn ${turnCount}] Exiting after error.`);
-        break;
-      }
+    if (!result.ok) {
+      await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput);
+      const resumed = await pauseOrExit(turnCount, server);
+      if (resumed) continue;
+      break;
     }
 
-    // Validate output
+    // Validate with one retry on failure
     let validation = validate(result.output, nextAgent);
-
     if (!validation.valid) {
-      console.log(`[Turn ${turnCount}] Invalid output from ${nextAgent}: ${validation.errors.join(', ')}. Retrying...`);
-      result = await invoke(nextAgent, { ...session, next_agent: nextAgent });
-      validation = validate(result.output, nextAgent);
+      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Retrying...`);
+      result = await invokeOnce(nextAgent, session);
+      validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'] };
 
       if (!validation.valid) {
-        await writeErrorTurn(
-          session, turnCount, nextAgent,
-          `invalid frontmatter: ${validation.errors.join(', ')}`,
-          result.output
-        );
-        await updateSession(session.dir, {
-          current_turn: turnCount,
-          session_status: server ? 'paused' : 'completed',
-        });
-
-        if (server) {
-          isPaused = true;
-          console.log(`[Turn ${turnCount}] Paused after validation error. Waiting for human...`);
-          const humanContent = await waitForHuman();
-          isPaused = false;
-          turnCount++;
-          await writeHumanTurn(session, turnCount, humanContent);
-          await updateSession(session.dir, {
-            current_turn: turnCount,
-            session_status: 'active',
-          });
-          continue;
-        }
-
-        console.log(`[Turn ${turnCount}] Exiting after validation failure.`);
+        await writeErrorTurn(session, turnCount, nextAgent,
+          `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
+        const resumed = await pauseOrExit(turnCount, server);
+        if (resumed) continue;
         break;
       }
     }
@@ -136,15 +78,13 @@ export async function run(session, { server } = {}) {
       timestamp: new Date().toISOString(),
       status: validation.data.status,
     };
-    if (validation.data.decisions && Array.isArray(validation.data.decisions)) {
+    if (validation.data.decisions) {
       canonicalData.decisions = validation.data.decisions;
     }
 
-    // Write canonical turn (atomic: temp → rename)
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
     console.log(`[Turn ${turnCount}] Written: ${canonicalId} (status: ${canonicalData.status})`);
 
-    // Update session state
     const oppositeAgent = nextAgent === 'claude' ? 'codex' : 'claude';
     await updateSession(session.dir, {
       current_turn: turnCount,
@@ -159,7 +99,6 @@ export async function run(session, { server } = {}) {
 
     if (canonicalData.status === 'needs_human') {
       if (server) {
-        // Phase 2: pause and wait
         isPaused = true;
         await updateSession(session.dir, { session_status: 'paused' });
         console.log(`[Turn ${turnCount}] Agent needs human input. Paused.`);
@@ -176,7 +115,7 @@ export async function run(session, { server } = {}) {
         continue;
       }
 
-      console.log(`[Turn ${turnCount}] Agent needs human input. Exiting (no UI in Phase 1).`);
+      console.log(`[Turn ${turnCount}] Agent needs human input. Exiting (no UI).`);
       break;
     }
 
@@ -187,7 +126,7 @@ export async function run(session, { server } = {}) {
       await writeHumanTurn(session, turnCount, content);
       await updateSession(session.dir, {
         current_turn: turnCount,
-        next_agent: oppositeAgent, // Continue to next agent
+        next_agent: oppositeAgent,
       });
       console.log(`[Turn ${turnCount}] Injected human interjection.`);
     }
@@ -197,22 +136,69 @@ export async function run(session, { server } = {}) {
 
   // Generate artifacts
   await generateDecisions(session);
-
-  // Mark session completed
   await updateSession(session.dir, { session_status: 'completed' });
   console.log('Session completed.');
 
   if (server) {
-    // Keep server running briefly so UI can see final state
     setTimeout(() => server.stop(), 5000);
   }
+
+  // --- Helper closures ---
 
   function waitForHuman() {
     return new Promise((resolve) => {
       humanResponseResolve = resolve;
     });
   }
+
+  async function pauseOrExit(turn, srv) {
+    await updateSession(session.dir, {
+      current_turn: turn,
+      session_status: srv ? 'paused' : 'completed',
+    });
+
+    if (srv) {
+      isPaused = true;
+      console.log(`[Turn ${turn}] Paused after error. Waiting for human...`);
+      const humanContent = await waitForHuman();
+      isPaused = false;
+      turnCount++;
+      await writeHumanTurn(session, turnCount, humanContent);
+      await updateSession(session.dir, {
+        current_turn: turnCount,
+        session_status: 'active',
+      });
+      return true; // resumed
+    }
+
+    console.log(`[Turn ${turn}] Exiting after error.`);
+    return false;
+  }
 }
+
+// --- Agent invocation helpers ---
+
+async function invokeOnce(agentName, session) {
+  const result = await invoke(agentName, { ...session, next_agent: agentName });
+  const failed = result.timedOut || result.exitCode !== 0 || !result.output.trim();
+  const reason = result.timedOut
+    ? 'timeout (120s)'
+    : result.exitCode !== 0
+      ? `exit code ${result.exitCode}`
+      : 'empty output';
+  return { ok: !failed, output: result.output, rawOutput: result.output, reason };
+}
+
+async function invokeWithRetry(agentName, session, turnCount) {
+  let result = await invokeOnce(agentName, session);
+  if (!result.ok) {
+    console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
+    result = await invokeOnce(agentName, session);
+  }
+  return result;
+}
+
+// --- Turn file helpers ---
 
 async function writeCanonicalTurn(session, id, data, content) {
   const filename = `${id}.md`;
@@ -220,8 +206,8 @@ async function writeCanonicalTurn(session, id, data, content) {
   const tmpPath = join(turnsDir, `${filename}.tmp`);
   const finalPath = join(turnsDir, filename);
 
-  const frontmatter = buildFrontmatter(data);
-  await writeFile(tmpPath, `${frontmatter}\n${content}\n`, 'utf8');
+  const fileContent = matter.stringify(content, data);
+  await writeFile(tmpPath, fileContent, 'utf8');
   await rename(tmpPath, finalPath);
 }
 
@@ -251,22 +237,6 @@ async function writeHumanTurn(session, turnCount, content) {
   await writeCanonicalTurn(session, id, data, content);
 }
 
-function buildFrontmatter(data) {
-  const lines = ['---'];
-  for (const [key, value] of Object.entries(data)) {
-    if (key === 'decisions' && Array.isArray(value)) {
-      lines.push('decisions:');
-      for (const d of value) {
-        lines.push(`  - "${d}"`);
-      }
-    } else {
-      lines.push(`${key}: ${typeof value === 'string' ? `"${value}"` : value}`);
-    }
-  }
-  lines.push('---');
-  return lines.join('\n');
-}
-
 async function generateDecisions(session) {
   const turnsDir = join(session.dir, 'turns');
   let turnFiles = [];
@@ -282,14 +252,10 @@ async function generateDecisions(session) {
   const decisions = [];
   for (const file of turnFiles) {
     const raw = await readFile(join(turnsDir, file), 'utf8');
-    const validation = validate(raw);
-    if (validation.valid && Array.isArray(validation.data.decisions)) {
-      for (const d of validation.data.decisions) {
-        decisions.push({
-          turn: validation.data.turn,
-          from: validation.data.from,
-          decision: d,
-        });
+    const parsed = validate(raw);
+    if (parsed.valid && parsed.data.decisions) {
+      for (const d of parsed.data.decisions) {
+        decisions.push({ turn: parsed.data.turn, from: parsed.data.from, decision: d });
       }
     }
   }
@@ -306,6 +272,7 @@ async function generateDecisions(session) {
   lines.push('');
 
   const artifactsDir = join(session.dir, 'artifacts');
+  await mkdir(artifactsDir, { recursive: true });
   await writeFile(join(artifactsDir, 'decisions.md'), lines.join('\n'), 'utf8');
   console.log(`Decisions log written: ${decisions.length} decision(s).`);
 }
