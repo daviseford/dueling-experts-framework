@@ -83,6 +83,34 @@
     .turn[data-from="system"] .turn-header { background: #2a2a1f; color: #e3b341; }
     .turn[data-status="error"] { border-color: #da3633; }
     .turn[data-status="error"] .turn-header { background: #2d1214; color: #f85149; }
+    .thinking {
+      margin-bottom: 16px;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .thinking .turn-header {
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+    }
+    .thinking[data-from="claude"] .turn-header { background: #1f2a37; color: #79c0ff; }
+    .thinking[data-from="codex"] .turn-header { background: #1f2a20; color: #7ee787; }
+    .thinking .thinking-body {
+      padding: 16px 12px;
+      font-size: 14px;
+      color: #8b949e;
+    }
+    .thinking .dots {
+      display: inline-block;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
     #input-area {
       background: #161b22;
       border-top: 1px solid #30363d;
@@ -166,6 +194,57 @@
       return LABEL_MAP[from] || from.toUpperCase();
     }
 
+    function elapsedStr(since) {
+      if (!since) return '';
+      const secs = Math.round((Date.now() - new Date(since).getTime()) / 1000);
+      if (secs < 60) return secs + 's';
+      return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+    }
+
+    // Update the thinking indicator without a full re-render
+    function updateThinking(thinking) {
+      const existing = document.getElementById('thinking-indicator');
+      if (!thinking) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing) {
+        // Update elapsed time
+        const elapsed = existing.querySelector('.thinking-elapsed');
+        if (elapsed) elapsed.textContent = elapsedStr(thinking.since);
+      } else {
+        // First time — append it
+        appendThinkingIndicator(thinking);
+      }
+    }
+
+    function appendThinkingIndicator(thinking) {
+      const old = document.getElementById('thinking-indicator');
+      if (old) old.remove();
+      if (!thinking) return;
+
+      const el = document.createElement('div');
+      el.className = 'thinking';
+      el.id = 'thinking-indicator';
+      el.dataset.from = thinking.agent;
+
+      const header = document.createElement('div');
+      header.className = 'turn-header';
+      const label = document.createElement('span');
+      label.textContent = '[' + fromLabel(thinking.agent) + ']';
+      header.appendChild(label);
+      el.appendChild(header);
+
+      const body = document.createElement('div');
+      body.className = 'thinking-body';
+      body.innerHTML = '<span class="dots">Thinking</span> <span class="thinking-elapsed">'
+        + elapsedStr(thinking.since) + '</span>';
+      el.appendChild(body);
+
+      transcript.appendChild(el);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
     function schedulePoll() {
       if (pollingStopped) return;
       pollTimeoutId = setTimeout(poll, 3000);
@@ -209,13 +288,11 @@
           pauseBanner.classList.remove('visible');
         }
 
+        // Update thinking indicator on every poll
+        updateThinking(data.thinking);
+
         // Skip DOM re-render if turn count unchanged
         if (data.turn_count === lastTurnCount && data.session_status !== 'completed') {
-          // Show waiting message while first turn is generating
-          if (data.turn_count === 0 && data.session_status === 'active' && !transcript.hasChildNodes()) {
-            transcript.innerHTML = '<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:14px;">'
-              + 'Waiting for first agent response... this can take up to 2 minutes.</div>';
-          }
           return;
         }
 
@@ -250,6 +327,9 @@
           el.appendChild(body);
           transcript.appendChild(el);
         }
+
+        // Append thinking indicator if an agent is working
+        appendThinkingIndicator(data.thinking);
 
         // Only auto-scroll if user was already at bottom
         if (isAtBottom) {

@@ -158,6 +158,7 @@ async function handleGetTurns(res) {
     session_status: sessionStatus,
     topic: sessionRef.topic,
     turn_count: turns.length,
+    thinking: controllerRef.thinking || null,
   }));
 }
 

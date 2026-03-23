@@ -19,9 +19,13 @@ export async function run(session, { server } = {}) {
   let isPaused = false;
   let humanResponseResolve = null;
 
+  let thinkingAgent = null;
+  let thinkingSince = null;
+
   const controller = {
     get isPaused() { return isPaused; },
     get endRequested() { return endRequested; },
+    get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince } : null; },
     interject(content) {
       if (isPaused && humanResponseResolve) {
         humanResponseResolve(content);
@@ -44,7 +48,11 @@ export async function run(session, { server } = {}) {
 
     // Invoke agent with one retry on failure
     console.log(`[Turn ${turnCount}] Invoking ${nextAgent}...`);
+    thinkingAgent = nextAgent;
+    thinkingSince = new Date().toISOString();
     let result = await invokeWithRetry(nextAgent, session, turnCount);
+    thinkingAgent = null;
+    thinkingSince = null;
 
     if (!result.ok) {
       await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput);
