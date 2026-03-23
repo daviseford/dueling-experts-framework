@@ -99,7 +99,7 @@ target-repo/
 
 Both agents are invoked with cwd = target repo, so they can read and navigate the codebase. This changes the Codex invocation model:
 
-- **Claude:** `claude --print -p prompt.md` (or via stdin) runs from target repo cwd. **Known limitation:** Claude Code will load the target repo's `CLAUDE.md` if one exists. This is accepted for v1 because project-level instructions provide useful context (conventions, patterns). The session role prompt is explicit about output format (YAML frontmatter) and takes priority. If contamination proves problematic in practice, a future version can invoke Claude from an isolated cwd or investigate suppression flags.
+- **Claude:** `claude --print < prompt.md` (stdin redirection) runs from target repo cwd. **Known limitation:** Claude Code will load the target repo's `CLAUDE.md` if one exists. This is accepted for v1 because project-level instructions provide useful context (conventions, patterns). The session role prompt is explicit about output format (YAML frontmatter) and takes priority. If contamination proves problematic in practice, a future version can invoke Claude from an isolated cwd or investigate suppression flags.
 - **Codex:** `codex exec --full-auto --no-project-doc -o <output-path> < prompt.md` runs from target repo cwd. The full assembled prompt (role + context) is piped via stdin redirection, bypassing OS arg-length limits. `--no-project-doc` prevents loading the repo's existing `AGENTS.md`.
 
 > **Why `--no-project-doc`?** Without it, Codex would merge its own project-level `AGENTS.md` with our session role prompt, causing confusion. By suppressing automatic loading, we have full control over what instructions Codex receives per turn.
@@ -130,7 +130,7 @@ Both agents are invoked with cwd = target repo, so they can read and navigate th
 │                                                 │
 │  ┌──────────────────────────────────────────┐   │
 │  │  HTTP Server (127.0.0.1, dynamic port)   │   │
-│  │  GET /api/turns, POST /api/interject     │   │
+│  │  /api/turns, /api/interject, /api/end    │   │
 │  │  Serves static watcher UI                │   │
 │  └──────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────┘
@@ -259,12 +259,12 @@ Respond with YAML frontmatter followed by your markdown response. Required front
 |---|---|---|
 | `/` | GET | Serve `ui/index.html` |
 | `/api/turns` | GET | Return all turns as JSON `{ turns: [...], session_status, topic, turn_count }`. No pagination for v1. Session status is included here to avoid split-brain — there is no separate `/api/status` endpoint. |
-| `/api/interject` | POST | Accept `{ content }`. Max content: 10K chars. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
+| `/api/interject` | POST | Accept `{ content }`. Max content: 10K chars. Rejects consecutive identical content. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
 | `/api/end-session` | POST | Sets `endRequested` flag. Loop exits at next turn boundary. Returns `{ ok: true }`. |
 
 **Frontend (single HTML file):**
 - Uses recursive `setTimeout` (NOT `setInterval`) — 3s interval, one request in flight at a time
-- Derives session status from the latest turn's `status` field (no separate status poll)
+- Uses `session_status` from the `/api/turns` response (included to avoid a separate status endpoint)
 - Pauses polling when tab is hidden (`document.visibilitychange`), fires one immediate poll on return
 - Renders chat transcript with `[CLAUDE]`, `[CODEX]`, `[DAVIS]`, `[SYSTEM]` labels
 - Send button disabled on click, re-enabled on response (prevents double-submit)
@@ -361,7 +361,7 @@ created: 2026-03-23T14:00:00Z
 }
 ```
 `session_status` values: `active`, `paused`, `completed`.
-Recovery reads `state.json` to determine whether a session is resumable. `session.md` is never mutated after creation.
+Recovery reads `state.json` to determine whether a session is resumable. `session.md` is never mutated after creation. `first_agent` in `session.md` is used only at session creation to initialize `next_agent` in `state.json`.
 
 **`POST /api/interject` response format:**
 ```json
@@ -389,15 +389,17 @@ Claude Code loads the target repo's `CLAUDE.md` if one exists. Codex is isolated
 
 | Scenario | Action |
 |---|---|
-| Output file missing | Retry once → error turn → pause for human |
-| Invalid frontmatter | Retry once → error turn (raw content preserved) → pause |
-| Empty output | Treat as missing → retry once → error turn → pause |
-| CLI nonzero exit | Retry once → error turn with exit details → pause |
-| Turn timeout (120s) | Kill process → retry once → error turn → pause |
+| Output file missing | Retry once → error turn → pause for human (Phase 2+) or exit loop (Phase 1) |
+| Invalid frontmatter | Retry once → error turn (raw content preserved) → pause/exit |
+| Empty output | Treat as missing → retry once → error turn → pause/exit |
+| CLI nonzero exit | Retry once → error turn with exit details → pause/exit |
+| Turn timeout (120s) | Kill process → retry once → error turn → pause/exit |
 | Malformed interjection | HTTP 400, no turn persisted |
 | Orchestrator crash | On restart, check `session_status` in `state.json` — only resume sessions where `session_status: active` or `session_status: paused`. See Phase 3 for full recovery semantics. |
 
 Retry policy: 1 automatic retry per turn, immediate (no backoff). Error turns are canonical and visible in the UI.
+
+**Phase-specific error behavior:** In Phase 1 (headless), "pause" means exit the loop — there is no HTTP server to receive human input. Phase 2 adds the pause/resume mechanism via `humanResponsePromise` resolved by `POST /api/interject`. The Protocol Clarifications control flow pseudocode describes the full Phase 2+ behavior.
 
 **Session-level status updates:** The orchestrator updates `session_status` in `state.json` (atomic write) at each turn boundary:
 - Session start: `active`
@@ -610,7 +612,7 @@ src/
 <!-- Uses recursive setTimeout (NOT setInterval) for polling — 3s interval -->
 <!-- Only one request in flight at a time (fetchInFlight guard) -->
 <!-- Discard responses with lower turn count than last processed -->
-<!-- Derive paused/active status from latest turn's status field (no split-brain) -->
+<!-- Use session_status from /api/turns response for paused/active state -->
 <!-- Listen for document.visibilitychange — pause polling when tab hidden -->
 <!-- Renders: chat transcript with [CLAUDE], [CODEX], [DAVIS], [SYSTEM] labels -->
 <!-- Text input + send button — disable on click, re-enable on response -->
@@ -644,7 +646,7 @@ src/
 - [ ] `src/ui/index.html` — recursive setTimeout polling, fetchInFlight guard, visibilitychange handler
 - [ ] `src/ui/index.html` — chat transcript with agent labels, turn numbers, timestamps
 - [ ] `src/ui/index.html` — interjection input with disable-on-click + optimistic rendering
-- [ ] `src/ui/index.html` — escalation banner derived from latest turn status
+- [ ] `src/ui/index.html` — escalation banner using `session_status` from `/api/turns` response
 - [ ] `src/ui/index.html` — "End Session" button
 - [ ] Manual test: run session, open the URL printed by the CLI, watch turns appear
 - [ ] Manual test: type interjection while agent is running, verify it queues and appears at turn boundary
@@ -832,7 +834,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 
 - **CLI invocations dominate all costs** by 2 orders of magnitude (10-120s per turn vs. <15ms for all file I/O). Only optimizations that reduce CLI calls matter.
 - **If summaries are kept:** Run summary generation concurrently with the next turn, not sequentially. The summary doesn't need to be ready until the *next* agent's prompt is assembled. This eliminates 100-300s of blocking time per 20-turn session.
-- **In-memory turn cache:** Maintain a `Map<turnId, parsedTurn>` in the HTTP server, populated when turns are written. `GET /api/turns` becomes an array slice — zero file I/O on poll. ~15 lines of code.
+- **In-memory turn cache (deferred optimization):** Maintain a `Map<turnId, parsedTurn>` in the HTTP server, populated when turns are written. `GET /api/turns` becomes an array slice — zero file I/O on poll. ~15 lines of code. Not needed for v1 at 20 turns, but recommended if polling frequency increases or multiple tabs are opened.
 - **Apply atomic writes (temp + rename) to `session.md`** in addition to turn files.
 
 ### Frontend Reliability (Required for Phase 2)
