@@ -15,7 +15,8 @@ You are collaborating on: ${topic}
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
 - Challenge the other agent's assumptions. Don't just agree — push for better solutions.
 - If you need human input to proceed, set status: needs_human and explain what you need in the body.
-- If the plan is complete and ready for implementation, set status: done.
+- If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn — the other agent must have a chance to respond.
+- Always use status: complete unless the conversation is truly finished after multiple turns.
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 

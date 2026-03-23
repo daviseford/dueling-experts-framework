@@ -91,10 +91,15 @@ export async function run(session, { server } = {}) {
       next_agent: oppositeAgent,
     });
 
-    // Check status
+    // Check status — require at least 2 turns before allowing done
     if (canonicalData.status === 'done') {
-      console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
-      break;
+      if (turnCount < 2) {
+        console.log(`[Turn ${turnCount}] Agent signaled done too early — downgrading to complete.`);
+        canonicalData.status = 'complete';
+      } else {
+        console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
+        break;
+      }
     }
 
     if (canonicalData.status === 'needs_human') {
