@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-await import(resolve(__dirname, '..', 'src', 'index.js'));
+await import(pathToFileURL(resolve(__dirname, '..', 'src', 'index.js')).href);
