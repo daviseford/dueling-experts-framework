@@ -98,8 +98,11 @@ try {
   await run(session, { server });
 } catch (err) {
   console.error(`Orchestrator error: ${err.message}`);
+  process.exitCode = 1;
 } finally {
   await releaseLock(targetRepo);
+  if (server) server.stop();
+  process.exit(process.exitCode || 0);
 }
 
 function parseArgs(argv) {
