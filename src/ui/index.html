@@ -265,9 +265,8 @@
         }
       } finally {
         fetchInFlight = false;
+        schedulePoll();
       }
-
-      schedulePoll();
     }
 
     // Send interjection — guarded against double-send
