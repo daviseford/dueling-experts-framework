@@ -6,7 +6,10 @@
     "acb": "./bin/acb"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "dev:ui": "cd src/ui && npm run dev",
+    "build:ui": "cd src/ui && npm run build",
+    "prepare": "cd src/ui && npm install && npm run build"
   },
   "dependencies": {
     "gray-matter": "^4.0.3"

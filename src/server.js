@@ -1,12 +1,33 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { join, dirname, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_CONTENT_LENGTH = 10_000;
+const UI_DIST = resolve(__dirname, 'ui', 'dist');
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.wasm': 'application/wasm',
+  '.map': 'application/json',
+};
 let httpServer = null;
 let sessionRef = null;
 let controllerRef = null;
@@ -101,14 +122,16 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   try {
-    if (url.pathname === '/' && req.method === 'GET') {
-      await serveUI(res);
-    } else if (url.pathname === '/api/turns' && req.method === 'GET') {
+    // API routes first
+    if (url.pathname === '/api/turns' && req.method === 'GET') {
       await handleGetTurns(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
       await handleEndSession(req, res);
+    } else if (req.method === 'GET') {
+      // Static file serving from Vite build output
+      await serveStatic(req, res, url);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -120,15 +143,56 @@ async function handleRequest(req, res) {
   }
 }
 
-async function serveUI(res) {
-  const htmlPath = join(__dirname, 'ui', 'index.html');
-  const html = await readFile(htmlPath, 'utf8');
+async function serveStatic(req, res, url) {
+  let pathname = decodeURIComponent(url.pathname);
+  if (pathname === '/') pathname = '/index.html';
+
+  const filePath = normalize(resolve(join(UI_DIST, pathname)));
+
+  // Directory traversal protection
+  if (!filePath.startsWith(UI_DIST)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return;
+  }
+
+  // Try to serve the exact file, fall back to index.html (SPA)
+  let targetPath = filePath;
+  let exists = false;
+  try {
+    const s = await stat(targetPath);
+    exists = s.isFile();
+  } catch {
+    // File not found — SPA fallback
+  }
+
+  if (!exists) {
+    targetPath = join(UI_DIST, 'index.html');
+    try {
+      await stat(targetPath);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+      return;
+    }
+  }
+
+  const ext = extname(targetPath);
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  const isHashed = pathname.startsWith('/assets/');
+  const cacheControl = isHashed
+    ? 'public, max-age=31536000, immutable'
+    : 'no-cache';
+
+  const data = await readFile(targetPath);
   res.writeHead(200, {
-    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Type': contentType,
+    'Content-Length': data.byteLength,
+    'Cache-Control': cacheControl,
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
   });
-  res.end(html);
+  res.end(data);
 }
 
 async function handleGetTurns(res) {
