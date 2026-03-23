@@ -46,6 +46,8 @@ export function usePolling(): PollingState {
   const sessionStartRef = useRef<number>(Date.now())
   const lastTurnCountRef = useRef(0)
   const pollingStoppedRef = useRef(false)
+  const hadSuccessRef = useRef(false)
+  const consecutiveFailsRef = useRef(0)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const thinkingRef = useRef<ThinkingState | null>(null)
@@ -56,6 +58,8 @@ export function usePolling(): PollingState {
 
     try {
       const data = await fetchTurns()
+      hadSuccessRef.current = true
+      consecutiveFailsRef.current = 0
 
       // Discard stale responses
       if (data.turn_count < lastTurnCountRef.current) {
@@ -99,6 +103,20 @@ export function usePolling(): PollingState {
       }
     } catch (err) {
       if (!pollingStoppedRef.current) {
+        consecutiveFailsRef.current++
+
+        // If we previously connected and now can't reach the server,
+        // it has shut down — the session ended.
+        if (hadSuccessRef.current && consecutiveFailsRef.current >= 2) {
+          setSessionStatus("completed")
+          setStatusText("Session ended")
+          setThinking(null)
+          thinkingRef.current = null
+          setThinkingElapsed("")
+          pollingStoppedRef.current = true
+          return
+        }
+
         setStatusText(`Connection error: ${err instanceof Error ? err.message : "Unknown"}`)
       }
     } finally {
