@@ -1,0 +1,14 @@
+{
+  "name": "agent-collab",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "acb": "./bin/acb"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
+  }
+}
