@@ -30,7 +30,7 @@ Session created: 2026-03-23-a1b2c3d4
 Mode: planning
 First agent: claude
 Max turns: 20
-Watcher UI: http://localhost:3334
+Watcher UI: http://localhost:49152
 
 Starting session...
 ```
@@ -42,27 +42,27 @@ kinetic-xyz/
 └── .acb/
     └── sessions/
         └── 2026-03-23-a1b2c3d4/
-            ├── session.md
+            ├── session.json
             ├── turns/          (empty)
             ├── artifacts/      (empty)
             └── runtime/
-                ├── claude/
-                └── codex/
 ```
 
-**`session.md` contents:**
+**`session.json` contents:**
 
-```yaml
----
-id: 2026-03-23-a1b2c3d4
-topic: "Plan Phantom wallet deep-link support on mobile"
-mode: planning
-max_turns: 20
-first_agent: claude
-target_repo: /home/davis/Projects/kinetic-xyz
-created: 2026-03-23T14:00:00Z
-session_status: active
----
+```json
+{
+  "id": "2026-03-23-a1b2c3d4",
+  "topic": "Plan Phantom wallet deep-link support on mobile",
+  "mode": "planning",
+  "max_turns": 20,
+  "target_repo": "/home/davis/Projects/kinetic-xyz",
+  "created": "2026-03-23T14:00:00Z",
+  "session_status": "active",
+  "current_turn": 0,
+  "next_agent": "claude",
+  "port": 49152
+}
 ```
 
 **`.gitignore` updated** (if `.acb/` not already present):
@@ -76,7 +76,7 @@ session_status: active
 
 **Orchestrator writes prompt file:**
 
-`.acb/sessions/.../runtime/claude/prompt.md`:
+`.acb/sessions/.../runtime/prompt.md`:
 
 ```markdown
 You are Claude, one of two AI agents in a structured planning session. The other
@@ -129,16 +129,16 @@ This is turn 1 — you are opening the conversation. Introduce the problem,
 propose an initial architecture, and identify the key decisions that need to be made.
 
 Respond with YAML frontmatter followed by your markdown response.
-Required frontmatter fields: id, turn, from, timestamp, status, decisions.
+Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array).
 ```
 
 **Orchestrator invokes:**
 
 ```bash
-claude --print < .acb/sessions/.../runtime/claude/prompt.md
+claude --print < .acb/sessions/.../runtime/prompt.md
 ```
 
-**Claude's raw output** (captured from stdout, written to `runtime/claude/output.md`):
+**Claude's raw output** (captured from stdout, written to `runtime/output.md`):
 
 ```markdown
 ---
@@ -195,7 +195,7 @@ I'd like Codex to evaluate the feasibility of the universal link return flow and
 [Turn 1] Claude (complete) — 1 decision
 ```
 
-**Watcher UI** (if open at localhost:3334): New turn appears within 3 seconds.
+**Watcher UI** (if open at localhost:49152): New turn appears within 3 seconds.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -221,7 +221,7 @@ I'd like Codex to evaluate the feasibility of the universal link return flow and
 
 **Orchestrator writes prompt file:**
 
-`.acb/sessions/.../runtime/codex/prompt.md`:
+`.acb/sessions/.../runtime/prompt.md`:
 
 ```markdown
 You are Codex, one of two AI agents in a structured planning session. The other
@@ -295,13 +295,13 @@ Respond to Claude's proposal. Evaluate feasibility, flag risks, and propose
 specific technical approaches.
 
 Respond with YAML frontmatter followed by your markdown response.
-Required frontmatter fields: id, turn, from, timestamp, status, decisions.
+Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array).
 ```
 
 **Orchestrator invokes:**
 
 ```bash
-codex exec --full-auto --no-project-doc -o .acb/sessions/.../runtime/codex/output.md < .acb/sessions/.../runtime/codex/prompt.md
+codex exec --full-auto --no-project-doc --skip-git-repo-check -o .acb/sessions/.../runtime/output.md < .acb/sessions/.../runtime/prompt.md 2>/dev/null
 ```
 
 **Codex responds, orchestrator validates and persists** → `turns/turn-0002-codex.md`
@@ -325,14 +325,14 @@ The agents continue alternating. Each turn's prompt includes all prior turn file
 | 5    | Human  | complete    | Davis: "Client-side. We don't want to touch transaction payloads on the server." |
 | 6    | Codex  | complete    | Proposes client-side signing flow with @solana/web3.js                           |
 | 7    | Claude | complete    | Reviews error handling, suggests retry UX                                        |
-| 8    | Codex  | done        | Agrees plan is complete, lists implementation steps                              |
+| 8    | Codex  | done        | Agrees plan is complete, lists implementation steps. Session ends.               |
 
 #### 5. Turn 4 — Escalation Example (needs_human)
 
 Codex sets `status: needs_human` in its frontmatter. The orchestrator:
 
 1. Writes canonical turn file `turn-0004-codex.md`
-2. Updates `session_status` in `session.md` to `paused`
+2. Updates `session_status` in `session.json` to `paused`
 3. Pauses the turn loop (awaits a Promise)
 
 **CLI output:**
@@ -382,27 +382,20 @@ Davis types a response and clicks Send. The UI sends `POST /api/interject`. The 
 
 #### 6. Turn 8 — Session Completion
 
-Codex sets `status: done`. The orchestrator gives Claude one final turn:
+Codex sets `status: done`. The session ends immediately (no confirmation turn).
 
 **CLI output:**
 
 ```
 [Turn 8] Codex (done) — 3 decisions
-  Codex signals session complete. Giving Claude a final turn...
+  Session complete. Generating artifacts...
 ```
 
-Claude responds with `status: done` (confirms):
+#### 7. Artifact Generation (~1 second)
 
-```
-[Turn 9] Claude (done) — 1 decision
-  Both agents agree session is complete. Generating artifacts...
-```
+**Orchestrator generates** (pure file I/O, no CLI call):
 
-#### 7. Artifact Generation (~10 seconds)
-
-**Orchestrator generates:**
-
-**`.acb/sessions/.../artifacts/decisions.md`:**
+**`.acb/sessions/.../artifacts/decisions.md`** (best-effort — only if agents used the optional `decisions` field):
 
 ```markdown
 # Decisions
@@ -416,47 +409,20 @@ Claude responds with `status: done` (confirms):
 7. Implement as a React hook: usePhantomDeepLink() _(Turn 8, Codex)_
 ```
 
-**`.acb/sessions/.../artifacts/final-summary.md`:**
-Generated by invoking `claude --print` with the full transcript and a synthesis prompt.
-
-```markdown
-# Session Summary: Phantom Wallet Deep-Link Support
-
-## Approach
-
-Client-side deep-link integration using the Solana URI protocol...
-
-## Key Decisions
-
-[consolidated from decisions.md]
-
-## Implementation Steps
-
-1. Create usePhantomDeepLink() React hook
-2. Configure universal links (apple-app-site-association, assetlinks.json)
-3. Build transaction construction with @solana/web3.js
-4. Add fallback UX for missing Phantom
-5. Test on iOS and Android
-
-## Open Items
-
-- Test deep-link behavior on Android WebView
-- Verify Phantom's latest deep-link API version
-```
+No `final-summary.md` in v1 — Davis can summarize manually by pasting the transcript into Claude.
 
 **Session status updated:**
-`session_status: completed` in `session.md`
+`session_status: completed` in `session.json`
 
 **CLI output:**
 
 ```
 Session complete!
-  Turns: 9 (7 agent, 1 human, 1 system)
+  Turns: 8 (7 agent, 1 human)
   Decisions: 7
   Artifacts: .acb/sessions/2026-03-23-a1b2c3d4/artifacts/
 
-  decisions.md   — 7 decisions extracted
-  final-summary.md — session synthesis
+  decisions.md — 7 decisions extracted
 ```
 
 #### 8. Final Session Directory
@@ -475,15 +441,10 @@ Session complete!
 │   ├── turn-0008-codex.md   # status: done
 │   └── turn-0009-claude.md  # status: done (confirmation)
 ├── artifacts/
-│   ├── decisions.md
-│   └── final-summary.md
+│   └── decisions.md
 └── runtime/                 # safe to delete
-    ├── claude/
-    │   ├── prompt.md         # last prompt sent to Claude
-    │   └── output.md         # last raw output from Claude
-    └── codex/
-        ├── prompt.md         # last prompt sent to Codex
-        └── output.md         # last raw output from Codex
+    ├── prompt.md             # last prompt sent to an agent
+    └── output.md             # last raw output from an agent
 ```
 
 ---
@@ -633,7 +594,7 @@ The session is paused. You can:
 
 | Metric                | Typical Planning Session            |
 | --------------------- | ----------------------------------- |
-| Total turns           | 8-12 (6-10 agent + 1-2 human)       |
+| Total turns           | 6-10 (5-8 agent + 1-2 human)        |
 | Wall-clock time       | 5-15 minutes                        |
 | Per-turn time (agent) | 30-90 seconds                       |
 | Human escalations     | 0-2                                 |

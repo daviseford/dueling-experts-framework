@@ -23,9 +23,9 @@ origin: .claude/workflows/brainstorms/2026-03-23-agent-collab-requirements.md
 
 ### New Considerations Discovered
 - Orchestrator should own all turn numbering and filenames (agents don't control their own IDs)
-- Runtime state split into `state.json` (mutable) separate from `session.md` (immutable)
+- All session state in single `session.json` (config + runtime, atomic writes)
 - Concurrent sessions resolved: lockfile per repo + dynamic port assignment
-- Phase 1 context assembly has a 100K char size guard to prevent prompt overflow
+- At 20 max turns (~30KB), no context truncation needed. Add if max_turns grows beyond ~30.
 
 ## Overview
 
@@ -44,11 +44,11 @@ A Node.js orchestrator that:
 2. Alternately invokes Claude Code and Codex CLIs in non-interactive mode
 3. Validates each agent's output against a canonical YAML frontmatter schema
 4. Persists validated turns as immutable markdown files
-5. Assembles context (session brief + all prior turns, with a 100K char size guard) for each invocation
+5. Assembles context (session brief + all prior turns) for each invocation
 6. Serves a static HTML watcher UI via a tiny HTTP server with 3-second polling
 7. Accepts human interjections via HTTP POST, queuing them for the next turn boundary
 8. Handles escalation (`status: needs_human`), errors, timeouts, and retries
-9. Generates session artifacts (decisions log, final summary) at session end
+9. Generates a best-effort decisions log at session end
 
 ## Portability Model
 
@@ -81,7 +81,7 @@ target-repo/
 ├── .acb/                        # Created on first use
 │   └── sessions/
 │       └── 2026-03-23-abc123/
-│           ├── session.md
+│           ├── session.json
 │           ├── turns/
 │           ├── artifacts/
 │           └── runtime/
@@ -91,8 +91,8 @@ target-repo/
 
 ### Concurrency & Port Rules
 
-- **One session per repo at a time.** On startup, the orchestrator creates a lockfile at `.acb/lock`. If the lockfile already exists and the PID in it is still alive, `acb` exits with an error: `"Another session is already running in this repo (PID <N>). Use --force to override."`
-- **Dynamic port.** The HTTP server binds to `127.0.0.1:0` (OS-assigned port). The actual port is written to `state.json` and printed to the CLI: `Watcher UI: http://localhost:<port>`. No hardcoded port means no conflicts between sessions in different repos.
+- **One session per repo at a time.** On startup, the orchestrator creates a lockfile at `.acb/lock`. If the lockfile already exists, `acb` exits with an error: `"A session may already be running. Delete .acb/lock to proceed."`
+- **Dynamic port.** The HTTP server binds to `127.0.0.1:0` (OS-assigned port). The actual port is written to `session.json` and printed to the CLI: `Watcher UI: http://localhost:<port>`. No hardcoded port means no conflicts between sessions in different repos.
 - **Multiple repos can run simultaneously** — each has its own `.acb/lock` and its own dynamically assigned port.
 
 ### Agent Repo Access
@@ -130,7 +130,7 @@ Both agents are invoked with cwd = target repo, so they can read and navigate th
 │                                                 │
 │  ┌──────────────────────────────────────────┐   │
 │  │  HTTP Server (127.0.0.1, dynamic port)   │   │
-│  │  /api/turns, /api/interject, /api/end    │   │
+│  │  /api/turns, /api/interject, /end-session │   │
 │  │  Serves static watcher UI                │   │
 │  └──────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────┘
@@ -144,23 +144,17 @@ Sessions are created under `<target-repo>/.acb/sessions/`:
 
 ```
 .acb/sessions/<session-id>/
-├── session.md              # Topic, mode, config (immutable — written once at session start)
-├── state.json              # Runtime state: { session_status, current_turn, next_agent, port } (mutable)
+├── session.json            # All session state: config + runtime (atomic writes)
 ├── turns/
 │   ├── turn-0001-claude.md # Canonical turn files (immutable)
 │   ├── turn-0002-codex.md
 │   ├── turn-0003-human.md
 │   └── ...
 ├── artifacts/
-│   ├── decisions.md        # Extracted from all turns at session end
-│   └── final-summary.md   # Post-session synthesis
+│   └── decisions.md        # Best-effort extraction from turns at session end
 └── runtime/                # Ephemeral (safe to delete after session)
-    ├── claude/
-    │   ├── prompt.md       # Assembled prompt for Claude (rewritten each turn)
-    │   └── output.md       # Temp agent output before validation
-    └── codex/
-        ├── prompt.md       # Assembled prompt piped to Codex via stdin (rewritten each turn)
-        └── output.md       # Temp agent output before validation
+    ├── prompt.md           # Assembled prompt for current agent (rewritten each turn)
+    └── output.md           # Temp agent output before validation
 ```
 
 ### Canonical Turn Schema
@@ -174,12 +168,11 @@ turn: 4                      # Required. Sequential integer
 from: codex                  # Required. codex | claude | human | system
 timestamp: 2026-03-23T14:30Z # Required. ISO-8601
 status: complete              # Required. complete | needs_human | done | error
-decisions:                    # Required. Array of strings, [] when empty
+decisions:                    # Optional. Array of strings. Best-effort — agents may omit.
   - "Use polling over fs.watch"
-error_detail: null            # Optional. Only on status: error
 ---
 
-[Turn content in markdown]
+[Turn content in markdown. Error details go in the body for error turns.]
 ```
 
 ### Agent Invocation
@@ -187,11 +180,11 @@ error_detail: null            # Optional. Only on status: error
 **Claude Code:**
 ```bash
 # Write assembled prompt to a file, then pipe via stdin
-cat > .acb/sessions/<id>/runtime/claude/prompt.md << 'EOF'
+cat > .acb/sessions/<id>/runtime/prompt.md << 'EOF'
 [role prompt + session brief + all prior turns + response format instructions]
 EOF
 
-claude --print < .acb/sessions/<id>/runtime/claude/prompt.md
+claude --print < .acb/sessions/<id>/runtime/prompt.md
 ```
 - **One invocation pattern:** stdin redirection only. Symmetric with Codex. No `-m` or `-p` variants.
 - Avoids shell arg-length limits
@@ -202,7 +195,7 @@ claude --print < .acb/sessions/<id>/runtime/claude/prompt.md
 ```bash
 # 1. Write assembled context (role prompt + session brief + all prior turns)
 # to a prompt file in the session runtime dir
-cat > .acb/sessions/<id>/runtime/codex/prompt.md << 'EOF'
+cat > .acb/sessions/<id>/runtime/prompt.md << 'EOF'
 [role prompt + session brief + all prior turns + response format instructions]
 EOF
 
@@ -210,8 +203,10 @@ EOF
 codex exec \
   --full-auto \
   --no-project-doc \
-  -o .acb/sessions/<id>/runtime/codex/output.md \
-  < .acb/sessions/<id>/runtime/codex/prompt.md
+  --skip-git-repo-check \
+  -o .acb/sessions/<id>/runtime/output.md \
+  < .acb/sessions/<id>/runtime/prompt.md \
+  2>/dev/null
 
 # 3. Orchestrator reads output.md, validates, persists canonical turn
 ```
@@ -219,6 +214,10 @@ codex exec \
 > **Why stdin redirection (`< prompt.md`)?** Codex supports input redirection as the safest way to pass markdown prompts (see `docs/codex-cli-prompting.md`). This bypasses OS arg-length limits, avoids shell interpolation of special characters, and lets us send arbitrarily large context as the prompt itself.
 >
 > **Why `--no-project-doc`?** Prevents Codex from loading the repo's own `AGENTS.md`, which contains project-level instructions unrelated to the collaboration session. The session role prompt is part of the piped prompt file.
+>
+> **Why `--skip-git-repo-check`?** Codex requires a git repo by default. This flag avoids errors when the working directory or session paths aren't git-initialized.
+>
+> **Why `2>/dev/null`?** Codex emits thinking tokens to stderr during processing. Redirecting stderr suppresses these to keep output clean. For error detection, the orchestrator checks the exit code and the output file — stderr thinking tokens are not useful for error handling.
 >
 > **Why cwd = target repo?** So Codex can read and navigate the codebase being discussed.
 
@@ -228,25 +227,25 @@ codex exec \
 
 Each agent invocation receives:
 1. **Role prompt** — planning mode system prompt (Claude or Codex variant)
-2. **Session brief** — contents of `session.md` (topic, mode, constraints)
+2. **Session brief** — topic and mode from `session.json`
 3. **All prior turns** — all canonical turn files, full content, sorted by turn number
 
 At 20 max turns (~30KB), the full transcript fits in both agents' context windows. No summary compression is needed for v1. If `max_turns` is later raised beyond ~30, introduce running summary + bounded window.
 
-**Truncation rule:** If the assembled prompt exceeds 100K characters, drop whole turns from the oldest end (never split a turn body) until it fits. Insert a truncation notice at the start of the Prior Turns section: `"[Turns 1-N omitted for context length. See earlier turns in the session directory.]"` Log a warning to the CLI.
+At 20 max turns (~30KB), no truncation is needed. Add truncation logic when `max_turns` grows beyond ~30.
 
 The prompt is structured as:
 ```
 [Role prompt]
 
 ## Session Brief
-[session.md content]
+[session.json topic and mode]
 
 ## Prior Turns
 [all turn files, each with frontmatter + body]
 
 ## Your Turn
-Respond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status, decisions.
+Respond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array of strings).
 ```
 
 ### Watcher UI
@@ -259,17 +258,15 @@ Respond with YAML frontmatter followed by your markdown response. Required front
 |---|---|---|
 | `/` | GET | Serve `ui/index.html` |
 | `/api/turns` | GET | Return all turns as JSON `{ turns: [...], session_status, topic, turn_count }`. No pagination for v1. Session status is included here to avoid split-brain — there is no separate `/api/status` endpoint. |
-| `/api/interject` | POST | Accept `{ content }`. Max content: 10K chars. Rejects consecutive identical content. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
+| `/api/interject` | POST | Accept `{ content }`. Max content: 10K chars. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
 | `/api/end-session` | POST | Sets `endRequested` flag. Loop exits at next turn boundary. Returns `{ ok: true }`. |
 
 **Frontend (single HTML file):**
 - Uses recursive `setTimeout` (NOT `setInterval`) — 3s interval, one request in flight at a time
-- Uses `session_status` from the `/api/turns` response (included to avoid a separate status endpoint)
-- Pauses polling when tab is hidden (`document.visibilitychange`), fires one immediate poll on return
+- Uses `session_status` from the `/api/turns` response (no separate status endpoint)
 - Renders chat transcript with `[CLAUDE]`, `[CODEX]`, `[DAVIS]`, `[SYSTEM]` labels
 - Send button disabled on click, re-enabled on response (prevents double-submit)
-- Optimistic interjection rendering (greyed out until confirmed by next poll)
-- Yellow banner when latest turn has `status: needs_human`
+- Yellow banner when `session_status` is `paused`
 - "End Session" button in header
 - Preformatted text blocks (no markdown rendering in v1)
 
@@ -278,38 +275,34 @@ Respond with YAML frontmatter followed by your markdown response. Required front
 Resolutions for edge cases surfaced by SpecFlow analysis.
 
 **Session completion (`status: done`):**
-- When an agent sets `status: done`, the orchestrator gives the *other* agent one final turn to confirm or object.
-- If the other agent also sets `status: done`, the session ends and artifacts are generated.
-- If the other agent sets `status: complete` (objects/continues), the session resumes normally. The original `done` turn is historical — no retroactive change.
-- Post-completion reopening is **not supported in v1**. `DONE` is a terminal state. If Davis wants to continue the conversation, he starts a new session seeded from the previous session's artifacts or summary.
+- When any agent (or human) sets `status: done`, the session ends immediately. Artifacts are generated.
+- No confirmation turn from the other agent. If Davis wants to continue, he starts a new session.
+- Post-completion reopening is **not supported in v1**.
 
 **Orchestrator control flow (while loop + `isPaused` flag):**
 
-The orchestrator is a sequential `while` loop, not a state machine. There are only two meaningful states: running and paused. The `session_status` field in `state.json` (`active`/`paused`/`completed`) is the canonical representation.
+The orchestrator is a sequential `while` loop, not a state machine. There are only two meaningful states: running and paused. The `session_status` field in `session.json` (`active`/`paused`/`completed`) is the canonical representation.
 
 ```
 while (turnCount < maxTurns && !endRequested) {
   invoke agent (with 120s timeout)
   validate output (retry once if invalid)
   write canonical turn (atomic: temp → rename)
-  update state.json
+  update session.json
 
   if status == needs_human:
-    set isPaused, update state.json → 'paused'
+    set isPaused, update session.json → 'paused'
     await humanResponsePromise  ← resolved by POST /api/interject
-    write human turn, update state.json → 'active'
+    write human turn, update session.json → 'active'
     continue with same agent (R11)
 
-  if status == done:
-    invoke OTHER agent for final confirmation turn
-    if also done: break
-    else: continue loop
+  if status == done: break
 
   drain interjection queue (one item, then re-check)
 }
 
-generate artifacts (decisions.md + best-effort final-summary.md)
-update state.json → 'completed'
+generate artifacts (best-effort decisions.md extraction)
+update session.json → 'completed'
 remove lockfile
 ```
 
@@ -318,7 +311,7 @@ Key rules:
 - **Paused-state responses** bypass the array. `POST /api/interject` directly resolves the orchestrator's `humanResponsePromise`, persists the human turn, and the loop resumes. This avoids deadlock.
 - **`DONE` is terminal.** No reopening in v1. Start a new session to continue.
 
-**`decisions` field:** Required, always an array. `[]` when empty. This reconciles the conflict between the requirements doc (required) and Claude response doc (optional). Using required because it simplifies validation — no null-checking.
+**`decisions` field:** Optional. If present, must be an array of strings. Agents may include decisions in frontmatter or just mention them in the body text. `decisions.md` extraction is best-effort.
 
 **Human turn schema:**
 ```yaml
@@ -328,40 +321,28 @@ turn: 5
 from: human
 timestamp: 2026-03-23T15:00:00Z
 status: complete        # human turns are always 'complete' unless ending session
-decisions: []           # humans can include decisions if they want
 ---
 ```
-- Human turns can set `status: done` to end the session (triggers the same completion flow — other agent gets one final turn).
+- Human turns can set `status: done` to end the session immediately.
 - Human turns cannot set `status: needs_human` or `status: error`.
 - The orchestrator generates the frontmatter; the human only provides the content body.
 
-**`session.md` schema:**
-**`session.md` (immutable):**
-```yaml
----
-id: <session-uuid>
-topic: "Plan Phantom wallet deep-link support"
-mode: planning
-max_turns: 20
-first_agent: claude
-target_repo: /absolute/path/to/repo
-created: 2026-03-23T14:00:00Z
----
-
-[Optional additional context or instructions from the human]
-```
-
-**`state.json` (mutable — updated at each turn boundary via atomic write):**
+**`session.json`:**
 ```json
 {
+  "id": "<session-uuid>",
+  "topic": "Plan Phantom wallet deep-link support",
+  "mode": "planning",
+  "max_turns": 20,
+  "target_repo": "/absolute/path/to/repo",
+  "created": "2026-03-23T14:00:00Z",
   "session_status": "active",
   "current_turn": 4,
   "next_agent": "codex",
   "port": 49152
 }
 ```
-`session_status` values: `active`, `paused`, `completed`.
-Recovery reads `state.json` to determine whether a session is resumable. `session.md` is never mutated after creation. `first_agent` in `session.md` is used only at session creation to initialize `next_agent` in `state.json`.
+`session_status` values: `active`, `paused`, `completed`. Config fields (`topic`, `mode`, `max_turns`, `target_repo`, `created`) are set once at creation. Runtime fields (`session_status`, `current_turn`, `next_agent`, `port`) are updated at turn boundaries. One file, one schema, one read on startup.
 
 **`POST /api/interject` response format:**
 ```json
@@ -373,12 +354,12 @@ Recovery reads `state.json` to determine whether a session is resumable. `sessio
 // or content too long:
 { "error": "Content exceeds 10000 character limit" }
 ```
-No queue position, no queued/injected distinction. The UI uses optimistic rendering — the interjection appears immediately (greyed out) and is replaced by the canonical turn on the next poll.
+No queue position, no queued/injected distinction. The interjection appears in the transcript on the next poll (within 3 seconds).
 
-**Interjection queue:** A plain array on the orchestrator. No max size, no HTTP 429. If the user floods the queue, all items are processed one per turn boundary. The context size guard (100K) prevents prompt overflow regardless of queue size.
+**Interjection queue:** A plain array on the orchestrator. No max size, no HTTP 429. If the user floods the queue, all items are processed one per turn boundary. At 20 max turns the context fits easily; no overflow concern.
 
 **Graceful shutdown:**
-End-session sets a flag on the orchestrator. The loop checks the flag at each turn boundary and exits cleanly. Ctrl+C is trapped via SIGINT handler: the handler updates `state.json` to `completed`, removes the lockfile, and exits. If the trap fails (e.g., double Ctrl+C), the process dies hard and crash recovery (Phase 3) handles the orphaned session.
+End-session sets a flag on the orchestrator. The loop checks the flag at each turn boundary and exits cleanly. Ctrl+C is trapped via SIGINT handler: the handler updates `session.json` to `completed`, removes the lockfile, and exits. If the trap fails (e.g., double Ctrl+C), the process dies hard and crash recovery (Phase 3) handles the orphaned session.
 
 **Prompt governance asymmetry (known limitation):**
 Claude Code loads the target repo's `CLAUDE.md` if one exists. Codex is isolated via `--no-project-doc`. This means the two agents do not operate under identical prompt governance. The session role prompt is explicit about output format (YAML frontmatter) and takes priority over repo-level instructions. If a repo's `CLAUDE.md` contains instructions that conflict with the session role prompt (e.g., "never output YAML"), the orchestrator's validation will catch malformed output and retry. If contamination proves persistent, a future version can invoke Claude from an isolated cwd or investigate suppression flags.
@@ -395,19 +376,19 @@ Claude Code loads the target repo's `CLAUDE.md` if one exists. Codex is isolated
 | CLI nonzero exit | Retry once → error turn with exit details → pause/exit |
 | Turn timeout (120s) | Kill process → retry once → error turn → pause/exit |
 | Malformed interjection | HTTP 400, no turn persisted |
-| Orchestrator crash | On restart, check `session_status` in `state.json` — only resume sessions where `session_status: active` or `session_status: paused`. See Phase 3 for full recovery semantics. |
+| Orchestrator crash | On restart, check `session_status` in `session.json` — only resume sessions where `session_status: active` or `session_status: paused`. See Phase 3 for full recovery semantics. |
 
 Retry policy: 1 automatic retry per turn, immediate (no backoff). Error turns are canonical and visible in the UI.
 
 **Phase-specific error behavior:** In Phase 1 (headless), "pause" means exit the loop — there is no HTTP server to receive human input. Phase 2 adds the pause/resume mechanism via `humanResponsePromise` resolved by `POST /api/interject`. The Protocol Clarifications control flow pseudocode describes the full Phase 2+ behavior.
 
-**Session-level status updates:** The orchestrator updates `session_status` in `state.json` (atomic write) at each turn boundary:
+**Session-level status updates:** The orchestrator updates `session_status` in `session.json` (atomic write) at each turn boundary:
 - Session start: `active`
 - `needs_human` pause: `paused`
 - Human resumes: `active`
 - Session ends (artifacts generated): `completed`
 
-`session.md` is never mutated after creation. `state.json` is the mutable runtime state file.
+`session.json` is the single source of truth for session config and runtime state.
 
 ## Implementation Phases
 
@@ -424,13 +405,10 @@ bin/
 src/
 ├── index.js            # Main entry: arg parsing, session init, starts orchestrator
 ├── orchestrator.js     # Turn loop: invoke agent → validate → persist → check status → next
-├── session.js          # Create .acb/sessions/<id>/ dir structure, write session.md, add .acb/ to .gitignore
-├── agents/
-│   ├── claude.js       # Spawn claude --print, capture stdout, timeout enforcement
-│   └── codex.js        # Write prompt.md, spawn codex exec --no-project-doc via stdin, timeout enforcement
+├── session.js          # Create .acb/sessions/<id>/ dir structure, write session.json, add .acb/ to .gitignore
+├── agent.js            # Invoke any CLI agent (Claude or Codex) with config map, stdin pipe, timeout
 ├── validation.js       # Parse YAML frontmatter, validate required fields
-├── context.js          # Assemble prompt from session brief + all turns (with 100K size guard)
-└── artifacts.js        # Generate decisions.md and final-summary.md at session end
+└── context.js          # Assemble prompt from session brief + all turns
 ```
 
 `package.json`:
@@ -464,8 +442,8 @@ src/
 // Hardcoded defaults — no config file needed for v1
 // Call session.create() to initialize directory structure
 // Call orchestrator.run(session) to start the turn loop
-// On completion, call artifacts.generate(session)
-// Log session path and exit
+// On completion, log session path and exit
+// (decisions.md extraction is inline in the orchestrator exit path)
 ```
 
 **`src/orchestrator.js`** — Turn loop (Phase 1 scope):
@@ -473,107 +451,97 @@ src/
 // while (turnCount < maxTurns) {
 //   1. Determine next agent (alternating)
 //   2. Call context.assemble(session) to build prompt
-//   3. Call agents/<agent>.invoke(prompt, session) — includes timeout (120s default)
+//   3. Call agent.invoke(agentName, promptPath, session) — includes 120s timeout
 //   4. If timeout or error: retry once (same prompt), then write error turn + exit loop
 //   5. Call validation.validate(output) — if invalid: retry once, then error turn + exit loop
 //   6. Orchestrator assigns canonical turn number, id, filename (ignores agent values)
 //   7. Write canonical turn file to turns/ (atomic: write temp → rename)
-//   8. Update state.json (current_turn, next_agent) via atomic write
+//   8. Update session.json (current_turn, next_agent) via atomic write
 //   9. Check status:
-//      - 'done': give OTHER agent one final turn to confirm/object
-//        - If other also says 'done': break
-//        - If other says 'complete': continue loop
-//      - 'needs_human': log warning, exit loop (no HTTP server in Phase 1 to handle it)
+//      - 'done': break (session ends immediately)
+//      - 'needs_human': log warning, exit loop (no HTTP server in Phase 1)
 //      - 'complete': continue
 // }
+// Generate decisions.md (best-effort extraction from turn frontmatter)
+// Update session.json → 'completed', remove lockfile
+//
 // NOTE: Phase 2 adds: isPaused flag, humanResponsePromise, interjection queue
 //       draining, endRequested flag, and needs_human pause/resume via HTTP server.
 ```
 
-**`src/agents/claude.js`**:
+**`src/agent.js`** — Unified agent invocation:
 ```javascript
-// Write assembled prompt to runtime/claude/prompt.md
-// Open prompt.md as a readable stream
-// spawn('claude', ['--print'], { cwd: targetRepo, stdio: [promptStream, 'pipe', 'pipe'] })
-// NEVER use shell: true — security invariant
-// Timeout: setTimeout + process.kill() after 120s
-// Capture stdout as response, stderr for error reporting
-// Write stdout to runtime/claude/output.md
-// Return { exitCode, output, timedOut, stderr }
-```
-
-**`src/agents/codex.js`**:
-```javascript
-// Write assembled prompt to runtime/codex/prompt.md
-// spawn('codex', ['exec', '--full-auto', '--no-project-doc', '-o', outputPath], {
-//   cwd: targetRepo,
-//   stdin: promptFileStream   // pipe full context via stdin redirection
-// })
-// NEVER use shell: true — security invariant
-// Timeout: setTimeout + process.kill() after 120s (configurable)
-// Capture stderr for error reporting
-// Read output file
-// Return { exitCode, output, timedOut, stderr }
+// Agent config map:
+// const AGENTS = {
+//   claude: { cmd: 'claude', args: ['--print'], captureStdout: true },
+//   codex:  { cmd: 'codex',  args: ['exec', '--full-auto', '--no-project-doc',
+//             '--skip-git-repo-check', '-o', outputPath], captureStdout: false }
+// }
+//
+// invoke(agentName, promptPath, session):
+//   Write assembled prompt to runtime/prompt.md
+//   Open prompt.md as a readable stream for stdin
+//   const config = AGENTS[agentName]
+//   spawn(config.cmd, config.args, {
+//     cwd: targetRepo,
+//     stdio: [promptStream, 'pipe', 'ignore']  // stderr ignored (Codex thinking tokens)
+//   })
+//   NEVER use shell: true — security invariant
+//   Timeout: setTimeout + process.kill() after 120s
+//   If captureStdout: write stdout to runtime/output.md
+//   Else: read -o output file
+//   Return { exitCode, output, timedOut }
 ```
 
 **`src/validation.js`**:
 ```javascript
 // Parse frontmatter with gray-matter (explicit DEFAULT_SCHEMA)
-// Enforce max output size (500KB) before parsing
-// Check required fields: id, turn, from, timestamp, status, decisions
+// Check required fields: id, turn, from, timestamp, status
 // Validate status enum: complete | needs_human | done | error
 // Validate from matches expected agent (strict regex: /^(claude|codex|human|system)$/)
-// Validate decisions is array
+// If decisions present, validate it's an array (optional field)
 // Log but IGNORE agent-provided turn/id values (orchestrator is authority)
 // Return { valid, errors, data, content }
 ```
 
 **`src/context.js`**:
 ```javascript
-// Read session.md for topic and mode
+// Read session.json for topic and mode
 // Read all existing turn files from turns/ (sorted by turn number)
 // Concatenate: role prompt + session brief + all turns + response format instructions
-// Size guard: if total > 100K chars, truncate from oldest turns, log warning
 // Return assembled prompt string
+// At 20 max turns (~30KB), no truncation needed. Add if max_turns grows beyond ~30.
 ```
 
-**`src/artifacts.js`**:
+**Artifact generation** (inline in orchestrator exit path — no separate file needed):
 ```javascript
-// decisions.md (always succeeds — pure file I/O, no CLI call):
-//   Read all turn files, extract `decisions` arrays, write as ordered list
-//   with turn number and agent attribution
-//
-// final-summary.md (best-effort — CLI call may fail):
-//   Invoke Claude CLI with full transcript as prompt (120s timeout):
-//   "Synthesize this planning session into a structured summary..."
-//   If successful: write to artifacts/final-summary.md
-//   If timeout/error: write artifacts/final-summary-failed.md with error details
-//   and log warning: "Summary generation failed. Transcript is available in turns/."
-//   Artifact failure does NOT block session completion — decisions.md + turns are always available.
+// decisions.md (best-effort, pure file I/O, no CLI call):
+//   Read all turn files, look for `decisions` arrays in frontmatter
+//   If any found: write as ordered list with turn number and agent attribution
+//   If none found: skip (agents may not have used the optional field)
+//   No final-summary.md in v1 — Davis can summarize manually if needed.
 ```
 
 - [ ] `package.json` with `bin` field and `gray-matter` dependency
 - [ ] `bin/acb` — CLI entry point that resolves `src/index.js` from install location
-- [ ] `src/index.js` — parse CLI args with hardcoded defaults, acquire lockfile, init session, run loop, generate artifacts, release lockfile
-- [ ] `src/session.js` — acquire `.acb/lock` (error if PID alive), create `.acb/sessions/<id>/`, write `session.md` + `state.json`, add `.acb/` to `.gitignore`
-- [ ] `src/agents/claude.js` — write prompt file, pipe to `claude --print` via stdin, cwd = target repo, 120s timeout
-- [ ] `src/agents/codex.js` — write prompt file, pipe to `codex exec --full-auto --no-project-doc -o` via stdin, cwd = target repo, 120s timeout
-- [ ] `src/validation.js` — YAML frontmatter parsing (safe schema) + schema validation + 500KB size guard
-- [ ] `src/context.js` — context assembly (all turns + 100K size guard)
-- [ ] `src/orchestrator.js` — turn loop with retry logic (1 retry), error turn generation, `status: done` protocol
-- [ ] `src/artifacts.js` — extract decisions, generate final-summary via Claude CLI
+- [ ] `src/index.js` — parse CLI args with hardcoded defaults, acquire lockfile, init session, run loop, extract decisions, release lockfile
+- [ ] `src/session.js` — write `.acb/lock` (error if exists), create `.acb/sessions/<id>/`, write `session.json`, add `.acb/` to `.gitignore`
+- [ ] `src/agent.js` — unified agent invocation with config map (Claude: `--print`, Codex: `exec --full-auto --no-project-doc --skip-git-repo-check -o`), stdin pipe, 120s timeout, stderr ignored
+- [ ] `src/validation.js` — YAML frontmatter parsing (safe schema), required fields check, optional `decisions` validation
+- [ ] `src/context.js` — context assembly (all turns, no truncation at 20 turns)
+- [ ] `src/orchestrator.js` — turn loop with retry logic (1 retry), error turn generation, `done` = immediate exit
 - [ ] Manual test: `cd` into a test repo, run `acb --topic "Test conversation" --first claude`, verify `.acb/sessions/` appears with turn files
 
 **Acceptance criteria:**
 - [ ] Running `acb --topic "Plan a REST API" --first claude` from any repo creates `.acb/sessions/<id>/` with properly structured turn files
-- [ ] Turn files have valid YAML frontmatter with all required fields
+- [ ] Turn files have valid YAML frontmatter with required fields (decisions is optional)
 - [ ] Orchestrator assigns turn numbers/IDs/filenames (not agents)
 - [ ] Agents alternate turns correctly (claude → codex → claude → ...)
 - [ ] Both agents can read and reference files in the target repo
-- [ ] Session stops at configured max turn limit or when both agents say `done`
+- [ ] Session stops at max turn limit or when any agent says `done`
 - [ ] Agent hangs are killed after 120s timeout and retried once
 - [ ] Invalid agent output is detected, retried once, then produces a visible error turn
-- [ ] `decisions.md` and `final-summary.md` are generated at session end
+- [ ] `decisions.md` is generated (best-effort) at session end
 - [ ] `.acb/` is added to `.gitignore` if not already present
 
 ---
@@ -613,12 +581,12 @@ src/
 <!-- Only one request in flight at a time (fetchInFlight guard) -->
 <!-- Discard responses with lower turn count than last processed -->
 <!-- Use session_status from /api/turns response for paused/active state -->
-<!-- Listen for document.visibilitychange — pause polling when tab hidden -->
+<!-- No visibilitychange handler in v1 — zero-cost localhost polling -->
 <!-- Renders: chat transcript with [CLAUDE], [CODEX], [DAVIS], [SYSTEM] labels -->
 <!-- Text input + send button — disable on click, re-enable on response -->
-<!-- Yellow banner when latest turn has status: needs_human -->
+<!-- Yellow banner when session_status from /api/turns response is 'paused' -->
 <!-- "End Session" button in header -->
-<!-- Optimistic rendering: show interjection immediately (greyed out) until confirmed by next poll -->
+<!-- Interjection appears on next poll (3s). No optimistic rendering in v1. -->
 ```
 
 **Orchestrator changes:**
@@ -640,12 +608,11 @@ src/
 - [ ] `src/orchestrator.js` — add `isPaused` flag, `humanResponsePromise`, `needs_human` pause/resume (direct resume path, no deadlock)
 - [ ] `src/orchestrator.js` — add `endRequested` flag checked at turn boundary
 - [ ] `src/orchestrator.js` — add interjection queue draining at turn boundaries
-- [ ] `src/orchestrator.js` — update `state.json` `session_status` to `paused`/`active` at transitions
+- [ ] `src/orchestrator.js` — update `session.json` `session_status` to `paused`/`active` at transitions
 - [ ] `src/orchestrator.js` — deterministic turn resumption (R11 — same agent resumes after escalation)
-- [ ] `src/orchestrator.js` — end-session flag checked at turn boundary
-- [ ] `src/ui/index.html` — recursive setTimeout polling, fetchInFlight guard, visibilitychange handler
+- [ ] `src/ui/index.html` — recursive setTimeout polling, fetchInFlight guard
 - [ ] `src/ui/index.html` — chat transcript with agent labels, turn numbers, timestamps
-- [ ] `src/ui/index.html` — interjection input with disable-on-click + optimistic rendering
+- [ ] `src/ui/index.html` — interjection input with disable-on-click
 - [ ] `src/ui/index.html` — escalation banner using `session_status` from `/api/turns` response
 - [ ] `src/ui/index.html` — "End Session" button
 - [ ] Manual test: run session, open the URL printed by the CLI, watch turns appear
@@ -680,13 +647,13 @@ src/
 **`src/recovery.js`**:
 ```javascript
 // On startup (before creating a new session), check for recoverable sessions:
-// 1. Scan .acb/sessions/ for dirs where state.json has session_status: 'active' or 'paused'
+// 1. Scan .acb/sessions/ for dirs where session.json has session_status: 'active' or 'paused'
 //    (NOT 'completed' — that means the session finished normally)
 //    NOTE: Do NOT use per-turn status: 'complete' to judge session completion.
-// 2. Also check: is the lockfile's PID still alive? If yes, another process owns it — skip.
+// 2. Also check: does .acb/lock exist? If yes, another session may be running — skip.
 // 3. For each recoverable session:
 //    a. Find the last canonical turn in turns/ (by turn number)
-//    b. Read state.json for next_agent and current_turn
+//    b. Read session.json for next_agent and current_turn
 //    c. Discard any incomplete runtime/ output
 //
 // Recovery behavior (non-interactive):
@@ -697,9 +664,9 @@ src/
 // - If no recoverable sessions: proceed to create a new session normally
 ```
 
-- [ ] `src/recovery.js` — scan `.acb/sessions/` for `state.json` with `session_status: active|paused`, determine resume point
+- [ ] `src/recovery.js` — scan `.acb/sessions/` for `session.json` with `session_status: active|paused`, determine resume point
 - [ ] `src/index.js` — call recovery check on startup; auto-resume single session, list multiple, accept `--resume <id>`
-- [ ] SIGINT handler: trap Ctrl+C, update `state.json` to `completed`, remove lockfile, exit
+- [ ] SIGINT handler: trap Ctrl+C, update `session.json` to `completed`, remove lockfile, exit
 - [ ] Manual test: kill orchestrator mid-session, restart `acb`, verify auto-resume from last canonical turn
 - [ ] Manual test: verify completed sessions are not flagged for recovery
 - [ ] Manual test: create two interrupted sessions, verify `acb` prints list and exits
@@ -709,8 +676,8 @@ src/
 - [ ] Multiple interrupted sessions prints a list and requires `--resume <id>`
 - [ ] Recovery resumes from the correct turn (last canonical + 1)
 - [ ] Incomplete `runtime/` output from before a crash is discarded
-- [ ] Completed sessions (`session_status: completed` in `state.json`) are not flagged
-- [ ] Ctrl+C updates `state.json` and removes the lockfile
+- [ ] Completed sessions (`session_status: completed` in `session.json`) are not flagged
+- [ ] Ctrl+C updates `session.json` and removes the lockfile
 
 ---
 
@@ -747,11 +714,11 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 
 - [ ] (R1) Orchestrator alternates agent invocations and enforces turn limits
 - [ ] (R2) All turns have valid YAML frontmatter with required schema fields
-- [ ] (R3) Agent context includes all prior turns with a 100K char size guard
+- [ ] (R3) Agent context includes all prior turns (no truncation at 20-turn max)
 - [ ] (R4) Human interjections via UI are queued and injected at turn boundaries
 - [ ] (R5) `status: needs_human` pauses the loop until human responds
 - [ ] (R6) Watcher UI at dynamically assigned localhost port shows live transcript with 3-second polling
-- [ ] (R7) Session end generates `decisions.md` and `final-summary.md`
+- [ ] (R7) Session end generates best-effort `decisions.md`
 - [ ] (R8) Claude and Codex have distinct, prescriptive role prompts per mode
 - [ ] (R9) Both CLIs are invoked in non-interactive mode (no API billing)
 - [ ] (R10) Orchestrator validates and owns all canonical turn filenames
@@ -780,7 +747,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 |---|---|---|---|
 | Codex CLI `--full-auto` behavior changes | Medium | High | Pin CLI version; test with each update |
 | Agent output doesn't include valid frontmatter | High | Medium | Clear instructions in prompt; validation + retry |
-| OS arg-length limits for prompts | Medium | Medium | File-based prompt delivery via stdin for both agents; 100K size guard on context assembly |
+| OS arg-length limits for prompts | Medium | Medium | File-based prompt delivery via stdin for both agents. At 20 turns (~30KB), well within limits. |
 | Claude loads target repo's CLAUDE.md | Medium | Low | Accepted for v1 — project context is usually helpful. Role prompt overrides output format. Codex is isolated via `--no-project-doc`. Asymmetric prompt governance is a known limitation. Revisit if contamination causes formatting failures. |
 | Agent responses are repetitive/low quality | Medium | Medium | Prescriptive role prompts with explicit challenge targets |
 | `fs.rename` not atomic on Windows NTFS | Low | Medium | Use write-to-temp + rename pattern; verify behavior |
@@ -812,7 +779,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 | **CORS / Origin checking** | Validate `Origin` header on every request; reject non-localhost origins |
 | **Never `shell: true`** | `child_process.spawn` with argument arrays only. Security invariant. |
 | **Path traversal** | Validate `from` field with strict regex `/^(claude\|codex\|human\|system)$/`. Orchestrator owns all filenames. |
-| **YAML safety** | Configure `gray-matter` with `js-yaml` `DEFAULT_SCHEMA`. Max output size 500KB. |
+| **YAML safety** | Configure `gray-matter` with `js-yaml` `DEFAULT_SCHEMA`. |
 | **Interjection content limit** | 10K character max on `POST /api/interject` |
 
 **Nice-to-have (add if time permits):**
@@ -835,7 +802,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 - **CLI invocations dominate all costs** by 2 orders of magnitude (10-120s per turn vs. <15ms for all file I/O). Only optimizations that reduce CLI calls matter.
 - **If summaries are kept:** Run summary generation concurrently with the next turn, not sequentially. The summary doesn't need to be ready until the *next* agent's prompt is assembled. This eliminates 100-300s of blocking time per 20-turn session.
 - **In-memory turn cache (deferred optimization):** Maintain a `Map<turnId, parsedTurn>` in the HTTP server, populated when turns are written. `GET /api/turns` becomes an array slice — zero file I/O on poll. ~15 lines of code. Not needed for v1 at 20 turns, but recommended if polling frequency increases or multiple tabs are opened.
-- **Apply atomic writes (temp + rename) to `session.md`** in addition to turn files.
+- **Apply atomic writes (temp + rename) to `session.json`** in addition to turn files.
 
 ### Frontend Reliability (Required for Phase 2)
 
@@ -843,31 +810,43 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 |---|---|
 | **Out-of-order poll responses** | Use recursive `setTimeout` (not `setInterval`). Only one request in flight at a time. Discard responses with a lower turn count than the last processed. |
 | **Status/turns split-brain** | Session status is included in the `/api/turns` response (no separate status endpoint). UI derives paused/active state from the response. |
-| **Double-click sends duplicates** | Disable send button on click, re-enable on response. Server-side: reject consecutive identical interjections. |
-| **Background tab throttling** | Listen for `document.visibilitychange`. Pause polling when hidden, fire one immediate poll on return. Prevents `setInterval` burst on tab refocus. |
-| **Optimistic interjection rendering** | When POST succeeds, render the interjection immediately in the transcript (greyed out). Replace with the canonical turn when it appears in the next poll. |
+| **Double-click sends duplicates** | Disable send button on click, re-enable on response. |
+| **Background tab throttling** | Not needed for v1 — recursive `setTimeout` prevents burst-on-refocus. Zero-cost localhost polling. |
+| **Interjection feedback** | After POST succeeds, interjection appears on next poll (3 seconds). No optimistic rendering in v1. |
 
 ### Simplifications Applied
 
 | Item | Change |
 |---|---|
-| `src/summary.js` | Removed for v1. Send all turns as context (or last N with size guard). |
-| `src/interjection.js` | Replaced with a plain array on the orchestrator. No max size, no HTTP 429, no position feedback. |
+| `src/summary.js` | Removed. Send all turns as context. |
+| `src/interjection.js` | Replaced with a plain array on the orchestrator. |
 | `src/config.js` | Removed. Inline 4 CLI arg defaults in `index.js`. |
-| `attachments/` directory | Removed. Agents can reference repo files by path via cwd. |
-| `response_to` field | Removed from schema. Agents can reference prior turns in the body. |
-| `?after=<turn-id>` parameter | Deferred. Return all turns on every poll for v1 (20 turns is ~100KB). |
-| Graceful shutdown protocol | Simplified. End-session sets a flag; loop exits on next iteration. Ctrl+C kills the process; crash recovery handles the rest. |
-| Interjection response format | Simplified to `{ "ok": true }`. |
-| Phases | 5 → 3 (see Key Improvements #3) |
+| `src/artifacts.js` | Removed. Decisions extraction is inline in orchestrator exit path. |
+| `src/agents/claude.js` + `codex.js` | Merged into single `src/agent.js` with config map. |
+| `session.md` + `state.json` | Merged into single `session.json`. |
+| `final-summary.md` | Removed. Davis can summarize manually. |
+| `decisions` field | Made optional. Best-effort extraction. |
+| `error_detail` field | Removed. Error info goes in turn body. |
+| `response_to` field | Removed. |
+| `attachments/` directory | Removed. |
+| Done-confirmation protocol | Removed. `done` = immediate session end. |
+| 100K truncation logic | Removed. Can't trigger at 20 turns. |
+| 500KB output guard | Removed. |
+| Duplicate interjection rejection | Removed. |
+| Optimistic interjection rendering | Removed. 3s poll delay is fine. |
+| `visibilitychange` handler | Removed. Zero-cost localhost polling. |
+| Lockfile PID check + `--force` | Simplified to plain lockfile. |
+| `?after=<turn-id>` | Deferred. |
+| Interjection response | `{ "ok": true }`. |
+| Phases | 5 → 3. |
 
 ### Architecture Notes
 
 - **Orchestrator-server coupling:** Define an explicit interface for pause/resume. Recommended: a shared session controller with `waitForHuman()` (returns Promise) and `resumeFromHuman(content)` (resolves it). Keeps coupling narrow and testable.
-- **`session.md` is immutable; `state.json` is mutable.** Runtime state (session_status, current_turn, next_agent, port) lives in `state.json`. Session config (topic, mode, max_turns) lives in `session.md`. This split is resolved — no mutation contract ambiguity.
+- **Single `session.json`** contains both config (topic, mode, max_turns) and runtime state (session_status, current_turn, next_agent, port). One file, one schema. Updated via atomic writes.
 - **Concurrent sessions:** Resolved — one session per repo enforced via `.acb/lock`. Dynamic port avoids port conflicts. See "Concurrency & Port Rules" section.
 - **Claude CLI invocation:** Resolved — stdin redirection only (`claude --print < prompt.md`). No `-m` or `-p` variants. Symmetric with Codex.
-- **Phase 1 context size guard:** Cap assembled prompt at 100K chars. Truncate from oldest turns and log a warning. Or set `max_turns` default to 6 for initial testing.
+- **Context size:** At 20 max turns (~30KB), no truncation needed. Add truncation when max_turns grows beyond ~30.
 
 ## Deferred to Future Versions
 
@@ -882,6 +861,8 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 - Optimized context window strategies (summary + bounded window for large sessions)
 - `?after=<turn-id>` incremental fetch on `GET /api/turns` (not needed at 20 turns)
 - `response_to` field in turn schema (agents can reference prior turns in body text)
+- Codex session resumption (`codex exec resume --last`) instead of fresh invocations per turn — could reduce context assembly overhead
+- Codex model and reasoning effort configuration (`--model`, `--config model_reasoning_effort`) as CLI args
 - WebSocket push in the UI (upgrade from polling)
 
 ## Sources & References
