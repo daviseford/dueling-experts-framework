@@ -12,10 +12,13 @@ interface TranscriptProps {
 
 export function Transcript({ turns, thinking, thinkingElapsed }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const turnCount = turns.length
+  const thinkingAgent = thinking?.agent ?? null
 
+  // Only auto-scroll on new turns or thinking agent change (start/stop/switch)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
-  }, [turns, thinking, thinkingElapsed])
+  }, [turnCount, thinkingAgent])
 
   return (
     <ScrollArea className="flex-1">
