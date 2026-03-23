@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -7,7 +6,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
-import { ChevronDown } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 // TODO: make configurable
@@ -18,18 +17,33 @@ const LABEL_MAP: Record<string, string> = {
   system: "SYSTEM",
 }
 
-const HEADER_STYLES: Record<string, string> = {
-  claude: "bg-blue-950/60 text-blue-400",
-  codex: "bg-green-950/60 text-green-400",
-  human: "bg-purple-950/60 text-purple-400",
-  system: "bg-yellow-950/60 text-yellow-400",
+const ACCENT_COLORS: Record<string, string> = {
+  claude: "border-l-blue-500",
+  codex: "border-l-emerald-500",
+  human: "border-l-violet-400",
+  system: "border-l-amber-500",
 }
 
 const BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-900/50 text-blue-300 border-blue-700/50",
-  codex: "bg-green-900/50 text-green-300 border-green-700/50",
-  human: "bg-purple-900/50 text-purple-300 border-purple-700/50",
-  system: "bg-yellow-900/50 text-yellow-300 border-yellow-700/50",
+  claude: "bg-blue-500/15 text-blue-400 border-blue-500/25",
+  codex: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
+  human: "bg-violet-500/15 text-violet-400 border-violet-500/25",
+  system: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+}
+
+function formatTimestamp(ts: string): string {
+  if (!ts) return ""
+  try {
+    const d = new Date(ts)
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    })
+  } catch {
+    return ts
+  }
 }
 
 interface TurnCardProps {
@@ -44,52 +58,50 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <Card
+      <div
         className={cn(
-          "overflow-hidden",
-          isError && "border-red-600"
+          "rounded-lg border-l-[3px] bg-card/50 transition-colors",
+          isError
+            ? "border-l-red-500 ring-1 ring-red-500/20"
+            : ACCENT_COLORS[turn.from] || "border-l-muted-foreground"
         )}
       >
         <CollapsibleTrigger asChild>
-          <CardHeader
-            className={cn(
-              "flex cursor-pointer select-none flex-row items-center justify-between px-3 py-2 transition-colors hover:brightness-125",
-              isError
-                ? "bg-red-950/60 text-red-400"
-                : HEADER_STYLES[turn.from] || "bg-muted text-muted-foreground"
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 transition-transform duration-200",
-                  !open && "-rotate-90"
-                )}
-              />
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-xs font-semibold",
-                  isError
-                    ? "border-red-700/50 bg-red-900/50 text-red-300"
-                    : BADGE_STYLES[turn.from]
-                )}
-              >
-                {label}
-              </Badge>
-              <span className="text-xs font-medium">Turn {turn.turn}</span>
-            </div>
-            <span className="text-xs opacity-70">{turn.timestamp || ""}</span>
-          </CardHeader>
+          <button className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/30">
+            <ChevronRight
+              className={cn(
+                "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200",
+                open && "rotate-90"
+              )}
+            />
+            <Badge
+              variant="outline"
+              className={cn(
+                "font-mono text-[10px] font-semibold tracking-wider",
+                isError
+                  ? "border-red-500/25 bg-red-500/15 text-red-400"
+                  : BADGE_STYLES[turn.from]
+              )}
+            >
+              {label}
+            </Badge>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              #{turn.turn}
+            </span>
+            <span className="flex-1" />
+            <span className="font-mono text-[10px] text-muted-foreground/60">
+              {formatTimestamp(turn.timestamp)}
+            </span>
+          </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className="p-3">
-            <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+          <div className="border-t border-border/50 px-4 py-3">
+            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/90">
               {turn.content}
             </pre>
-          </CardContent>
+          </div>
         </CollapsibleContent>
-      </Card>
+      </div>
     </Collapsible>
   )
 }

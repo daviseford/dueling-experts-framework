@@ -1,6 +1,6 @@
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { Activity, Clock, Hash } from "lucide-react"
 
 interface StatusBarProps {
   statusText: string
@@ -9,30 +9,45 @@ interface StatusBarProps {
   sessionTimer: string
 }
 
-const STATUS_BADGE_STYLES: Record<string, string> = {
-  active: "bg-green-900/50 text-green-300 border-green-700/50",
-  paused: "bg-amber-900/50 text-amber-300 border-amber-700/50",
-  completed: "bg-muted text-muted-foreground border-border",
+const STATUS_COLORS: Record<string, string> = {
+  active: "text-emerald-400",
+  paused: "text-amber-400",
+  completed: "text-muted-foreground",
+}
+
+const DOT_COLORS: Record<string, string> = {
+  active: "bg-emerald-400",
+  paused: "bg-amber-400",
+  completed: "bg-muted-foreground",
 }
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }: StatusBarProps) {
   return (
-    <div className="flex h-7 items-center gap-3 border-t border-border bg-card px-5 text-xs text-muted-foreground">
-      <Badge
-        variant="outline"
-        className={cn(
-          "h-4 rounded-sm px-1.5 text-[10px] font-medium",
-          STATUS_BADGE_STYLES[sessionStatus]
-        )}
-      >
-        {statusText}
-      </Badge>
-      <Separator orientation="vertical" className="h-3.5" />
-      <span className="font-mono">Turn {turnCount}</span>
-      <Separator orientation="vertical" className="h-3.5" />
-      <span className="font-mono">{sessionTimer}</span>
-      <div className="flex-1" />
-      <span className="font-mono">{turnCount} total turns</span>
+    <div className="flex h-7 items-center gap-2.5 border-t border-border/50 bg-card/80 px-4 font-mono text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "inline-block h-1.5 w-1.5 rounded-full",
+            DOT_COLORS[sessionStatus],
+            sessionStatus === "active" && "animate-pulse"
+          )}
+        />
+        <span className={cn(STATUS_COLORS[sessionStatus])}>
+          {statusText}
+        </span>
+      </div>
+      <Separator orientation="vertical" className="h-3" />
+      <div className="flex items-center gap-1">
+        <Hash className="h-3 w-3 text-muted-foreground/50" />
+        <span>{turnCount}</span>
+      </div>
+      <Separator orientation="vertical" className="h-3" />
+      <div className="flex items-center gap-1">
+        <Clock className="h-3 w-3 text-muted-foreground/50" />
+        <span>{sessionTimer}</span>
+      </div>
+      <span className="flex-1" />
+      <Activity className="h-3 w-3 text-muted-foreground/30" />
     </div>
   )
 }

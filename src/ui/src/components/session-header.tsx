@@ -10,6 +10,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { Radio } from "lucide-react"
 
 interface SessionHeaderProps {
   topic: string
@@ -19,16 +21,27 @@ interface SessionHeaderProps {
 
 export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderProps) {
   return (
-    <header className="flex items-center justify-between border-b border-border bg-card px-5 py-3">
+    <header className="flex items-center justify-between border-b border-border/50 bg-card/80 px-5 py-2.5 backdrop-blur-sm">
       <div className="flex items-center gap-3">
-        <h1 className="text-base font-semibold text-foreground">ACB</h1>
+        <div className="flex items-center gap-2">
+          <Radio className="h-3.5 w-3.5 text-emerald-400" />
+          <h1 className="text-sm font-bold tracking-tight text-foreground">ACB</h1>
+        </div>
         {topic && (
-          <span className="text-sm text-muted-foreground">— {topic}</span>
+          <>
+            <Separator orientation="vertical" className="h-4" />
+            <span className="text-[13px] text-muted-foreground">{topic}</span>
+          </>
         )}
       </div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="destructive" size="sm" disabled={disabled}>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={disabled}
+            className="h-7 px-3 text-xs"
+          >
             End Session
           </Button>
         </AlertDialogTrigger>

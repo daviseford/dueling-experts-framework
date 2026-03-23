@@ -19,7 +19,7 @@ export function Transcript({ turns, thinking, thinkingElapsed }: TranscriptProps
 
   return (
     <ScrollArea className="flex-1">
-      <div className="space-y-4 p-5">
+      <div className="space-y-2 px-5 py-4">
         {turns.map((turn) => (
           <TurnCard key={turn.id} turn={turn} />
         ))}

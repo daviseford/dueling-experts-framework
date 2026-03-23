@@ -115,11 +115,25 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@theme inline {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
   }
+}
+
+@keyframes thinking-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.thinking-glow {
+  animation: thinking-glow 2s ease-in-out infinite;
 }

@@ -42,7 +42,7 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
   )
 
   return (
-    <div className="flex gap-2 border-t border-border bg-card px-5 py-3">
+    <div className="flex gap-2 border-t border-border/50 bg-card/80 px-5 py-2.5">
       <Textarea
         ref={textareaRef}
         value={value}
@@ -51,14 +51,15 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
         placeholder="Type a message to interject..."
         disabled={disabled || sending}
         rows={1}
-        className="min-h-10 flex-1 resize-none font-sans"
+        className="min-h-9 flex-1 resize-none bg-background/50 font-sans text-sm"
       />
       <Button
         onClick={doSend}
         disabled={disabled || sending || !value.trim()}
-        className="bg-green-700 text-white hover:bg-green-600"
+        size="sm"
+        className="h-9 bg-emerald-600 px-4 text-xs font-medium text-white hover:bg-emerald-500"
       >
-        <Send className="mr-1 h-4 w-4" />
+        <Send className="mr-1.5 h-3 w-3" />
         Send
       </Button>
     </div>
