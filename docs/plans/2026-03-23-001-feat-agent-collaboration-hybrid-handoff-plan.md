@@ -125,7 +125,7 @@ Both agents are invoked with cwd = target repo, so they can read and navigate th
 │  ┌──────────────┐        ┌──────────────┐       │
 │  │ Claude       │        │ Codex        │       │
 │  │ Adapter      │        │ Adapter      │       │
-│  │ (--print -m) │        │ (exec -o)    │       │
+│  │ (stdin pipe) │        │ (stdin pipe) │       │
 │  └──────────────┘        └──────────────┘       │
 │                                                 │
 │  ┌──────────────────────────────────────────┐   │
@@ -200,7 +200,7 @@ claude --print < .acb/sessions/<id>/runtime/claude/prompt.md
 
 **Codex:**
 ```bash
-# 1. Write assembled context (role prompt + session brief + summary + recent turns)
+# 1. Write assembled context (role prompt + session brief + all prior turns)
 # to a prompt file in the session runtime dir
 cat > .acb/sessions/<id>/runtime/codex/prompt.md << 'EOF'
 [role prompt + session brief + all prior turns + response format instructions]
@@ -257,9 +257,9 @@ Respond with YAML frontmatter followed by your markdown response. Required front
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/` | GET | Serve `ui/index.html` (CSRF token embedded) |
+| `/` | GET | Serve `ui/index.html` |
 | `/api/turns` | GET | Return all turns as JSON `{ turns: [...], session_status, topic, turn_count }`. No pagination for v1. Session status is included here to avoid split-brain — there is no separate `/api/status` endpoint. |
-| `/api/interject` | POST | Accept `{ content, csrf_token }`. Max content: 10K chars. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
+| `/api/interject` | POST | Accept `{ content }`. Max content: 10K chars. Returns `{ ok: true }`. When paused: bypasses queue, directly resumes. When running: pushes to queue array. |
 | `/api/end-session` | POST | Sets `endRequested` flag. Loop exits at next turn boundary. Returns `{ ok: true }`. |
 
 **Frontend (single HTML file):**
@@ -378,7 +378,7 @@ No queue position, no queued/injected distinction. The UI uses optimistic render
 **Interjection queue:** A plain array on the orchestrator. No max size, no HTTP 429. If the user floods the queue, all items are processed one per turn boundary. The context size guard (100K) prevents prompt overflow regardless of queue size.
 
 **Graceful shutdown:**
-End-session sets a flag on the orchestrator. The loop checks the flag at each turn boundary and exits cleanly. Ctrl+C kills the process; crash recovery (Phase 3) handles the rest.
+End-session sets a flag on the orchestrator. The loop checks the flag at each turn boundary and exits cleanly. Ctrl+C is trapped via SIGINT handler: the handler updates `state.json` to `completed`, removes the lockfile, and exits. If the trap fails (e.g., double Ctrl+C), the process dies hard and crash recovery (Phase 3) handles the orphaned session.
 
 **Prompt governance asymmetry (known limitation):**
 Claude Code loads the target repo's `CLAUDE.md` if one exists. Codex is isolated via `--no-project-doc`. This means the two agents do not operate under identical prompt governance. The session role prompt is explicit about output format (YAML frontmatter) and takes priority over repo-level instructions. If a repo's `CLAUDE.md` contains instructions that conflict with the session role prompt (e.g., "never output YAML"), the orchestrator's validation will catch malformed output and retry. If contamination proves persistent, a future version can invoke Claude from an isolated cwd or investigate suppression flags.
@@ -552,8 +552,8 @@ src/
 
 - [ ] `package.json` with `bin` field and `gray-matter` dependency
 - [ ] `bin/acb` — CLI entry point that resolves `src/index.js` from install location
-- [ ] `src/index.js` — parse CLI args with hardcoded defaults, init session, run loop, generate artifacts
-- [ ] `src/session.js` — create `.acb/sessions/<id>/` in target repo, write `session.md`, add `.acb/` to `.gitignore`
+- [ ] `src/index.js` — parse CLI args with hardcoded defaults, acquire lockfile, init session, run loop, generate artifacts, release lockfile
+- [ ] `src/session.js` — acquire `.acb/lock` (error if PID alive), create `.acb/sessions/<id>/`, write `session.md` + `state.json`, add `.acb/` to `.gitignore`
 - [ ] `src/agents/claude.js` — write prompt file, pipe to `claude --print` via stdin, cwd = target repo, 120s timeout
 - [ ] `src/agents/codex.js` — write prompt file, pipe to `codex exec --full-auto --no-project-doc -o` via stdin, cwd = target repo, 120s timeout
 - [ ] `src/validation.js` — YAML frontmatter parsing (safe schema) + schema validation + 500KB size guard
@@ -594,13 +594,11 @@ src/
 ```javascript
 // http.createServer bound to 127.0.0.1:0 (OS-assigned port)
 // Validate Origin header on every request (reject non-localhost)
-// Generate CSRF token at startup, embed in HTML, require on POSTs
 //
-// GET /              → serve ui/index.html (with CSRF token embedded)
-// GET /api/turns     → return JSON array of { frontmatter, content, session_status }
-//                      (session_status included to avoid split-brain with separate status endpoint)
-// GET /api/session   → return session.md metadata
-// POST /api/interject → accept { content, csrf_token }, validate content length (max 10K chars)
+// GET /              → serve ui/index.html
+// GET /api/turns     → return { turns: [...], session_status, topic, turn_count }
+//                      session_status included to avoid split-brain — no separate status endpoint
+// POST /api/interject → accept { content }, validate content length (max 10K chars)
 //                       If PAUSED: bypass queue, directly resolve orchestrator's wait promise
 //                       If RUNNING: push to interjection array, return { "ok": true }
 // POST /api/end-session → set endRequested flag, loop exits on next iteration
@@ -808,6 +806,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 | Concern | Mitigation |
 |---|---|
 | **HTTP server bind address** | Bind to `127.0.0.1` only (already specified in API contract) |
+| **CORS / Origin checking** | Validate `Origin` header on every request; reject non-localhost origins |
 | **Never `shell: true`** | `child_process.spawn` with argument arrays only. Security invariant. |
 | **Path traversal** | Validate `from` field with strict regex `/^(claude\|codex\|human\|system)$/`. Orchestrator owns all filenames. |
 | **YAML safety** | Configure `gray-matter` with `js-yaml` `DEFAULT_SCHEMA`. Max output size 500KB. |
@@ -817,7 +816,6 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 
 | Concern | Mitigation |
 |---|---|
-| **CORS / Origin checking** | Validate `Origin` header; reject non-localhost |
 | **CSRF protection** | Random token at startup, embed in HTML, require on POSTs |
 | **`---` escaping** | Escape YAML frontmatter delimiters in interjection content |
 | **`--topic` sanitization** | Reject shell metacharacters in topic strings |
@@ -864,8 +862,8 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 
 - **Orchestrator-server coupling:** Define an explicit interface for pause/resume. Recommended: a shared session controller with `waitForHuman()` (returns Promise) and `resumeFromHuman(content)` (resolves it). Keeps coupling narrow and testable.
 - **`session.md` is immutable; `state.json` is mutable.** Runtime state (session_status, current_turn, next_agent, port) lives in `state.json`. Session config (topic, mode, max_turns) lives in `session.md`. This split is resolved — no mutation contract ambiguity.
-- **Concurrent sessions:** Only one session per orchestrator process. Detect port conflicts at startup. Consider a `.acb/lock` file to prevent accidental concurrent invocations in the same repo.
-- **Claude CLI invocation:** Settle on one pattern before implementation. Test whether `claude --print -p <file>` works; if not, use stdin redirection (symmetric with Codex). Remove the `-m` variant.
+- **Concurrent sessions:** Resolved — one session per repo enforced via `.acb/lock`. Dynamic port avoids port conflicts. See "Concurrency & Port Rules" section.
+- **Claude CLI invocation:** Resolved — stdin redirection only (`claude --print < prompt.md`). No `-m` or `-p` variants. Symmetric with Codex.
 - **Phase 1 context size guard:** Cap assembled prompt at 100K chars. Truncate from oldest turns and log a warning. Or set `max_turns` default to 6 for initial testing.
 
 ## Deferred to Future Versions
