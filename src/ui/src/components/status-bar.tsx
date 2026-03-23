@@ -1,6 +1,7 @@
+import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { Activity, Clock, Hash } from "lucide-react"
+import { Clock, Hash, Radio } from "lucide-react"
 
 interface StatusBarProps {
   statusText: string
@@ -9,45 +10,52 @@ interface StatusBarProps {
   sessionTimer: string
 }
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_BADGE: Record<string, string> = {
+  active: "border-emerald-500/40 bg-emerald-500/15 text-emerald-400",
+  paused: "border-amber-500/40 bg-amber-500/15 text-amber-400",
+  completed: "border-border bg-muted text-muted-foreground",
+}
+
+const DOT_COLORS: Record<string, string> = {
   active: "text-emerald-400",
   paused: "text-amber-400",
   completed: "text-muted-foreground",
 }
 
-const DOT_COLORS: Record<string, string> = {
-  active: "bg-emerald-400",
-  paused: "bg-amber-400",
-  completed: "bg-muted-foreground",
-}
-
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }: StatusBarProps) {
   return (
-    <div className="flex h-7 items-center gap-2.5 border-t border-border/50 bg-card/80 px-4 font-mono text-[11px] text-muted-foreground">
-      <div className="flex items-center gap-1.5">
-        <span
+    <div className="flex items-center gap-3 border-t border-border/50 bg-card/80 px-5 py-2">
+      <Badge
+        variant="outline"
+        className={cn(
+          "gap-1.5 px-2.5 py-0.5 text-xs font-medium",
+          STATUS_BADGE[sessionStatus]
+        )}
+      >
+        <Radio
           className={cn(
-            "inline-block h-1.5 w-1.5 rounded-full",
+            "h-3 w-3",
             DOT_COLORS[sessionStatus],
             sessionStatus === "active" && "animate-pulse"
           )}
         />
-        <span className={cn(STATUS_COLORS[sessionStatus])}>
-          {statusText}
-        </span>
+        {statusText}
+      </Badge>
+
+      <Separator orientation="vertical" className="h-4" />
+
+      <div className="flex items-center gap-1.5 text-sm text-foreground/70">
+        <Hash className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <span className="font-mono font-medium">{turnCount}</span>
+        <span className="text-muted-foreground/50">turns</span>
       </div>
-      <Separator orientation="vertical" className="h-3" />
-      <div className="flex items-center gap-1">
-        <Hash className="h-3 w-3 text-muted-foreground/50" />
-        <span>{turnCount}</span>
+
+      <Separator orientation="vertical" className="h-4" />
+
+      <div className="flex items-center gap-1.5 text-sm text-foreground/70">
+        <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <span className="font-mono font-medium">{sessionTimer}</span>
       </div>
-      <Separator orientation="vertical" className="h-3" />
-      <div className="flex items-center gap-1">
-        <Clock className="h-3 w-3 text-muted-foreground/50" />
-        <span>{sessionTimer}</span>
-      </div>
-      <span className="flex-1" />
-      <Activity className="h-3 w-3 text-muted-foreground/30" />
     </div>
   )
 }
