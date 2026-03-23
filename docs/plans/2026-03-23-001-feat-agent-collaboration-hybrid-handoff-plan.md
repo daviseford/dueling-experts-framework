@@ -18,7 +18,7 @@ origin: .claude/workflows/brainstorms/2026-03-23-agent-collab-requirements.md
 1. Move timeout enforcement to Phase 1 — prevents blocked development during build
 2. Drop running summary for v1 — eliminates 10 extra CLI calls per session at 20-turn scale
 3. Merged 5 phases into 3 — Phase 1 is headless core loop (with timeouts + artifacts), Phase 2 adds UI + interjection, Phase 3 is crash recovery
-4. Add security hardening before Phase 2 — CORS, CSRF, 127.0.0.1 binding, no shell:true
+4. Add security hardening — CORS/Origin checking, 127.0.0.1 binding, no shell:true (must-build); CSRF (nice-to-have)
 5. Fix 4 high-severity frontend race conditions — recursive setTimeout, merge status+turns endpoint, debounce send
 
 ### New Considerations Discovered
@@ -357,7 +357,7 @@ created: 2026-03-23T14:00:00Z
   "session_status": "active",
   "current_turn": 4,
   "next_agent": "codex",
-  "port": 3341
+  "port": 49152
 }
 ```
 `session_status` values: `active`, `paused`, `completed`.
@@ -466,26 +466,26 @@ src/
 // Log session path and exit
 ```
 
-**`src/orchestrator.js`** — Turn loop:
+**`src/orchestrator.js`** — Turn loop (Phase 1 scope):
 ```javascript
-// isPaused = false
 // while (turnCount < maxTurns) {
-//   1. Determine next agent (alternating, or same agent after needs_human resume)
+//   1. Determine next agent (alternating)
 //   2. Call context.assemble(session) to build prompt
 //   3. Call agents/<agent>.invoke(prompt, session) — includes timeout (120s default)
-//   4. If timeout or error: retry once (same prompt), then write error turn + pause
-//   5. Call validation.validate(output) — if invalid: retry once, then error turn + pause
+//   4. If timeout or error: retry once (same prompt), then write error turn + exit loop
+//   5. Call validation.validate(output) — if invalid: retry once, then error turn + exit loop
 //   6. Orchestrator assigns canonical turn number, id, filename (ignores agent values)
 //   7. Write canonical turn file to turns/ (atomic: write temp → rename)
-//   8. Update state.json (session_status, current_turn, next_agent) via atomic write
+//   8. Update state.json (current_turn, next_agent) via atomic write
 //   9. Check status:
-//      - 'needs_human': set isPaused, await humanResponsePromise
 //      - 'done': give OTHER agent one final turn to confirm/object
 //        - If other also says 'done': break
 //        - If other says 'complete': continue loop
+//      - 'needs_human': log warning, exit loop (no HTTP server in Phase 1 to handle it)
 //      - 'complete': continue
-//   10. Drain interjection queue if any (one per boundary, re-check)
 // }
+// NOTE: Phase 2 adds: isPaused flag, humanResponsePromise, interjection queue
+//       draining, endRequested flag, and needs_human pause/resume via HTTP server.
 ```
 
 **`src/agents/claude.js`**:
@@ -558,7 +558,7 @@ src/
 - [ ] `src/agents/codex.js` — write prompt file, pipe to `codex exec --full-auto --no-project-doc -o` via stdin, cwd = target repo, 120s timeout
 - [ ] `src/validation.js` — YAML frontmatter parsing (safe schema) + schema validation + 500KB size guard
 - [ ] `src/context.js` — context assembly (all turns + 100K size guard)
-- [ ] `src/orchestrator.js` — turn loop with `isPaused` flag, retry logic (1 retry), error turn generation
+- [ ] `src/orchestrator.js` — turn loop with retry logic (1 retry), error turn generation, `status: done` protocol
 - [ ] `src/artifacts.js` — extract decisions, generate final-summary via Claude CLI
 - [ ] Manual test: `cd` into a test repo, run `acb --topic "Test conversation" --first claude`, verify `.acb/sessions/` appears with turn files
 
@@ -635,10 +635,11 @@ src/
 - [ ] `src/server.js` — `POST /api/interject` with 10K content limit, direct resume when PAUSED
 - [ ] `src/server.js` — `POST /api/end-session` sets flag for clean exit
 - [ ] `src/orchestrator.js` — interjection queue (plain array, drained at turn boundaries)
-- [ ] `src/orchestrator.js` — `needs_human` pause/resume via Promise + resolver (direct resume path, no deadlock)
-- [ ] `src/orchestrator.js` — update `state.json` at transitions (session_status, current_turn, next_agent)
-- [ ] `src/orchestrator.js` — deterministic turn resumption (R11)
-- [ ] `src/orchestrator.js` — `status: done` protocol (other agent gets one final turn)
+- [ ] `src/orchestrator.js` — add `isPaused` flag, `humanResponsePromise`, `needs_human` pause/resume (direct resume path, no deadlock)
+- [ ] `src/orchestrator.js` — add `endRequested` flag checked at turn boundary
+- [ ] `src/orchestrator.js` — add interjection queue draining at turn boundaries
+- [ ] `src/orchestrator.js` — update `state.json` `session_status` to `paused`/`active` at transitions
+- [ ] `src/orchestrator.js` — deterministic turn resumption (R11 — same agent resumes after escalation)
 - [ ] `src/orchestrator.js` — end-session flag checked at turn boundary
 - [ ] `src/ui/index.html` — recursive setTimeout polling, fetchInFlight guard, visibilitychange handler
 - [ ] `src/ui/index.html` — chat transcript with agent labels, turn numbers, timestamps
@@ -839,7 +840,7 @@ Only one interface exists: the CLI entry point + HTTP server. No SDKs, no progra
 | Issue | Fix |
 |---|---|
 | **Out-of-order poll responses** | Use recursive `setTimeout` (not `setInterval`). Only one request in flight at a time. Discard responses with a lower turn count than the last processed. |
-| **Status/turns split-brain** | Merge `/api/status` into the `/api/turns` response, or derive UI status entirely from the latest turn's `status` field. Don't poll them separately. |
+| **Status/turns split-brain** | Session status is included in the `/api/turns` response (no separate status endpoint). UI derives paused/active state from the response. |
 | **Double-click sends duplicates** | Disable send button on click, re-enable on response. Server-side: reject consecutive identical interjections. |
 | **Background tab throttling** | Listen for `document.visibilitychange`. Pause polling when hidden, fire one immediate poll on return. Prevents `setInterval` burst on tab refocus. |
 | **Optimistic interjection rendering** | When POST succeeds, render the interjection immediately in the transcript (greyed out). Replace with the canonical turn when it appears in the next poll. |
