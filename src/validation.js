@@ -20,9 +20,12 @@ const SAFE_ENGINES = {
 export function validate(raw, expectedFrom) {
   const errors = [];
 
+  // Strip leading whitespace/newlines (agents may output preamble before frontmatter)
+  const trimmed = raw.replace(/^\s+/, '');
+
   // Reject frontmatter with language specifiers (e.g., "---js", "--- js")
   // The opening delimiter must be exactly "---" with nothing else on the line.
-  const firstLine = raw.split(/\r?\n/)[0];
+  const firstLine = trimmed.split(/\r?\n/)[0];
   if (firstLine !== '---') {
     return {
       valid: false,
@@ -31,6 +34,9 @@ export function validate(raw, expectedFrom) {
       content: raw,
     };
   }
+
+  // Use trimmed input for parsing (gray-matter needs --- on line 1)
+  raw = trimmed;
 
   let parsed;
   try {

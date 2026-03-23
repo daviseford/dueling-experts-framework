@@ -193,32 +193,28 @@
           return;
         }
 
-        // Skip re-render if nothing changed
-        if (data.turn_count === lastTurnCount && data.session_status !== 'completed') {
-          return;
-        }
-
-        lastTurnCount = data.turn_count;
-
-        // Update topic
+        // Always update status/topic (even when turn count unchanged)
         if (data.topic) {
           topicLabel.textContent = '\u2014 ' + data.topic;
         }
-
-        // Update pause banner
-        if (data.session_status === 'paused') {
-          pauseBanner.classList.add('visible');
-        } else {
-          pauseBanner.classList.remove('visible');
-        }
-
-        // Update status
         statusText.textContent = data.session_status === 'completed'
           ? 'Session completed'
           : data.session_status === 'paused'
             ? 'Paused \u2014 waiting for human'
             : 'Active';
         turnCountEl.textContent = 'Turns: ' + data.turn_count;
+        if (data.session_status === 'paused') {
+          pauseBanner.classList.add('visible');
+        } else {
+          pauseBanner.classList.remove('visible');
+        }
+
+        // Skip DOM re-render if turn count unchanged
+        if (data.turn_count === lastTurnCount && data.session_status !== 'completed') {
+          return;
+        }
+
+        lastTurnCount = data.turn_count;
 
         // Check if user is scrolled near the bottom before re-render
         const isAtBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 30;
