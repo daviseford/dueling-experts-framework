@@ -13,16 +13,8 @@ export async function create({ topic, mode, maxTurns, firstAgent, targetRepo }) 
   // Ensure .acb/ exists
   await mkdir(acbDir, { recursive: true });
 
-  // Acquire lockfile
-  try {
-    await access(lockPath);
-    throw new Error(
-      'A session may already be running. Delete .acb/lock to proceed.'
-    );
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-  await writeFile(lockPath, String(process.pid), 'utf8');
+  // Acquire lockfile atomically (wx = exclusive create, fails if exists)
+  await acquireLock(lockPath);
 
   // Create session directory
   const id = randomUUID();
@@ -107,6 +99,20 @@ export function installShutdownHandler(sessionDir, targetRepo) {
     } catch { /* best effort */ }
     process.exit(0);
   });
+}
+
+/**
+ * Acquire a lockfile atomically. Fails if already exists.
+ */
+export async function acquireLock(lockPath) {
+  try {
+    await writeFile(lockPath, String(process.pid), { flag: 'wx' });
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw new Error('A session may already be running. Delete .acb/lock to proceed.');
+    }
+    throw err;
+  }
 }
 
 async function ensureGitignore(targetRepo) {

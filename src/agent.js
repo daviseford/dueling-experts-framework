@@ -51,50 +51,56 @@ export async function invoke(agentName, session) {
   const fd = await open(promptPath, 'r');
   const stdinStream = fd.createReadStream();
 
-  return new Promise((resolve) => {
-    const child = spawn(config.cmd, args, {
-      cwd: session.target_repo,
-      stdio: [stdinStream, 'pipe', 'ignore'], // stderr ignored (Codex thinking tokens)
-      shell: false, // Security invariant: NEVER shell: true
-    });
+  try {
+    return await new Promise((resolve) => {
+      const child = spawn(config.cmd, args, {
+        cwd: session.target_repo,
+        stdio: [stdinStream, 'pipe', 'ignore'], // stderr ignored (Codex thinking tokens)
+        shell: false, // Security invariant: NEVER shell: true
+      });
 
-    let stdout = '';
-    let timedOut = false;
+      let stdout = '';
+      let timedOut = false;
+      let settled = false;
 
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
-      }, 5000);
-    }, TIMEOUT_MS);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        }, 5000);
+      }, TIMEOUT_MS);
 
-    child.on('close', async (exitCode) => {
-      clearTimeout(timer);
-      await fd.close();
-
-      let output = '';
-      if (config.captureStdout) {
-        output = stdout;
-      } else {
-        try {
-          output = await readFile(outputPath, 'utf8');
-        } catch {
-          output = '';
-        }
+      function settle(result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
       }
 
-      resolve({ exitCode: exitCode ?? 1, output, timedOut });
-    });
+      child.on('close', async (exitCode) => {
+        let output = '';
+        if (config.captureStdout) {
+          output = stdout;
+        } else {
+          try {
+            output = await readFile(outputPath, 'utf8');
+          } catch {
+            output = '';
+          }
+        }
+        settle({ exitCode: exitCode ?? 1, output, timedOut });
+      });
 
-    child.on('error', async (err) => {
-      clearTimeout(timer);
-      await fd.close();
-      resolve({ exitCode: 1, output: '', timedOut: false, error: err.message });
+      child.on('error', (err) => {
+        settle({ exitCode: 1, output: '', timedOut: false, error: err.message });
+      });
     });
-  });
+  } finally {
+    await fd.close();
+  }
 }

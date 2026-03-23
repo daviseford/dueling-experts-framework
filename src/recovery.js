@@ -1,7 +1,7 @@
-import { readdir, readFile, writeFile, access, rm } from 'node:fs/promises';
+import { readdir, readFile, access, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run } from './orchestrator.js';
-import { load, releaseLock, installShutdownHandler } from './session.js';
+import { load, releaseLock, acquireLock, installShutdownHandler } from './session.js';
 
 /**
  * Check for recoverable sessions on startup.
@@ -62,14 +62,8 @@ export async function checkForRecovery(targetRepo) {
     return true;
   }
 
-  // Multiple recoverable sessions — print list and exit
-  console.log('Multiple interrupted sessions found:\n');
-  for (const s of recoverable) {
-    console.log(`  ${s.id}  (turn ${s.current_turn}, ${s.session_status})`);
-    console.log(`    Topic: ${s.topic}\n`);
-  }
-  console.log('Use --resume <session-id> to resume one.');
-  process.exit(1);
+  // Multiple recoverable sessions — return list for caller to handle
+  return { multiple: true, sessions: recoverable };
 }
 
 /**
@@ -113,9 +107,9 @@ export async function resumeSession(targetRepo, sessionId) {
 }
 
 async function doResume(targetRepo, sessionDir) {
-  // Acquire lockfile
+  // Acquire lockfile atomically
   const lockPath = join(targetRepo, '.acb', 'lock');
-  await writeFile(lockPath, String(process.pid), 'utf8');
+  await acquireLock(lockPath);
 
   // Discard incomplete runtime files
   const runtimeDir = join(sessionDir, 'runtime');

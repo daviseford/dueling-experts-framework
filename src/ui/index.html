@@ -156,39 +156,53 @@
 
     let lastTurnCount = 0;
     let fetchInFlight = false;
+    let sendInFlight = false;
+    let pollTimeoutId = null;
+    let pollingStopped = false;
+
+    const LABEL_MAP = { claude: 'CLAUDE', codex: 'CODEX', human: 'DAVIS', system: 'SYSTEM' };
 
     function fromLabel(from) {
-      const labels = { claude: 'CLAUDE', codex: 'CODEX', human: 'DAVIS', system: 'SYSTEM' };
-      return labels[from] || from.toUpperCase();
+      return LABEL_MAP[from] || from.toUpperCase();
     }
 
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
+    function schedulePoll() {
+      if (pollingStopped) return;
+      pollTimeoutId = setTimeout(poll, 3000);
+    }
+
+    function stopPolling() {
+      pollingStopped = true;
+      if (pollTimeoutId !== null) {
+        clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+      }
     }
 
     async function poll() {
-      if (fetchInFlight) {
-        schedulePoll();
-        return;
-      }
+      if (fetchInFlight) return; // Do NOT schedule another poll — avoids timer stacking
       fetchInFlight = true;
 
       try {
         const res = await fetch('/api/turns');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
 
-        // Discard stale responses
+        // Discard stale responses but keep polling
         if (data.turn_count < lastTurnCount) {
           return;
         }
+
+        // Skip re-render if nothing changed
+        if (data.turn_count === lastTurnCount && data.session_status !== 'completed') {
+          return;
+        }
+
         lastTurnCount = data.turn_count;
 
         // Update topic
         if (data.topic) {
-          topicLabel.textContent = '— ' + data.topic;
+          topicLabel.textContent = '\u2014 ' + data.topic;
         }
 
         // Update pause banner
@@ -202,9 +216,12 @@
         statusText.textContent = data.session_status === 'completed'
           ? 'Session completed'
           : data.session_status === 'paused'
-            ? 'Paused — waiting for human'
+            ? 'Paused \u2014 waiting for human'
             : 'Active';
         turnCountEl.textContent = 'Turns: ' + data.turn_count;
+
+        // Check if user is scrolled near the bottom before re-render
+        const isAtBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 30;
 
         // Render turns
         transcript.innerHTML = '';
@@ -216,9 +233,13 @@
 
           const header = document.createElement('div');
           header.className = 'turn-header';
-          header.innerHTML =
-            '<span>[' + fromLabel(turn.from) + '] Turn ' + turn.turn + '</span>' +
-            '<span>' + (turn.timestamp || '') + '</span>';
+
+          const headerLeft = document.createElement('span');
+          headerLeft.textContent = '[' + fromLabel(turn.from) + '] Turn ' + turn.turn;
+          const headerRight = document.createElement('span');
+          headerRight.textContent = turn.timestamp || '';
+          header.appendChild(headerLeft);
+          header.appendChild(headerRight);
 
           const body = document.createElement('div');
           body.className = 'turn-body';
@@ -229,18 +250,23 @@
           transcript.appendChild(el);
         }
 
-        // Auto-scroll to bottom
-        transcript.scrollTop = transcript.scrollHeight;
+        // Only auto-scroll if user was already at bottom
+        if (isAtBottom) {
+          transcript.scrollTop = transcript.scrollHeight;
+        }
 
-        // Disable controls if completed
+        // Stop polling and disable controls if completed
         if (data.session_status === 'completed') {
           sendBtn.disabled = true;
           endBtn.disabled = true;
           input.disabled = true;
-          return; // Stop polling
+          stopPolling();
+          return;
         }
       } catch (err) {
-        statusText.textContent = 'Connection error: ' + err.message;
+        if (!pollingStopped) {
+          statusText.textContent = 'Connection error: ' + err.message;
+        }
       } finally {
         fetchInFlight = false;
       }
@@ -248,15 +274,13 @@
       schedulePoll();
     }
 
-    function schedulePoll() {
-      setTimeout(poll, 3000);
-    }
-
-    // Send interjection
-    sendBtn.addEventListener('click', async () => {
+    // Send interjection — guarded against double-send
+    async function doSend() {
+      if (sendInFlight) return;
       const content = input.value.trim();
       if (!content) return;
 
+      sendInFlight = true;
       sendBtn.disabled = true;
       try {
         const res = await fetch('/api/interject', {
@@ -273,26 +297,29 @@
       } catch (err) {
         alert('Failed to send: ' + err.message);
       } finally {
+        sendInFlight = false;
         sendBtn.disabled = false;
       }
-    });
+    }
 
-    // Enter to send (shift+enter for newline)
+    sendBtn.addEventListener('click', doSend);
+
+    // Enter to send (shift+enter for newline, respect IME composition)
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        sendBtn.click();
+        doSend();
       }
     });
 
-    // End session
+    // End session — re-enable button on failure
     endBtn.addEventListener('click', async () => {
       if (!confirm('End this session?')) return;
       endBtn.disabled = true;
       try {
         await fetch('/api/end-session', { method: 'POST' });
       } catch {
-        // Best effort
+        endBtn.disabled = false;
       }
     });
 

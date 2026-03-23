@@ -3,6 +3,16 @@ import matter from 'gray-matter';
 const VALID_STATUS = /^(complete|needs_human|done|error)$/;
 const VALID_FROM = /^(claude|codex|human|system)$/;
 
+// Disable gray-matter's JavaScript/CoffeeScript engines to prevent RCE via agent output.
+// An adversarial agent could return "---js\n require('child_process').exec(...) \n---"
+// which gray-matter would eval(). Block all non-YAML engines explicitly.
+const SAFE_ENGINES = {
+  javascript: { parse: () => { throw new Error('JavaScript engine disabled for security'); } },
+  js: { parse: () => { throw new Error('JavaScript engine disabled for security'); } },
+  coffee: { parse: () => { throw new Error('CoffeeScript engine disabled for security'); } },
+  coffeescript: { parse: () => { throw new Error('CoffeeScript engine disabled for security'); } },
+};
+
 /**
  * Parse and validate a turn's YAML frontmatter.
  * Returns { valid, errors, data, content }.
@@ -10,9 +20,19 @@ const VALID_FROM = /^(claude|codex|human|system)$/;
 export function validate(raw, expectedFrom) {
   const errors = [];
 
+  // Reject frontmatter with language specifiers (e.g., "---js" instead of "---")
+  if (/^---\S/m.test(raw)) {
+    return {
+      valid: false,
+      errors: ['Frontmatter language specifiers are not allowed (security)'],
+      data: null,
+      content: raw,
+    };
+  }
+
   let parsed;
   try {
-    parsed = matter(raw);
+    parsed = matter(raw, { engines: SAFE_ENGINES });
   } catch (err) {
     return {
       valid: false,

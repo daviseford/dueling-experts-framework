@@ -48,11 +48,9 @@ export async function assemble(session) {
     .filter((f) => f.startsWith('turn-') && f.endsWith('.md'))
     .sort();
 
-  const turns = [];
-  for (const file of turnFiles) {
-    const content = await readFile(join(turnsDir, file), 'utf8');
-    turns.push(content);
-  }
+  const turns = await Promise.all(
+    turnFiles.map((file) => readFile(join(turnsDir, file), 'utf8'))
+  );
 
   // Assemble
   const parts = [

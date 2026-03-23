@@ -15,6 +15,10 @@ let controllerRef = null;
  * Start the HTTP server for the watcher UI.
  */
 export async function start(session, controller) {
+  if (httpServer) {
+    throw new Error('Server is already running');
+  }
+
   sessionRef = session;
   controllerRef = controller;
 
@@ -52,11 +56,25 @@ function validateOrigin(req) {
   }
 }
 
+function validateHost(req) {
+  const host = req.headers.host;
+  if (!host) return true;
+  const hostname = host.split(':')[0];
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 async function handleRequest(req, res) {
+  // DNS rebinding protection: validate Host header
+  if (!validateHost(req)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return;
+  }
+
   // CORS / Origin check
   if (!validateOrigin(req)) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden: non-localhost origin' }));
+    res.end(JSON.stringify({ error: 'Forbidden' }));
     return;
   }
 
@@ -87,8 +105,9 @@ async function handleRequest(req, res) {
       res.end(JSON.stringify({ error: 'Not found' }));
     }
   } catch (err) {
+    console.error('[server] Internal error:', err);
     res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: err.message }));
+    res.end(JSON.stringify({ error: 'Internal server error' }));
   }
 }
 
@@ -111,22 +130,23 @@ async function handleGetTurns(res) {
     .filter((f) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
     .sort();
 
-  const turns = [];
-  for (const file of turnFiles) {
-    const raw = await readFile(join(turnsDir, file), 'utf8');
-    const parsed = validate(raw);
-    turns.push({
-      id: parsed.data?.id || file.replace('.md', ''),
-      turn: parsed.data?.turn,
-      from: parsed.data?.from,
-      timestamp: parsed.data?.timestamp,
-      status: parsed.data?.status,
-      decisions: parsed.data?.decisions || [],
-      content: parsed.content || raw,
-    });
-  }
+  const turns = await Promise.all(
+    turnFiles.map(async (file) => {
+      const raw = await readFile(join(turnsDir, file), 'utf8');
+      const parsed = validate(raw);
+      return {
+        id: parsed.data?.id || file.replace('.md', ''),
+        turn: parsed.data?.turn,
+        from: parsed.data?.from,
+        timestamp: parsed.data?.timestamp,
+        status: parsed.data?.status,
+        decisions: parsed.data?.decisions || [],
+        content: parsed.content || raw,
+      };
+    })
+  );
 
-  // Read current session status from session.json
+  // Read current session status from session.json (authoritative source)
   const sessionPath = join(sessionRef.dir, 'session.json');
   let sessionStatus = 'active';
   try {
@@ -146,7 +166,23 @@ async function handleGetTurns(res) {
 }
 
 async function handleInterject(req, res) {
-  const body = await readBody(req);
+  // Require JSON content type (CSRF defense-in-depth)
+  const contentType = req.headers['content-type'];
+  if (!contentType || !contentType.includes('application/json')) {
+    res.writeHead(415, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+    return;
+  }
+
+  let body;
+  try {
+    body = await readBody(req);
+  } catch {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Request body too large' }));
+    return;
+  }
+
   let parsed;
   try {
     parsed = JSON.parse(body);
@@ -187,6 +223,7 @@ function readBody(req) {
     req.on('data', (chunk) => {
       data += chunk.toString();
       if (data.length > MAX_CONTENT_LENGTH + 1000) {
+        req.destroy();
         reject(new Error('Request body too large'));
       }
     });

@@ -2,13 +2,32 @@ import { resolve } from 'node:path';
 import { create, releaseLock, installShutdownHandler } from './session.js';
 import { run } from './orchestrator.js';
 
-// Parse CLI args
+const VALID_MODES = ['planning'];
+const VALID_AGENTS = ['claude', 'codex'];
+
+// Parse and validate CLI args
 const args = process.argv.slice(2);
 const opts = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
   console.error('Usage: acb --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex]');
   console.error('       acb --resume <session-id>');
+  process.exit(1);
+}
+
+// Validate options
+if (opts.maxTurns !== undefined) {
+  if (isNaN(opts.maxTurns) || opts.maxTurns < 1 || opts.maxTurns > 100) {
+    console.error('Error: --max-turns must be a number between 1 and 100');
+    process.exit(1);
+  }
+}
+if (opts.mode && !VALID_MODES.includes(opts.mode)) {
+  console.error(`Error: --mode must be one of: ${VALID_MODES.join(', ')}`);
+  process.exit(1);
+}
+if (opts.first && !VALID_AGENTS.includes(opts.first)) {
+  console.error(`Error: --first must be one of: ${VALID_AGENTS.join(', ')}`);
   process.exit(1);
 }
 
@@ -24,9 +43,18 @@ if (opts.resume) {
 // Check for recoverable sessions
 try {
   const { checkForRecovery } = await import('./recovery.js');
-  const recovered = await checkForRecovery(targetRepo);
-  if (recovered) {
+  const result = await checkForRecovery(targetRepo);
+  if (result === true) {
     process.exit(0);
+  }
+  if (result && result.multiple) {
+    console.log('Multiple interrupted sessions found:\n');
+    for (const s of result.sessions) {
+      console.log(`  ${s.id}  (turn ${s.current_turn}, ${s.session_status})`);
+      console.log(`    Topic: ${s.topic}\n`);
+    }
+    console.log('Use --resume <session-id> to resume one.');
+    process.exit(1);
   }
 } catch {
   // recovery module not loaded — continue
