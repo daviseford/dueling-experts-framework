@@ -7,11 +7,13 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "test": "node --test src/__tests__/*.test.js",
     "dev:ui": "cd src/ui && npm run dev",
     "build:ui": "cd src/ui && npm run build",
     "prepare": "cd src/ui && npm install && npm run build"
   },
   "dependencies": {
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^3.14.1"
   }
 }

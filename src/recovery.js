@@ -154,5 +154,9 @@ async function doResume(targetRepo, sessionDir) {
     console.error(`Orchestrator error: ${err.message}`);
   } finally {
     await releaseLock(targetRepo);
+    if (server) {
+      await new Promise((r) => setTimeout(r, 5000));
+      server.stop();
+    }
   }
 }

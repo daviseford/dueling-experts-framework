@@ -101,7 +101,11 @@ try {
   process.exitCode = 1;
 } finally {
   await releaseLock(targetRepo);
-  if (server) server.stop();
+  if (server) {
+    // Give the UI time to poll the completed status before shutting down
+    await new Promise((r) => setTimeout(r, 5000));
+    server.stop();
+  }
   process.exit(process.exitCode || 0);
 }
 

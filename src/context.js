@@ -1,8 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listTurnFiles } from './session.js';
+import { validate } from './validation.js';
 
 const AGENT_NAMES = { claude: 'Claude', codex: 'Codex' };
+
+// Budget: ~100K tokens × 4 chars/token = 400K chars.
+// Reserve headroom for the model's response.
+const CHAR_BUDGET = 400_000;
 
 function planningPrompt(agent, topic) {
   const other = agent === 'claude' ? 'Codex' : 'Claude';
@@ -22,6 +27,8 @@ You are collaborating on: ${topic}
 
 /**
  * Assemble the full prompt for an agent invocation.
+ * Uses a character budget to prevent exceeding model context windows.
+ * Oldest turns are dropped first; their decisions are preserved in a summary.
  */
 export async function assemble(session) {
   const { topic, mode, next_agent, dir } = session;
@@ -37,32 +44,80 @@ export async function assemble(session) {
   const turnsDir = join(dir, 'turns');
   const turnFiles = await listTurnFiles(turnsDir);
 
-  const turns = await Promise.all(
-    turnFiles.map((file) => readFile(join(turnsDir, file), 'utf8'))
+  const turnContents = await Promise.all(
+    turnFiles.map(async (file) => {
+      const raw = await readFile(join(turnsDir, file), 'utf8');
+      const parsed = validate(raw);
+      return {
+        raw,
+        turn: parsed.data?.turn,
+        from: parsed.data?.from,
+        decisions: parsed.data?.decisions || [],
+      };
+    })
   );
 
-  // Assemble
-  const parts = [
-    planningPrompt(next_agent, topic),
-    '',
-    '## Session Brief',
-    `**Topic:** ${topic}`,
-    `**Mode:** ${mode}`,
-    '',
-  ];
+  // Build fixed parts (always included)
+  const systemPrompt = planningPrompt(next_agent, topic);
+  const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n`;
+  const yourTurn = '## Your Turn\nRespond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array of strings).';
 
-  if (turns.length > 0) {
+  const fixedChars = systemPrompt.length + sessionBrief.length + yourTurn.length + 20; // newlines
+  let remaining = CHAR_BUDGET - fixedChars;
+
+  // Include turns newest-first until budget is exhausted
+  const included = [];
+  const truncated = [];
+
+  for (let i = turnContents.length - 1; i >= 0; i--) {
+    const turnLen = turnContents[i].raw.length + 2; // + newlines
+    if (turnLen <= remaining) {
+      included.unshift(turnContents[i]);
+      remaining -= turnLen;
+    } else {
+      truncated.unshift(turnContents[i]);
+    }
+  }
+
+  // Assemble
+  const parts = [systemPrompt, '', sessionBrief, ''];
+
+  // Add truncation notice if turns were dropped
+  if (truncated.length > 0) {
+    const decisions = truncated.flatMap(t => t.decisions);
+    parts.push(buildTruncationNotice(truncated, decisions));
+    parts.push('');
+  }
+
+  if (included.length > 0) {
     parts.push('## Prior Turns');
-    for (const turn of turns) {
-      parts.push(turn);
+    for (const turn of included) {
+      parts.push(turn.raw);
       parts.push('');
     }
   }
 
-  parts.push('## Your Turn');
-  parts.push(
-    'Respond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array of strings).'
-  );
+  parts.push(yourTurn);
 
   return parts.join('\n');
+}
+
+/**
+ * Build a summary notice for turns that were truncated due to context budget.
+ */
+function buildTruncationNotice(truncated, decisions) {
+  const first = truncated[0].turn ?? '?';
+  const last = truncated[truncated.length - 1].turn ?? '?';
+  const lines = [
+    `> **[Context truncated]** Turns ${first}–${last} omitted (${truncated.length} turn(s), ${decisions.length} decision(s) preserved).`,
+  ];
+
+  if (decisions.length > 0) {
+    lines.push('> **Decisions from truncated turns:**');
+    for (const d of decisions) {
+      lines.push(`> - ${d}`);
+    }
+  }
+
+  return lines.join('\n');
 }

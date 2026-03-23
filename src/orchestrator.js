@@ -1,4 +1,4 @@
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
@@ -51,7 +51,6 @@ export async function run(session, { server } = {}) {
     turnCount++;
 
     // Invoke agent with one retry on failure
-    console.log(`[Turn ${turnCount}] Invoking ${nextAgent}...`);
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     let result = await invokeWithRetry(nextAgent, session, turnCount);
@@ -158,10 +157,6 @@ export async function run(session, { server } = {}) {
   console.log(`  Turns:     ${join(session.dir, 'turns')}`);
   console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
 
-  if (server) {
-    setTimeout(() => server.stop(), 5000);
-  }
-
   // --- Helper closures ---
 
   function waitForHuman() {
@@ -214,7 +209,7 @@ async function invokeOnce(agentName, session) {
   const result = await invoke(agentName, { ...session, next_agent: agentName });
   const failed = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason = result.timedOut
-    ? 'timeout (120s)'
+    ? 'timeout (180s)'
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';
@@ -222,10 +217,14 @@ async function invokeOnce(agentName, session) {
 }
 
 async function invokeWithRetry(agentName, session, turnCount) {
+  let ticker = startTicker(turnCount, agentName);
   let result = await invokeOnce(agentName, session);
+  stopTicker(ticker);
   if (!result.ok) {
     console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
+    ticker = startTicker(turnCount, agentName, 'retry');
     result = await invokeOnce(agentName, session);
+    stopTicker(ticker);
   }
   return result;
 }
@@ -302,4 +301,38 @@ async function generateDecisions(session) {
   const decisionsPath = join(artifactsDir, 'decisions.md');
   await writeFile(decisionsPath, lines.join('\n'), 'utf8');
   console.log(`Decisions log written: ${decisionsPath} (${decisions.length} decision(s))`);
+}
+
+// --- CLI progress ticker ---
+
+function startTicker(turnCount, agent, label) {
+  const start = Date.now();
+  const isTTY = process.stderr.isTTY;
+  const prefix = label
+    ? `[Turn ${turnCount}] ${label}: ${agent}`
+    : `[Turn ${turnCount}] Invoking ${agent}`;
+
+  if (!isTTY) {
+    console.log(`${prefix}...`);
+    return null;
+  }
+
+  process.stderr.write(`${prefix}... (0s)`);
+  const interval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    process.stderr.clearLine(0);
+    process.stderr.cursorTo(0);
+    process.stderr.write(`${prefix}... (${elapsed}s)`);
+  }, 1000);
+
+  return { interval };
+}
+
+function stopTicker(ticker) {
+  if (!ticker) return;
+  clearInterval(ticker.interval);
+  if (process.stderr.isTTY) {
+    process.stderr.clearLine(0);
+    process.stderr.cursorTo(0);
+  }
 }
