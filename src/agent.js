@@ -18,7 +18,6 @@ const AGENTS = {
     args: (outputPath) => [
       'exec',
       '--full-auto',
-      '--no-project-doc',
       '--skip-git-repo-check',
       '-o', outputPath,
     ],
