@@ -97,12 +97,21 @@ export function validate(raw, expectedFrom) {
     console.warn(`[validation] Agent claimed from="${data.from}" but expected "${expectedFrom}" (will override)`);
   }
 
-  // Validate decisions is an array of strings if present
+  // Validate decisions is an array if present.
+  // YAML often parses unquoted "key: value" strings as objects, so coerce
+  // objects to "key: value" strings rather than rejecting them.
   if (data.decisions !== undefined) {
     if (!Array.isArray(data.decisions)) {
       errors.push(`"decisions" must be an array, got: ${typeof data.decisions}`);
-    } else if (!data.decisions.every((d) => typeof d === 'string')) {
-      errors.push('"decisions" array must contain only strings');
+    } else {
+      data.decisions = data.decisions.map((d) => {
+        if (typeof d === 'string') return d;
+        if (d && typeof d === 'object') {
+          // YAML parsed "some text: more text" as { "some text": "more text" }
+          return Object.entries(d).map(([k, v]) => `${k}: ${v}`).join(', ');
+        }
+        return String(d);
+      });
     }
   }
 

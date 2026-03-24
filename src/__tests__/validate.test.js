@@ -57,6 +57,30 @@ describe('validate', () => {
     assert.deepEqual(result.data.decisions, ['Use polling', 'Add tests']);
   });
 
+  it('coerces YAML-parsed decision objects to strings', () => {
+    // YAML parses "some text: more text" as { "some text": "more text" }
+    const raw = [
+      '---',
+      'id: turn-0001-claude',
+      'turn: 1',
+      'from: claude',
+      'timestamp: 2026-03-23T14:30:00.000Z',
+      'status: complete',
+      'decisions:',
+      '  - Plan agreed: use release-please for versioning',
+      '  - Normal string decision',
+      '---',
+      'body',
+    ].join('\n');
+    const result = validate(raw);
+    assert.equal(result.valid, true);
+    assert.equal(result.data.decisions.length, 2);
+    // First decision gets YAML-parsed as object, should be coerced back
+    assert.equal(typeof result.data.decisions[0], 'string');
+    assert.ok(result.data.decisions[0].includes('Plan agreed'));
+    assert.equal(result.data.decisions[1], 'Normal string decision');
+  });
+
   it('extracts frontmatter preceded by preamble text', () => {
     const withPreamble = 'Here is some preamble text\n\n' + validTurn;
     const result = validate(withPreamble);
