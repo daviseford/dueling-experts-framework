@@ -1,9 +1,8 @@
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { ThemeToggle } from "./theme-toggle"
 import { cn } from "@/lib/utils"
-import { Clock, Hash, Moon, Radio, Sun } from "lucide-react"
-import { useTheme } from "next-themes"
+import { Clock, Hash, Radio } from "lucide-react"
 
 interface StatusBarProps {
   statusText: string
@@ -25,9 +24,6 @@ const DOT_COLORS: Record<string, string> = {
 }
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }: StatusBarProps) {
-  const { resolvedTheme, setTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
-
   return (
     <div className="flex items-center gap-3 border-t border-border/30 bg-card/80 px-5 py-2.5">
       <Badge
@@ -64,15 +60,7 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }
 
       <span className="flex-1" />
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0"
-        onClick={() => setTheme(isDark ? "light" : "dark")}
-      >
-        {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        <span className="sr-only">Toggle theme</span>
-      </Button>
+      <ThemeToggle />
     </div>
   )
 }
