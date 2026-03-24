@@ -7,8 +7,7 @@ import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite } from './util.js';
-import { parseActions, executeActions } from './actions.js';
-import type { ActionResult } from './actions.js';
+import { createWorktree, removeWorktree, captureDiff } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -85,6 +84,10 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
   // Review turn counter — derive from turn history on recovery
   let reviewTurnCount = 0;
+
+  // Track consecutive empty-diff implement attempts to prevent infinite loops
+  let emptyDiffRetries = 0;
+  const MAX_EMPTY_DIFF_RETRIES = 2;
 
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
@@ -165,16 +168,38 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     // Validate with one retry on failure
     let validation = validate(result.output, nextAgent);
     if (!validation.valid) {
-      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Retrying...`);
-      result = await invokeOnce(nextAgent, session);
-      validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+      const preview = result.output.slice(0, 200).replace(/\n/g, '\\n');
+      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Output preview: ${preview}`);
 
-      if (!validation.valid) {
-        await writeErrorTurn(session, turnCount, nextAgent,
-          `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
-        const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
-        if (resumed) continue;
-        break;
+      // In implement phase, the frontmatter is ceremonial — the orchestrator
+      // assigns canonical values and the real output is the git diff.
+      // Synthesize frontmatter instead of crashing.
+      if (phase === 'implement') {
+        console.log(`[Turn ${turnCount}] Synthesizing frontmatter for implement turn.`);
+        validation = {
+          valid: true,
+          errors: [],
+          data: {
+            id: `turn-${String(turnCount).padStart(4, '0')}-${nextAgent}`,
+            turn: turnCount,
+            from: nextAgent,
+            timestamp: new Date().toISOString(),
+            status: 'complete' as TurnStatus,
+          },
+          content: result.output.trim(),
+        };
+      } else {
+        console.log(`[Turn ${turnCount}] Retrying...`);
+        result = await invokeOnce(nextAgent, session);
+        validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+
+        if (!validation.valid) {
+          await writeErrorTurn(session, turnCount, nextAgent,
+            `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
+          const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
+          if (resumed) continue;
+          break;
+        }
       }
     }
 
@@ -221,9 +246,46 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
       if (effectiveStatus === 'decided') {
         if (pendingDecided && pendingDecided !== nextAgent) {
-          // Both agents agreed — transition to implement
-          console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
+          // Both agents agreed — consensus reached
+          console.log(`[Turn ${turnCount}] Consensus reached.`);
+
+          // Planning mode: no implementation, session ends here
+          if (session.mode === 'planning') {
+            console.log(`[Turn ${turnCount}] Planning mode — session complete.`);
+            break;
+          }
+
+          // Create worktree for isolated implementation.
+          // Worktree is required — agents get full tool access and must not
+          // operate on the user's main checkout.
+          if (session.mode === 'edit') {
+            try {
+              const { worktreePath, branchName } = await createWorktree(
+                session.target_repo, session.id, session.topic,
+              );
+              session.original_repo = session.target_repo;
+              session.worktree_path = worktreePath;
+              session.branch_name = branchName;
+              session.target_repo = worktreePath;
+              await updateSession(session.dir, {
+                worktree_path: worktreePath,
+                branch_name: branchName,
+                original_repo: session.original_repo,
+                target_repo: worktreePath,
+              });
+              console.log(`[Turn ${turnCount}] Worktree created: ${branchName}`);
+            } catch (err: unknown) {
+              // Hard error: never allow implement phase in main checkout
+              const reason = `worktree creation failed: ${(err as Error).message}`;
+              await writeErrorTurn(session, turnCount, nextAgent, reason, '');
+              const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
+              if (resumed) continue;
+              break;
+            }
+          }
+
           phase = 'implement';
+          session.phase = phase;
           pendingDecided = null;
           nextAgent = session.impl_model;
           await updateSession(session.dir, {
@@ -269,22 +331,18 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         nextAgent = oppositeAgent;
       }
     } else if (phase === 'implement') {
-      // Parse and execute actions from the turn content
-      const actions = parseActions(validation.content);
-      if (actions.length > 0) {
-        console.log(`[Turn ${turnCount}] Executing ${actions.length} action(s)...`);
-        const results: ActionResult[] = await executeActions(actions, session.target_repo);
-
-        const succeeded: number = results.filter(r => r.ok).length;
-        const failed: number = results.filter(r => !r.ok).length;
-        console.log(`[Turn ${turnCount}] Actions: ${succeeded} succeeded, ${failed} failed.`);
-
-        // Store action results for review
-        await writeActionResults(session, turnCount, results);
+      // Agent made changes directly via native tool access.
+      // Capture a git diff to record what changed.
+      const diff = await captureDiff(session.target_repo);
+      if (diff) {
+        emptyDiffRetries = 0;
+        console.log(`[Turn ${turnCount}] Changes detected. Storing diff artifact.`);
+        await writeDiffArtifact(session, turnCount, diff);
 
         // Transition to review
         console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
         phase = 'review';
+        session.phase = phase;
         reviewTurnCount = 0;
         const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
         nextAgent = reviewer;
@@ -294,8 +352,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           next_agent: reviewer,
         });
       } else {
-        // No actions produced — send the agent back to try again
-        console.log(`[Turn ${turnCount}] No def-action blocks found. Retrying implementation...`);
+        emptyDiffRetries++;
+        if (emptyDiffRetries >= MAX_EMPTY_DIFF_RETRIES) {
+          console.log(`[Turn ${turnCount}] No changes after ${MAX_EMPTY_DIFF_RETRIES} attempts. Ending session.`);
+          break;
+        }
+        console.log(`[Turn ${turnCount}] No changes detected in worktree. Retrying implementation (${emptyDiffRetries}/${MAX_EMPTY_DIFF_RETRIES})...`);
         await updateSession(session.dir, { current_turn: turnCount });
       }
     } else if (phase === 'review') {
@@ -315,6 +377,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       // Switch back to implement for fixes
       console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewTurnCount}/${session.review_turns})`);
       phase = 'implement';
+      session.phase = phase;
       nextAgent = session.impl_model;
       await updateSession(session.dir, {
         current_turn: turnCount,
@@ -344,10 +407,24 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
   // Generate artifacts
   await generateDecisions(session);
-  await updateSession(session.dir, { session_status: 'completed', phase });
+
+  // Clean up worktree (branch persists for push/PR)
+  // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
+  if (session.worktree_path && session.original_repo) {
+    try {
+      await removeWorktree(session.original_repo, session.worktree_path);
+    } catch { /* best effort */ }
+    // Restore target_repo to original so session.json reflects the real repo path
+    session.target_repo = session.original_repo;
+  }
+
+  await updateSession(session.dir, { session_status: 'completed', phase, target_repo: session.target_repo });
   console.log('');
   console.log('Session completed.');
   console.log(`  Phase:     ${phase}`);
+  if (session.branch_name) {
+    console.log(`  Branch:    ${session.branch_name}`);
+  }
   console.log(`  Turns:     ${join(session.dir, 'turns')}`);
   console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
 
@@ -458,7 +535,7 @@ async function invokeOnce(agentName: AgentName, session: Session): Promise<Invok
   const result = await invoke(agentName, { ...session, next_agent: agentName });
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
-    ? `timeout (${session.phase === 'implement' ? '600s' : '180s'})`
+    ? `timeout (${session.phase === 'implement' ? '900s' : '300s'})`
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';
@@ -511,9 +588,11 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     from: agent,
     timestamp: new Date().toISOString(),
     status: 'error',
-    phase: session.phase || 'debate',
+    phase: session.phase,
   };
-  const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${rawOutput || '(empty)'}\n\`\`\``;
+  // Sanitize rawOutput to prevent code fence escape
+  const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
+  const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;
   await writeCanonicalTurn(session, id, data, body);
   console.log(`[Turn ${turnCount}] Error turn written: ${id}`);
 }
@@ -526,24 +605,16 @@ async function writeHumanTurn(session: Session, turnCount: number, content: stri
     from: 'human',
     timestamp: new Date().toISOString(),
     status: 'complete',
-    phase: session.phase || 'debate',
+    phase: session.phase,
   };
   await writeCanonicalTurn(session, id, data, content);
 }
 
-async function writeActionResults(session: Session, turnCount: number, results: ActionResult[]): Promise<void> {
+async function writeDiffArtifact(session: Session, turnCount: number, diff: string): Promise<void> {
   const artifactsDir: string = join(session.dir, 'artifacts');
   await mkdir(artifactsDir, { recursive: true });
-  const filename = `action-results-${String(turnCount).padStart(4, '0')}.json`;
-  const serializable = results.map(r => ({
-    type: r.action.type,
-    path: r.action.path || null,
-    cmd: r.action.cmd || null,
-    ok: r.ok,
-    error: r.error || null,
-    output: r.output ? r.output.slice(0, 2000) : null,
-  }));
-  await atomicWrite(join(artifactsDir, filename), JSON.stringify(serializable, null, 2) + '\n');
+  const filename = `diff-${String(turnCount).padStart(4, '0')}.patch`;
+  await atomicWrite(join(artifactsDir, filename), diff + '\n');
 }
 
 async function generateDecisions(session: Session): Promise<void> {

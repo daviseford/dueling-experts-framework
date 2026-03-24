@@ -10,6 +10,7 @@ import type { Session, AgentName } from './session.js';
 interface AgentConfig {
   cmd: string;
   args: string[] | ((outputPath: string) => string[]);
+  implementArgs?: string[];
   captureStdout: boolean;
 }
 
@@ -28,6 +29,14 @@ const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
     cmd: 'claude',
     args: ['--print'],
+    // In implement phase, use -p with tool access. The assembled prompt is piped
+    // to stdin as context; the -p argument is a short instruction.
+    implementArgs: [
+      '-p',
+      'Execute the implementation task described in the context provided via stdin. You have full tool access. When you are done, output a brief markdown summary of what you changed.',
+      '--allowedTools', '*',
+      '--dangerously-skip-permissions',
+    ],
     captureStdout: true,
   },
   codex: {
@@ -38,6 +47,7 @@ const AGENTS: Record<AgentName, AgentConfig> = {
       '--skip-git-repo-check',
       '-o', outputPath,
     ],
+    // Codex already has native tool access via --full-auto
     captureStdout: false,
   },
 };
@@ -63,10 +73,15 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
   const prompt = await assemble(session);
   await writeFile(promptPath, prompt, 'utf8');
 
-  // Build args
-  const args = typeof config.args === 'function'
-    ? config.args(outputPath)
-    : config.args;
+  // Build args — use implementArgs for implement phase if available
+  let args: string[];
+  if (session.phase === 'implement' && config.implementArgs) {
+    args = config.implementArgs;
+  } else if (typeof config.args === 'function') {
+    args = config.args(outputPath);
+  } else {
+    args = config.args;
+  }
 
   const startTime = Date.now();
   const logPrefix = `${agentName}-${Date.now()}`;
@@ -81,9 +96,7 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
     });
 
     // Expose child for SIGINT cleanup (stored on session object)
-    if (session._currentChild !== undefined) {
-      session._currentChild = child;
-    }
+    session._currentChild = child;
 
     // Pipe prompt file to stdin. Using createReadStream + pipe ensures EOF
     // is signaled properly when the file is fully read.

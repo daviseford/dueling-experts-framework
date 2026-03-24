@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite } from './util.js';
+import { removeWorktree } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ export interface Session {
   port: number | null;
   pid: number;
   dir: string;
+  worktree_path: string | null;
+  branch_name: string | null;
+  original_repo: string | null;
   _currentChild?: ChildProcess | null;
 }
 
@@ -73,6 +77,9 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     review_turns: reviewTurns || 6,
     port: null,
     pid: process.pid,
+    worktree_path: null,
+    branch_name: null,
+    original_repo: null,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);
@@ -130,6 +137,14 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
         } else {
           child.kill('SIGTERM');
         }
+      }
+
+      // Clean up worktree (branch is preserved)
+      if (session?.worktree_path && session?.original_repo) {
+        try {
+          await removeWorktree(session.original_repo, session.worktree_path);
+          console.log(`  Worktree cleaned up. Branch preserved: ${session.branch_name}`);
+        } catch { /* best effort */ }
       }
 
       await update(sessionDir, { session_status: 'interrupted' });
