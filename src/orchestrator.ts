@@ -168,16 +168,38 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     // Validate with one retry on failure
     let validation = validate(result.output, nextAgent);
     if (!validation.valid) {
-      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Retrying...`);
-      result = await invokeOnce(nextAgent, session);
-      validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+      const preview = result.output.slice(0, 200).replace(/\n/g, '\\n');
+      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Output preview: ${preview}`);
 
-      if (!validation.valid) {
-        await writeErrorTurn(session, turnCount, nextAgent,
-          `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
-        const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
-        if (resumed) continue;
-        break;
+      // In implement phase, the frontmatter is ceremonial — the orchestrator
+      // assigns canonical values and the real output is the git diff.
+      // Synthesize frontmatter instead of crashing.
+      if (phase === 'implement') {
+        console.log(`[Turn ${turnCount}] Synthesizing frontmatter for implement turn.`);
+        validation = {
+          valid: true,
+          errors: [],
+          data: {
+            id: `turn-${String(turnCount).padStart(4, '0')}-${nextAgent}`,
+            turn: turnCount,
+            from: nextAgent,
+            timestamp: new Date().toISOString(),
+            status: 'complete' as TurnStatus,
+          },
+          content: result.output.trim(),
+        };
+      } else {
+        console.log(`[Turn ${turnCount}] Retrying...`);
+        result = await invokeOnce(nextAgent, session);
+        validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+
+        if (!validation.valid) {
+          await writeErrorTurn(session, turnCount, nextAgent,
+            `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
+          const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
+          if (resumed) continue;
+          break;
+        }
       }
     }
 

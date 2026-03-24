@@ -33,8 +33,9 @@ const AGENTS: Record<AgentName, AgentConfig> = {
     // to stdin as context; the -p argument is a short instruction.
     implementArgs: [
       '-p',
-      'Execute the implementation task described in the context provided via stdin. You have full tool access.',
+      'Execute the implementation task described in the context provided via stdin. You have full tool access. When you are done, output a brief markdown summary of what you changed.',
       '--allowedTools', '*',
+      '--dangerously-skip-permissions',
     ],
     captureStdout: true,
   },
