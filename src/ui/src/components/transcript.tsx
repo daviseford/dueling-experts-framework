@@ -43,7 +43,7 @@ export function Transcript({
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="space-y-2 px-5 py-4">
+      <div className="space-y-3 px-5 py-4">
         {turns.map((turn) => (
           <TurnCard key={turn.id} turn={turn} />
         ))}

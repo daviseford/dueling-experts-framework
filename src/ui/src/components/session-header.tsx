@@ -26,10 +26,12 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
   const isDark = resolvedTheme === "dark"
 
   return (
-    <header className="flex items-center justify-between border-b border-border/50 bg-card/80 px-5 py-2.5 backdrop-blur-sm">
+    <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Radio className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 shadow-sm">
+            <Radio className="h-3.5 w-3.5 text-white" />
+          </div>
           <h1 className="text-sm font-bold tracking-tight text-foreground">DEF</h1>
         </div>
         {topic && (
@@ -76,6 +78,7 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
           </AlertDialogContent>
         </AlertDialog>
       </div>
+      <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent" />
     </header>
   )
 }
