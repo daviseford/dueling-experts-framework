@@ -139,7 +139,15 @@ async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
 
   // Load session and resume
   const session = await load(sessionDir);
-  session.target_repo = targetRepo;
+
+  // If session has an active worktree (implement/review in progress), use it as target_repo.
+  // Otherwise, use the original target repo.
+  if (session.worktree_path && (session.phase === 'implement' || session.phase === 'review')) {
+    session.target_repo = session.worktree_path;
+    session.original_repo = targetRepo;
+  } else {
+    session.target_repo = targetRepo;
+  }
 
   installShutdownHandler(sessionDir, targetRepo, session);
 

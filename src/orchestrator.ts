@@ -9,6 +9,7 @@ import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite } from './util.js';
 import { parseActions, executeActions } from './actions.js';
 import type { ActionResult } from './actions.js';
+import { createWorktree, removeWorktree } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -223,6 +224,29 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         if (pendingDecided && pendingDecided !== nextAgent) {
           // Both agents agreed — transition to implement
           console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
+
+          // Create worktree for isolated implementation (edit mode only)
+          if (session.mode === 'edit') {
+            try {
+              const { worktreePath, branchName } = await createWorktree(
+                session.target_repo, session.id, session.topic,
+              );
+              session.original_repo = session.target_repo;
+              session.worktree_path = worktreePath;
+              session.branch_name = branchName;
+              session.target_repo = worktreePath;
+              await updateSession(session.dir, {
+                worktree_path: worktreePath,
+                branch_name: branchName,
+                original_repo: session.original_repo,
+                target_repo: worktreePath,
+              });
+              console.log(`[Turn ${turnCount}] Worktree created: ${branchName}`);
+            } catch (err: unknown) {
+              console.log(`[Turn ${turnCount}] Warning: worktree creation failed (${(err as Error).message}). Implementing in main checkout.`);
+            }
+          }
+
           phase = 'implement';
           pendingDecided = null;
           nextAgent = session.impl_model;
@@ -344,10 +368,21 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
   // Generate artifacts
   await generateDecisions(session);
+
+  // Clean up worktree (branch persists for push/PR)
+  if (session.worktree_path && session.original_repo) {
+    try {
+      await removeWorktree(session.original_repo, session.worktree_path);
+    } catch { /* best effort */ }
+  }
+
   await updateSession(session.dir, { session_status: 'completed', phase });
   console.log('');
   console.log('Session completed.');
   console.log(`  Phase:     ${phase}`);
+  if (session.branch_name) {
+    console.log(`  Branch:    ${session.branch_name}`);
+  }
   console.log(`  Turns:     ${join(session.dir, 'turns')}`);
   console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
 
