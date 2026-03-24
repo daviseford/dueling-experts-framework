@@ -1,4 +1,7 @@
-#!/usr/bin/env node --import tsx/esm
+#!/usr/bin/env node
+
+// Register tsx ESM loader so .ts imports resolve correctly
+await import('tsx/esm');
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
