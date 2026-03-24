@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
@@ -34,13 +34,14 @@ async function writeTurn(
 
 /**
  * Create a minimal session suitable for recovery tests.
- * Mode is 'plan' (not 'edit') so worktree/PR logic is skipped.
+ * Uses mode: 'edit' so that the shared finalization path exercises
+ * worktree cleanup and target_repo restoration.
  */
 function makeSession(dir: string, overrides: Partial<Session> = {}): Session {
   return {
     id: 'test-recovery-finalize',
     topic: 'test topic',
-    mode: 'plan',
+    mode: 'edit',
     max_turns: 20,
     target_repo: dir,
     created: new Date().toISOString(),
@@ -66,21 +67,31 @@ function makeSession(dir: string, overrides: Partial<Session> = {}): Session {
 describe('recovery finalization', () => {
   let tmpDir: string;
   let turnsDir: string;
+  let originalRepo: string;
+  let worktreePath: string;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'def-recovery-finalize-'));
     turnsDir = join(tmpDir, 'turns');
     await mkdir(turnsDir, { recursive: true });
+    await mkdir(join(tmpDir, 'runtime'), { recursive: true });
+    // Separate directories for edit-mode worktree simulation.
+    // These are not real git repos — worktree/commit operations fail silently
+    // in the finalization path's try/catch blocks.
+    originalRepo = await mkdtemp(join(tmpdir(), 'def-orig-'));
+    worktreePath = await mkdtemp(join(tmpdir(), 'def-wt-'));
   });
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
+    await rm(originalRepo, { recursive: true, force: true });
+    await rm(worktreePath, { recursive: true, force: true });
   });
 
-  it('recovery-approve runs shared finalization: decisions, trace, session state', async () => {
-    // Set up a session that has gone through plan → implement → review approve.
-    // The approve turn is the last written turn (simulating a crash after writing
-    // the review turn but before finalization completed).
+  it('recovery-approve runs shared finalization: decisions, trace, target_repo restoration', async () => {
+    // Set up a recovered edit-mode session where the reviewer approved
+    // before interruption. Finalization should generate decisions,
+    // restore target_repo, and emit terminal trace events.
     await writeTurn(turnsDir, {
       id: 'turn-0001-claude', turn: 1, from: 'claude',
       timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
@@ -101,7 +112,15 @@ describe('recovery finalization', () => {
       verdict: 'approve',
     });
 
-    const session = makeSession(tmpDir, { current_turn: 4, phase: 'review' });
+    const session = makeSession(tmpDir, {
+      current_turn: 4,
+      phase: 'review',
+      target_repo: worktreePath,
+      worktree_path: worktreePath,
+      original_repo: originalRepo,
+      branch_name: 'def/test-branch',
+      base_ref: 'main',
+    });
     await writeSessionJson(session);
 
     await run(session, { noPr: true });
@@ -112,10 +131,10 @@ describe('recovery finalization', () => {
     assert.ok(eventTypes.includes('session.start'), 'missing session.start event');
     assert.ok(eventTypes.includes('session.end'), 'missing session.end event');
 
-    // 2. session.json should be updated with completed status
+    // 2. session.json should be completed with target_repo restored to original_repo
     const finalSession = JSON.parse(await readFile(join(tmpDir, 'session.json'), 'utf8'));
     assert.equal(finalSession.session_status, 'completed');
-    assert.equal(finalSession.target_repo, tmpDir);
+    assert.equal(finalSession.target_repo, originalRepo, 'target_repo not restored to original_repo');
 
     // 3. decisions.md should exist (finalization ran generateDecisions)
     const decisionsPath = join(tmpDir, 'artifacts', 'decisions.md');
@@ -124,9 +143,9 @@ describe('recovery finalization', () => {
     assert.ok(decisionsContent.includes('Add attempt artifacts'), 'decisions.md missing expected content');
   });
 
-  it('recovery-review-limit runs shared finalization: decisions, trace, session state', async () => {
-    // Set up a session with review_turns: 1 and one completed fix cycle,
-    // then a second fix verdict that exceeds the limit.
+  it('recovery-review-limit runs shared finalization: decisions, trace, target_repo restoration', async () => {
+    // Set up a recovered edit-mode session where the review loop limit
+    // is exceeded. Finalization should run the same shared path.
     await writeTurn(turnsDir, {
       id: 'turn-0001-claude', turn: 1, from: 'claude',
       timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
@@ -159,7 +178,16 @@ describe('recovery finalization', () => {
     });
 
     // review_turns: 1 means after 1 completed fix cycle the next fix is the limit
-    const session = makeSession(tmpDir, { current_turn: 6, phase: 'review', review_turns: 1 });
+    const session = makeSession(tmpDir, {
+      current_turn: 6,
+      phase: 'review',
+      review_turns: 1,
+      target_repo: worktreePath,
+      worktree_path: worktreePath,
+      original_repo: originalRepo,
+      branch_name: 'def/test-branch',
+      base_ref: 'main',
+    });
     await writeSessionJson(session);
 
     await run(session, { noPr: true });
@@ -170,9 +198,10 @@ describe('recovery finalization', () => {
     assert.ok(eventTypes.includes('session.start'), 'missing session.start event');
     assert.ok(eventTypes.includes('session.end'), 'missing session.end event');
 
-    // 2. session.json should be completed
+    // 2. session.json should be completed with target_repo restored
     const finalSession = JSON.parse(await readFile(join(tmpDir, 'session.json'), 'utf8'));
     assert.equal(finalSession.session_status, 'completed');
+    assert.equal(finalSession.target_repo, originalRepo, 'target_repo not restored to original_repo');
 
     // 3. decisions.md should exist
     const decisionsPath = join(tmpDir, 'artifacts', 'decisions.md');
@@ -180,12 +209,21 @@ describe('recovery finalization', () => {
     assert.ok(decisionsContent.includes('Serialize event writes'), 'decisions.md missing expected content');
   });
 
-  it('recovery-fix-under-limit does NOT skip to finalization', async () => {
-    // Set up a session with a pending fix verdict under the review limit.
-    // The main loop should run (and immediately fail since there's no real agent),
-    // but the key assertion is that endRequested is NOT set — the session tries
-    // to continue. We verify by checking that no session.end event is emitted
-    // before an attempt.start (meaning the loop was entered).
+  it('recovery-fix-under-limit enters the main loop and finalizes', { timeout: 30_000 }, async () => {
+    // Set up a recovered edit-mode session with a pending fix verdict
+    // under the review limit. The recovery code must NOT set endRequested,
+    // allowing the main loop to run. We use a non-existent worktree path
+    // as target_repo so the agent spawn fails immediately (ENOENT on cwd),
+    // but the loop entry is proven by the attempt.start event.
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+      decisions: ['Capture attempts'],
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
     await writeTurn(turnsDir, {
       id: 'turn-0003-claude', turn: 3, from: 'claude',
       timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'implement',
@@ -196,27 +234,36 @@ describe('recovery finalization', () => {
       verdict: 'fix',
     });
 
+    // Non-existent directory: agent spawn will fail immediately with ENOENT
+    const nonExistentWorktree = join(tmpDir, 'nonexistent-worktree');
+
     const session = makeSession(tmpDir, {
       current_turn: 4,
       phase: 'review',
       review_turns: 6,
-      // Set max_turns to current_turn so the loop immediately exits
-      // without actually invoking an agent — but it DOES enter the loop condition
-      max_turns: 4,
+      max_turns: 10, // Higher than current_turn so the loop is reachable
+      target_repo: nonExistentWorktree,
+      worktree_path: nonExistentWorktree,
+      original_repo: originalRepo,
+      branch_name: 'def/test-branch',
+      base_ref: 'main',
     });
     await writeSessionJson(session);
 
     await run(session, { noPr: true });
 
-    // The loop was entered (or at least the condition was checked) — verify
-    // finalization still ran after the loop (not via early return).
     const events = await readEvents(tmpDir);
     const eventTypes = events.map((e: { event: string }) => e.event);
-    assert.ok(eventTypes.includes('session.start'), 'missing session.start event');
-    assert.ok(eventTypes.includes('session.end'), 'missing session.end event');
 
-    // Session should be completed (loop exited normally due to max_turns)
+    // KEY: attempt.start proves the main loop was entered (not skipped via endRequested)
+    assert.ok(eventTypes.includes('attempt.start'), 'missing attempt.start — loop was not entered');
+
+    // Finalization still ran after the loop broke on agent failure
+    assert.ok(eventTypes.includes('session.end'), 'missing session.end — finalization did not run');
+
+    // session.json should be completed with target_repo restored
     const finalSession = JSON.parse(await readFile(join(tmpDir, 'session.json'), 'utf8'));
     assert.equal(finalSession.session_status, 'completed');
+    assert.equal(finalSession.target_repo, originalRepo, 'target_repo not restored to original_repo');
   });
 });
