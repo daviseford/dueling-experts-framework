@@ -8,6 +8,7 @@ import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
+import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ interface Ticker {
 
 interface RunOptions {
   server?: ServerModule | null;
+  noPr?: boolean;
 }
 
 interface RecoveredState {
@@ -68,7 +70,7 @@ interface DecisionEntry {
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -260,16 +262,18 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           // operate on the user's main checkout.
           if (session.mode === 'edit') {
             try {
-              const { worktreePath, branchName } = await createWorktree(
+              const { worktreePath, branchName, baseRef } = await createWorktree(
                 session.target_repo, session.id, session.topic,
               );
               session.original_repo = session.target_repo;
               session.worktree_path = worktreePath;
               session.branch_name = branchName;
+              session.base_ref = baseRef;
               session.target_repo = worktreePath;
               await updateSession(session.dir, {
                 worktree_path: worktreePath,
                 branch_name: branchName,
+                base_ref: baseRef,
                 original_repo: session.original_repo,
                 target_repo: worktreePath,
               });
@@ -414,27 +418,62 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
   // Generate artifacts
   await generateDecisions(session);
 
-  // Commit any remaining uncommitted changes before worktree removal (safety net).
+  // Commit any remaining uncommitted changes before push/PR (safety net).
   if (session.worktree_path) {
     await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
   }
 
-  // Clean up worktree (branch persists for push/PR)
-  // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
-  if (session.worktree_path && session.original_repo) {
-    try {
-      await removeWorktree(session.original_repo, session.worktree_path);
-    } catch { /* best effort */ }
-    // Restore target_repo to original so session.json reflects the real repo path
-    session.target_repo = session.original_repo;
+  // Push branch and create draft PR from worktree (before cleanup).
+  // Worktree cleanup is in a finally-style path so it always happens.
+  try {
+    if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
+      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+      if (delta) {
+        const prResult = await pushAndCreatePr({
+          repoPath: session.worktree_path,
+          branchName: session.branch_name,
+          baseRef: session.base_ref,
+          title: `def: ${session.topic}`,
+          sessionDir: session.dir,
+          topic: session.topic,
+          sessionId: session.id,
+        });
+        if (prResult) {
+          session.pr_url = prResult.url;
+          session.pr_number = prResult.number;
+          console.log(`Draft PR created: ${prResult.url}`);
+        }
+      } else {
+        console.log('No changes on branch — skipping PR creation.');
+      }
+    }
+  } finally {
+    // Clean up worktree (branch persists for push/PR).
+    // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
+    if (session.worktree_path && session.original_repo) {
+      try {
+        await removeWorktree(session.original_repo, session.worktree_path);
+      } catch { /* best effort */ }
+      // Restore target_repo to original so session.json reflects the real repo path
+      session.target_repo = session.original_repo;
+    }
   }
 
-  await updateSession(session.dir, { session_status: 'completed', phase, target_repo: session.target_repo });
+  await updateSession(session.dir, {
+    session_status: 'completed',
+    phase,
+    target_repo: session.target_repo,
+    pr_url: session.pr_url ?? null,
+    pr_number: session.pr_number ?? null,
+  });
   console.log('');
   console.log('Session completed.');
   console.log(`  Phase:     ${phase}`);
   if (session.branch_name) {
     console.log(`  Branch:    ${session.branch_name}`);
+  }
+  if (session.pr_url) {
+    console.log(`  PR:        ${session.pr_url}`);
   }
   console.log(`  Turns:     ${join(session.dir, 'turns')}`);
   console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);

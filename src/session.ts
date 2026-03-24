@@ -30,6 +30,9 @@ export interface Session {
   worktree_path: string | null;
   branch_name: string | null;
   original_repo: string | null;
+  base_ref: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
   _currentChild?: ChildProcess | null;
 }
 
@@ -80,6 +83,9 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     worktree_path: null,
     branch_name: null,
     original_repo: null,
+    base_ref: null,
+    pr_url: null,
+    pr_number: null,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);
