@@ -52,6 +52,7 @@ export function Transcript({
         )}
         {sessionStatus === "completed" && (
           <SessionSummary
+            phase={phase}
             branchName={branchName}
             prUrl={prUrl}
             prNumber={prNumber}

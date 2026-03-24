@@ -300,6 +300,21 @@ describe('buildPrBody format', () => {
     await rm(emptyDir, { recursive: true, force: true });
   });
 
+  it('preserves raw decisions log even when bullet extraction yields no bullets', async () => {
+    // Write decisions content that won't match the bullet extractor
+    await writeFile(
+      join(sessionDir, 'artifacts', 'decisions.md'),
+      '# Decisions\n\nSome freeform discussion that has no numbered lines or bullets.\nAnother paragraph of context.\n'
+    );
+
+    const body = await buildPrBody(sessionDir, 'test', 'abc12345', '/tmp/fake', null);
+    // Should NOT have Key Decisions section (no bullets extracted)
+    assert.ok(!body.includes('## Key Decisions'));
+    // But SHOULD still include the raw decisions log
+    assert.ok(body.includes('Full decisions log'), 'raw decisions log should be preserved');
+    assert.ok(body.includes('Some freeform discussion'), 'raw content should appear in the log');
+  });
+
   it('includes session ID in the header', async () => {
     const body = await buildPrBody(sessionDir, 'test', 'abcdefgh-1234', '/tmp/fake', null);
     assert.ok(body.includes('`abcdefgh`'));

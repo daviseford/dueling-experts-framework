@@ -1,6 +1,8 @@
-import { CheckCircle2, GitBranch, ExternalLink, FolderOpen, FileText } from "lucide-react"
+import { CheckCircle2, GitBranch, ExternalLink, FolderOpen, FileText, Layers } from "lucide-react"
+import type { SessionPhase } from "@/lib/types"
 
 export interface SessionSummaryProps {
+  phase: SessionPhase
   branchName: string | null
   prUrl: string | null
   prNumber: number | null
@@ -10,6 +12,7 @@ export interface SessionSummaryProps {
 }
 
 export function SessionSummary({
+  phase,
   branchName,
   prUrl,
   prNumber,
@@ -26,6 +29,9 @@ export function SessionSummary({
         </span>
       </div>
       <div className="space-y-2 px-4 py-3">
+        <Row icon={<Layers className="h-3.5 w-3.5" />} label="Phase">
+          <span className="text-xs capitalize">{phase}</span>
+        </Row>
         {branchName && (
           <Row icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch">
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{branchName}</code>

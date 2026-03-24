@@ -184,8 +184,8 @@ export async function buildPrBody(sessionDir: string, topic: string, sessionId: 
     lines.push('');
   }
 
-  // Full decisions log for traceability (if raw content exists and differs from bullets)
-  if (rawDecisions.trim() && bullets.length > 0) {
+  // Full decisions log for traceability (always preserved when raw content exists)
+  if (rawDecisions.trim()) {
     lines.push('<details>');
     lines.push('<summary>Full decisions log</summary>');
     lines.push('');
