@@ -91,57 +91,136 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
 
 // ── Internal helpers ────────────────────────────────────────────────
 
-async function buildPrBody(sessionDir: string, topic: string, sessionId: string, repoPath: string, baseRef: string | null): Promise<string> {
+/**
+ * Extract clean decision bullets from decisions.md.
+ * The file format uses numbered lines like: `1. **[claude]** decision text`
+ * We extract just the decision text. Lines that don't match are kept as-is.
+ */
+export function parseDecisionBullets(raw: string): string[] {
+  const lines = raw.split('\n').filter(l => l.trim());
+  const bullets: string[] = [];
+  const agentPrefix = /^\d+\.\s+\*\*\[.*?\]\*\*\s*/;
+
+  for (const line of lines) {
+    const match = line.match(agentPrefix);
+    if (match) {
+      bullets.push(line.slice(match[0].length).trim());
+    } else if (line.match(/^\d+\.\s+/)) {
+      // Numbered line without agent prefix
+      bullets.push(line.replace(/^\d+\.\s+/, '').trim());
+    } else if (line.startsWith('- ')) {
+      bullets.push(line.slice(2).trim());
+    }
+    // Skip header lines, blank lines, etc.
+  }
+
+  return bullets;
+}
+
+/**
+ * Extract the summary line from git diff --stat output.
+ * The last non-empty line is always something like:
+ * "12 files changed, 450 insertions(+), 32 deletions(-)"
+ */
+export function parseDiffstatSummary(diffstat: string): string {
+  const lines = diffstat.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '';
+  const last = lines[lines.length - 1].trim();
+  // Verify it looks like a diffstat summary
+  if (last.includes('changed')) return last;
+  return '';
+}
+
+export async function buildPrBody(sessionDir: string, topic: string, sessionId: string, repoPath: string, baseRef: string | null): Promise<string> {
   const lines: string[] = [];
 
   lines.push(`> Automated draft PR from DEF session \`${sessionId.slice(0, 8)}\``);
   lines.push('');
+  lines.push('## Summary');
+  lines.push('');
   lines.push(`**Topic:** ${topic}`);
   lines.push('');
 
-  // Include decisions if available
-  const decisionsPath = join(sessionDir, 'artifacts', 'decisions.md');
-  try {
-    const decisions = await readFile(decisionsPath, 'utf8');
-    if (decisions.trim()) {
-      lines.push('## Decisions');
-      lines.push('');
-      lines.push(decisions.trim());
-      lines.push('');
-    }
-  } catch {
-    // No decisions file — skip
-  }
+  // Gather git stats for the summary paragraph
+  let diffstat = '';
+  let commitLog = '';
+  let diffSummaryLine = '';
+  let commitCount = 0;
 
-  // Include change summary (diffstat + commit log)
   if (baseRef) {
     try {
-      const diffstat = await exec(repoPath, 'git', ['diff', '--stat', `${baseRef}..HEAD`]);
-      const commitLog = await exec(repoPath, 'git', ['log', '--oneline', `${baseRef}..HEAD`]);
-      if (diffstat || commitLog) {
-        lines.push('<details>');
-        lines.push('<summary>Changes</summary>');
-        lines.push('');
-        if (commitLog) {
-          lines.push('**Commits:**');
-          lines.push('```');
-          lines.push(commitLog);
-          lines.push('```');
-          lines.push('');
-        }
-        if (diffstat) {
-          lines.push('**Diffstat:**');
-          lines.push('```');
-          lines.push(diffstat);
-          lines.push('```');
-          lines.push('');
-        }
-        lines.push('</details>');
-        lines.push('');
-      }
+      diffstat = await exec(repoPath, 'git', ['diff', '--stat', `${baseRef}..HEAD`]);
+      commitLog = await exec(repoPath, 'git', ['log', '--oneline', `${baseRef}..HEAD`]);
+      diffSummaryLine = parseDiffstatSummary(diffstat);
+      commitCount = commitLog.split('\n').filter(l => l.trim()).length;
     } catch {
-      // diff/log failed — skip summary
+      // diff/log failed — continue without stats
     }
+  }
+
+  // Build a short narrative summary line
+  if (diffSummaryLine && commitCount > 0) {
+    lines.push(`${diffSummaryLine} across ${commitCount} commit${commitCount === 1 ? '' : 's'}.`);
+    lines.push('');
+  }
+
+  // Key decisions as clean bullets
+  const decisionsPath = join(sessionDir, 'artifacts', 'decisions.md');
+  let rawDecisions = '';
+  try {
+    rawDecisions = await readFile(decisionsPath, 'utf8');
+  } catch {
+    // No decisions file
+  }
+
+  const bullets = rawDecisions ? parseDecisionBullets(rawDecisions) : [];
+
+  if (bullets.length > 0) {
+    lines.push('## Key Decisions');
+    lines.push('');
+    for (const bullet of bullets) {
+      lines.push(`- ${bullet}`);
+    }
+    lines.push('');
+  }
+
+  // Full decisions log for traceability (if raw content exists and differs from bullets)
+  if (rawDecisions.trim() && bullets.length > 0) {
+    lines.push('<details>');
+    lines.push('<summary>Full decisions log</summary>');
+    lines.push('');
+    lines.push(rawDecisions.trim());
+    lines.push('');
+    lines.push('</details>');
+    lines.push('');
+  }
+
+  // Collapsible commits and diffstat
+  if (commitLog || diffstat) {
+    const summaryLabel = [
+      commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : null,
+      diffSummaryLine || null,
+    ].filter(Boolean).join(', ');
+
+    lines.push('<details>');
+    lines.push(`<summary>${summaryLabel || 'Changes'}</summary>`);
+    lines.push('');
+    if (commitLog) {
+      lines.push('**Commits:**');
+      lines.push('```');
+      lines.push(commitLog);
+      lines.push('```');
+      lines.push('');
+    }
+    if (diffstat) {
+      lines.push('**Diffstat:**');
+      lines.push('```');
+      lines.push(diffstat);
+      lines.push('```');
+      lines.push('');
+    }
+    lines.push('</details>');
+    lines.push('');
   }
 
   return lines.join('\n') + '\n';

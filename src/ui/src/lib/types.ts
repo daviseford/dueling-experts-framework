@@ -25,4 +25,10 @@ export interface TurnsResponse {
   topic: string
   turn_count: number
   thinking: ThinkingState | null
+  branch_name: string | null
+  pr_url: string | null
+  pr_number: number | null
+  turns_path: string | null
+  artifacts_path: string | null
+  artifact_names: string[]
 }

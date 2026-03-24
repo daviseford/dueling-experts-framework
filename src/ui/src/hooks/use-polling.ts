@@ -12,6 +12,12 @@ interface PollingState {
   statusText: string
   sessionTimer: string
   phase: SessionPhase
+  branchName: string | null
+  prUrl: string | null
+  prNumber: number | null
+  turnsPath: string | null
+  artifactsPath: string | null
+  artifactNames: string[]
 }
 
 const POLL_INTERVAL = 3000
@@ -43,6 +49,12 @@ export function usePolling(): PollingState {
   const [statusText, setStatusText] = useState("Connecting...")
   const [sessionTimer, setSessionTimer] = useState("0s")
   const [phase, setPhase] = useState<SessionPhase>("plan")
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prNumber, setPrNumber] = useState<number | null>(null)
+  const [turnsPath, setTurnsPath] = useState<string | null>(null)
+  const [artifactsPath, setArtifactsPath] = useState<string | null>(null)
+  const [artifactNames, setArtifactNames] = useState<string[]>([])
 
   const fetchInFlightRef = useRef(false)
   const sessionStartRef = useRef<number>(Date.now())
@@ -83,6 +95,14 @@ export function usePolling(): PollingState {
       } else {
         setStatusText("Active")
       }
+
+      // Update completion metadata
+      setBranchName(data.branch_name ?? null)
+      setPrUrl(data.pr_url ?? null)
+      setPrNumber(data.pr_number ?? null)
+      setTurnsPath(data.turns_path ?? null)
+      setArtifactsPath(data.artifacts_path ?? null)
+      setArtifactNames(data.artifact_names ?? [])
 
       // Update thinking state
       setThinking(data.thinking)
@@ -156,5 +176,5 @@ export function usePolling(): PollingState {
     }
   }, [])
 
-  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase }
+  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase, branchName, prUrl, prNumber, turnsPath, artifactsPath, artifactNames }
 }
