@@ -1,4 +1,4 @@
-# DEF — Dueling Experts Framework
+# Dueling Experts Framework
 
 A local CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents debate a topic, implement changes in an isolated git worktree, review each other's work, and open a draft PR — all while you watch in a browser UI.
 
