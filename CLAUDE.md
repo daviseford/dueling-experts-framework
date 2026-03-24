@@ -8,19 +8,20 @@ See [AGENTS.md](./AGENTS.md) for full architecture, conventions, and agent opera
 
 ```sh
 npm start -- --topic "Your topic"    # Run DEF
-npm test                              # Run tests (node:test)
+npm test                              # Run tests (node:test via tsx)
+npm run typecheck                     # Type-check with tsc --noEmit
 npm run dev:ui                        # Dev UI with hot reload
 npm run build:ui                      # Build UI
 ```
 
-Run a single test file: `node --test src/__tests__/validate.test.js`
+Run a single test file: `tsx --test src/__tests__/validate.test.ts`
 
 ## Key Constraints
 
-- **Backend is plain JS (ESM), not TypeScript.** Node.js 20+, no framework.
-- **Only two dependencies:** `gray-matter` and `js-yaml`. Keep it minimal.
-- **Atomic writes required** for `session.json` and turn files — use `atomicWrite()` from `src/util.js`.
+- **Backend is TypeScript (ESM).** Node.js 20+, run via `tsx`, no build step. Type-check with `tsc --noEmit`.
+- **Only two runtime dependencies:** `gray-matter` and `js-yaml`. Keep it minimal.
+- **Atomic writes required** for `session.json` and turn files — use `atomicWrite()` from `src/util.ts`.
 - **Frontmatter security:** never use `matter.stringify()`, always `yaml.dump()` to prevent injection.
-- **Tests use `node:test`** built-in runner, no mocking frameworks.
+- **Tests use `node:test`** built-in runner via `tsx --test`, no mocking frameworks.
 - **Conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
 - **Never commit to `main`/`master`/`dev`/`stage`** — use feature branches.

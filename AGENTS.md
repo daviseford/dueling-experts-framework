@@ -9,17 +9,17 @@ DEF (Debate Engine Framework) — a CLI that orchestrates turn-based conversatio
 ## Files That Matter
 
 ```
-bin/def              → CLI entrypoint (ESM shim)
-src/index.js         → Arg parsing, session creation, recovery check
-src/orchestrator.js  → Turn loop: phase-aware invoke → validate → write → repeat
-src/agent.js         → Spawns claude/codex as child processes
-src/context.js       → Assembles phase-aware prompts from system prompt + prior turns
-src/validation.js    → Parses/validates YAML frontmatter from agent output
-src/session.js       → Session CRUD, lockfile, shutdown handler
-src/recovery.js      → Crash recovery: stale lock detection, session resume
-src/actions.js       → Parses def-action blocks and executes file/shell operations
-src/server.js        → HTTP server (localhost-only) serving API + React UI
-src/util.js          → atomicWrite (write→fsync→rename), isProcessAlive
+bin/def              → CLI entrypoint (ESM shim, tsx loader)
+src/index.ts         → Arg parsing, session creation, recovery check
+src/orchestrator.ts  → Turn loop: phase-aware invoke → validate → write → repeat
+src/agent.ts         → Spawns claude/codex as child processes
+src/context.ts       → Assembles phase-aware prompts from system prompt + prior turns
+src/validation.ts    → Parses/validates YAML frontmatter from agent output
+src/session.ts       → Session CRUD, lockfile, shutdown handler
+src/recovery.ts      → Crash recovery: stale lock detection, session resume
+src/actions.ts       → Parses def-action blocks and executes file/shell operations
+src/server.ts        → HTTP server (localhost-only) serving API + React UI
+src/util.ts          → atomicWrite (write→fsync→rename), isProcessAlive
 src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/ui)
 ```
 
@@ -40,9 +40,9 @@ Session directories live at `.def/sessions/<uuid>/` with:
 - **Do not bypass frontmatter security.** `gray-matter`'s JS/CoffeeScript engines are disabled. Frontmatter is written manually via `yaml.dump()`, not `matter.stringify()`, to prevent injection via embedded `---` blocks.
 
 ### Do
-- **Use `atomicWrite()` from `src/util.js` for session.json, turn files, and artifacts.** These are the crash-safety boundary. Other files (prompt.md, .gitignore, debug logs) use plain `writeFile`.
+- **Use `atomicWrite()` from `src/util.ts` for session.json, turn files, and artifacts.** These are the crash-safety boundary. Other files (prompt.md, .gitignore, debug logs) use plain `writeFile`.
 - **Use conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
-- **Add tests when adding backend logic.** Tests use the Node.js built-in test runner: `node --test src/__tests__/*.test.js`. No mocking frameworks.
+- **Add tests when adding backend logic.** Tests use the Node.js built-in test runner via tsx: `tsx --test src/__tests__/*.test.ts`. No mocking frameworks.
 - **Update session state via `session.update()`**, never by writing `session.json` directly.
 - **Record durable choices in `decisions`.** Architecture choices, accepted tradeoffs, scope cuts, and protocol interpretations that later turns must preserve. These entries survive context truncation and are compiled into the final decisions log.
 
@@ -114,7 +114,7 @@ file content here
 - No delete-file, git, or network operations
 
 ## Context Assembly
-- `context.js` builds prompts with a **400K character budget** (~100K tokens).
+- `context.ts` builds prompts with a **400K character budget** (~100K tokens).
 - Newest turns are prioritized; oldest are dropped first.
 - Only `decisions` arrays from truncated turns are preserved in a summary notice — no other content survives truncation.
 - Prompts are phase-aware: debate prompts encourage challenge, implement prompts include decisions and action format, review prompts include action results.
@@ -144,7 +144,7 @@ The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadc
 
 ## Recovery & Crash Safety
 - SIGINT sets session to `interrupted` and releases the lockfile.
-- On startup, `recovery.js` checks for interrupted/active/paused sessions.
+- On startup, `recovery.ts` checks for interrupted/active/paused sessions.
 - Stale lockfiles are detected by PID liveness check.
 - On resume: orphaned `.tmp` files in `turns/` are cleaned, runtime files are deleted.
 - Ephemeral state (`pendingDecided`, `reviewTurnCount`) is reconstructed from turn history on recovery.
@@ -154,7 +154,8 @@ The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadc
 npm start -- --topic "Your topic"                    # Run the CLI
 npm start -- --topic "..." --impl-model codex        # Use Codex for implementation
 npm start -- --topic "..." --review-turns 10         # Set review loop limit
-npm test                                              # Run tests
+npm test                                              # Run tests (tsx)
+npm run typecheck                                     # Type-check (tsc --noEmit)
 npm run dev:ui                                        # Dev UI (hot reload)
 npm run build:ui                                      # Build UI
 npm install                                           # Full install (triggers UI build via "prepare")
