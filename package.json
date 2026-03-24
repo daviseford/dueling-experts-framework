@@ -15,10 +15,14 @@
     "prepare": "cd src/ui && npm install && npm run build"
   },
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "gradient-string": "^3.0.0",
     "gray-matter": "^4.0.3",
-    "js-yaml": "^3.14.1"
+    "js-yaml": "^3.14.1",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@types/gradient-string": "^1.1.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "tsx": "^4.21.0",

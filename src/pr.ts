@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { atomicWrite } from './util.js';
+import * as ui from './ui.js';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
   try {
     await exec(repoPath, 'git', ['push', '-u', 'origin', branchName]);
   } catch (err: unknown) {
-    console.log(`Could not push branch: ${(err as Error).message}. Branch preserved: ${branchName}`);
+    ui.status('push.failed', { branch: branchName, error: (err as Error).message });
     return null;
   }
 
@@ -77,13 +78,13 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
     const prNumber = parseInt(prUrl.split('/').pop()!, 10);
 
     if (!prUrl || isNaN(prNumber)) {
-      console.log(`Could not parse PR URL from gh output: ${prUrl}`);
+      ui.status('pr.parse.failed', { output: prUrl });
       return null;
     }
 
     return { url: prUrl, number: prNumber };
   } catch (err: unknown) {
-    console.log(`Could not create PR: ${(err as Error).message}. Branch preserved: ${branchName}`);
+    ui.status('pr.failed', { branch: branchName, error: (err as Error).message });
     return null;
   }
 }
