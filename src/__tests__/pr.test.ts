@@ -1,12 +1,13 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { hasBranchDelta } from '../pr.js';
 import { createWorktree, removeWorktree, commitChanges } from '../worktree.js';
+import { parseArgs } from '../cli.js';
 
 describe('hasBranchDelta', () => {
   let testDir: string;
@@ -53,17 +54,13 @@ describe('hasBranchDelta', () => {
     await removeWorktree(testDir, worktreePath);
   });
 
-  it('returns false when base_ref is null and there is only the init commit', async () => {
-    // hasBranchDelta with null baseRef falls back to checking if any commits exist.
-    // In a worktree with commits, this returns true — but that's the correct behavior
-    // because a null baseRef means detached HEAD, and we still want to report
-    // that the branch has content.
+  it('returns false when base_ref is null (conservatively skips)', async () => {
     const sessionId = randomUUID();
     const { worktreePath } = await createWorktree(testDir, sessionId, 'null base');
 
-    // With null baseRef it checks for any commits — the init commit counts
+    // With null baseRef we cannot reliably determine delta — should return false
     const delta = await hasBranchDelta(worktreePath, null);
-    assert.equal(delta, true, 'should return true when commits exist with null baseRef');
+    assert.equal(delta, false, 'should conservatively return false with null baseRef');
 
     await removeWorktree(testDir, worktreePath);
   });
@@ -159,11 +156,27 @@ describe('Session schema includes PR fields', () => {
 
 describe('CLI --no-pr parsing', () => {
   it('parseArgs recognizes --no-pr flag', () => {
-    // We test the parseArgs function indirectly by checking that
-    // the module accepts --no-pr without error. Since parseArgs is
-    // not exported, we verify the flag is in the switch statement
-    // by checking the source file.
-    // This is covered by the integration of index.ts reading the flag.
-    assert.ok(true, '--no-pr flag added to CLI parser');
+    const result = parseArgs(['--topic', 'test topic', '--no-pr']);
+    assert.equal(result.noPr, true);
+    assert.equal(result.topic, 'test topic');
+  });
+
+  it('parseArgs defaults noPr to undefined when flag absent', () => {
+    const result = parseArgs(['--topic', 'test topic']);
+    assert.equal(result.noPr, undefined);
+  });
+
+  it('parseArgs handles --no-pr with other flags', () => {
+    const result = parseArgs(['--no-pr', '--topic', 'my topic', '--mode', 'edit', '--max-turns', '10']);
+    assert.equal(result.noPr, true);
+    assert.equal(result.topic, 'my topic');
+    assert.equal(result.mode, 'edit');
+    assert.equal(result.maxTurns, 10);
+  });
+
+  it('parseArgs handles positional topic with --no-pr', () => {
+    const result = parseArgs(['add', 'dark', 'mode', '--no-pr']);
+    assert.equal(result.noPr, true);
+    assert.equal(result.topic, 'add dark mode');
   });
 });

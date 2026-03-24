@@ -25,17 +25,13 @@ export interface PrOptions {
 /**
  * Check whether the branch has commits beyond the base ref.
  * Returns true if there is a delta worth pushing.
+ * Conservatively returns false when no reliable base can be established.
  */
 export async function hasBranchDelta(repoPath: string, baseRef: string | null): Promise<boolean> {
   if (!baseRef) {
-    // No base ref (detached HEAD) — check if there are any commits at all
-    // by comparing against an empty tree
-    try {
-      const log = await exec(repoPath, 'git', ['log', '--oneline', '-1']);
-      return log.length > 0;
-    } catch {
-      return false;
-    }
+    // No base ref (detached HEAD or unavailable) — we cannot reliably
+    // determine if there's a delta. Skip PR creation rather than guessing.
+    return false;
   }
   try {
     const log = await exec(repoPath, 'git', ['log', '--oneline', `${baseRef}..HEAD`]);
@@ -62,7 +58,7 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
 
   // 2. Build PR body and write to file
   const bodyPath = join(sessionDir, 'artifacts', 'pr-body.md');
-  const body = await buildPrBody(sessionDir, topic, sessionId);
+  const body = await buildPrBody(sessionDir, topic, sessionId, repoPath, baseRef);
   await atomicWrite(bodyPath, body);
 
   // 3. Create draft PR
@@ -95,7 +91,7 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
 
 // ── Internal helpers ────────────────────────────────────────────────
 
-async function buildPrBody(sessionDir: string, topic: string, sessionId: string): Promise<string> {
+async function buildPrBody(sessionDir: string, topic: string, sessionId: string, repoPath: string, baseRef: string | null): Promise<string> {
   const lines: string[] = [];
 
   lines.push(`> Automated draft PR from DEF session \`${sessionId.slice(0, 8)}\``);
@@ -115,6 +111,37 @@ async function buildPrBody(sessionDir: string, topic: string, sessionId: string)
     }
   } catch {
     // No decisions file — skip
+  }
+
+  // Include change summary (diffstat + commit log)
+  if (baseRef) {
+    try {
+      const diffstat = await exec(repoPath, 'git', ['diff', '--stat', `${baseRef}..HEAD`]);
+      const commitLog = await exec(repoPath, 'git', ['log', '--oneline', `${baseRef}..HEAD`]);
+      if (diffstat || commitLog) {
+        lines.push('<details>');
+        lines.push('<summary>Changes</summary>');
+        lines.push('');
+        if (commitLog) {
+          lines.push('**Commits:**');
+          lines.push('```');
+          lines.push(commitLog);
+          lines.push('```');
+          lines.push('');
+        }
+        if (diffstat) {
+          lines.push('**Diffstat:**');
+          lines.push('```');
+          lines.push(diffstat);
+          lines.push('```');
+          lines.push('');
+        }
+        lines.push('</details>');
+        lines.push('');
+      }
+    } catch {
+      // diff/log failed — skip summary
+    }
   }
 
   return lines.join('\n') + '\n';

@@ -2,23 +2,14 @@ import { resolve } from 'node:path';
 import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
-
-interface ParsedArgs {
-  topic?: string;
-  mode?: string;
-  maxTurns?: number;
-  first?: string;
-  implModel?: string;
-  reviewTurns?: number;
-  noPr?: boolean;
-}
+import { parseArgs } from './cli.js';
 
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
-const opts: ParsedArgs = parseArgs(args);
+const opts = parseArgs(args);
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
@@ -104,44 +95,4 @@ try {
     server.stop();
   }
   process.exit(process.exitCode || 0);
-}
-
-function parseArgs(argv: string[]): ParsedArgs {
-  const result: ParsedArgs = {};
-  const positional: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--topic':
-        result.topic = argv[++i];
-        break;
-      case '--mode':
-        result.mode = argv[++i];
-        break;
-      case '--max-turns':
-        result.maxTurns = parseInt(argv[++i], 10);
-        break;
-      case '--first':
-        result.first = argv[++i];
-        break;
-      case '--impl-model':
-        result.implModel = argv[++i];
-        break;
-      case '--review-turns':
-        result.reviewTurns = parseInt(argv[++i], 10);
-        break;
-      case '--no-pr':
-        result.noPr = true;
-        break;
-      default:
-        if (!argv[i].startsWith('--')) {
-          positional.push(argv[i]);
-        }
-        break;
-    }
-  }
-  // Allow bare positional args as the topic: def add dark mode
-  if (!result.topic && positional.length > 0) {
-    result.topic = positional.join(' ');
-  }
-  return result;
 }

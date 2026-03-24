@@ -424,37 +424,39 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   }
 
   // Push branch and create draft PR from worktree (before cleanup).
-  // Only for edit-mode sessions that reached implement, unless --no-pr was set.
-  if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
-    const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
-    if (delta) {
-      const prResult = await pushAndCreatePr({
-        repoPath: session.worktree_path,
-        branchName: session.branch_name,
-        baseRef: session.base_ref,
-        title: `def: ${session.topic}`,
-        sessionDir: session.dir,
-        topic: session.topic,
-        sessionId: session.id,
-      });
-      if (prResult) {
-        session.pr_url = prResult.url;
-        session.pr_number = prResult.number;
-        console.log(`Draft PR created: ${prResult.url}`);
+  // Worktree cleanup is in a finally-style path so it always happens.
+  try {
+    if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
+      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+      if (delta) {
+        const prResult = await pushAndCreatePr({
+          repoPath: session.worktree_path,
+          branchName: session.branch_name,
+          baseRef: session.base_ref,
+          title: `def: ${session.topic}`,
+          sessionDir: session.dir,
+          topic: session.topic,
+          sessionId: session.id,
+        });
+        if (prResult) {
+          session.pr_url = prResult.url;
+          session.pr_number = prResult.number;
+          console.log(`Draft PR created: ${prResult.url}`);
+        }
+      } else {
+        console.log('No changes on branch — skipping PR creation.');
       }
-    } else {
-      console.log('No changes on branch — skipping PR creation.');
     }
-  }
-
-  // Clean up worktree (branch persists for push/PR).
-  // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
-  if (session.worktree_path && session.original_repo) {
-    try {
-      await removeWorktree(session.original_repo, session.worktree_path);
-    } catch { /* best effort */ }
-    // Restore target_repo to original so session.json reflects the real repo path
-    session.target_repo = session.original_repo;
+  } finally {
+    // Clean up worktree (branch persists for push/PR).
+    // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
+    if (session.worktree_path && session.original_repo) {
+      try {
+        await removeWorktree(session.original_repo, session.worktree_path);
+      } catch { /* best effort */ }
+      // Restore target_repo to original so session.json reflects the real repo path
+      session.target_repo = session.original_repo;
+    }
   }
 
   await updateSession(session.dir, {
