@@ -1,24 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchTurns } from "@/lib/api"
-import type { Turn, ThinkingState, SessionPhase } from "@/lib/types"
-
-interface PollingState {
-  turns: Turn[]
-  sessionStatus: "active" | "paused" | "completed" | "interrupted"
-  topic: string
-  turnCount: number
-  thinking: ThinkingState | null
-  thinkingElapsed: string
-  statusText: string
-  sessionTimer: string
-  phase: SessionPhase
-  branchName: string | null
-  prUrl: string | null
-  prNumber: number | null
-  turnsPath: string | null
-  artifactsPath: string | null
-  artifactNames: string[]
-}
+import type { Turn, ThinkingState, SessionPhase, PollingState } from "@/lib/types"
 
 const POLL_INTERVAL = 3000
 const ELAPSED_INTERVAL = 1000
@@ -39,7 +21,25 @@ function formatDuration(ms: number): string {
   return `${s}s`
 }
 
-export function usePolling(): PollingState {
+const DISABLED_STATE: PollingState = {
+  turns: [],
+  sessionStatus: "active",
+  topic: "",
+  turnCount: 0,
+  thinking: null,
+  thinkingElapsed: "",
+  statusText: "",
+  sessionTimer: "0s",
+  phase: "plan",
+  branchName: null,
+  prUrl: null,
+  prNumber: null,
+  turnsPath: null,
+  artifactsPath: null,
+  artifactNames: [],
+}
+
+export function usePolling({ enabled = true }: { enabled?: boolean } = {}): PollingState {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed" | "interrupted">("active")
   const [topic, setTopic] = useState("")
@@ -67,7 +67,7 @@ export function usePolling(): PollingState {
   const thinkingRef = useRef<ThinkingState | null>(null)
 
   const poll = useCallback(async () => {
-    if (fetchInFlightRef.current || pollingStoppedRef.current) return
+    if (!enabled || fetchInFlightRef.current || pollingStoppedRef.current) return
     fetchInFlightRef.current = true
 
     try {
@@ -148,19 +148,21 @@ export function usePolling(): PollingState {
         timeoutRef.current = setTimeout(poll, POLL_INTERVAL)
       }
     }
-  }, [])
+  }, [enabled])
 
   // Main polling loop
   useEffect(() => {
+    if (!enabled) return
     poll()
     return () => {
       pollingStoppedRef.current = true
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  }, [poll])
+  }, [poll, enabled])
 
   // Elapsed time ticker for thinking indicator + session timer
   useEffect(() => {
+    if (!enabled) return
     elapsedIntervalRef.current = setInterval(() => {
       const t = thinkingRef.current
       if (t) {
@@ -174,7 +176,9 @@ export function usePolling(): PollingState {
     return () => {
       if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current)
     }
-  }, [])
+  }, [enabled])
+
+  if (!enabled) return DISABLED_STATE
 
   return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase, branchName, prUrl, prNumber, turnsPath, artifactsPath, artifactNames }
 }

@@ -1,4 +1,4 @@
-import { CheckCircle2, GitBranch, ExternalLink, FolderOpen, FileText, Layers } from "lucide-react"
+import { CheckCircle2, GitBranch, ExternalLink, FolderOpen, FileText, Layers, ListChecks } from "lucide-react"
 import type { SessionPhase } from "@/lib/types"
 
 export interface SessionSummaryProps {
@@ -9,6 +9,7 @@ export interface SessionSummaryProps {
   turnsPath: string | null
   artifactsPath: string | null
   artifactNames: string[]
+  decisions?: string[]
 }
 
 function shortenPath(p: string): string {
@@ -28,6 +29,7 @@ export function SessionSummary({
   turnsPath,
   artifactsPath,
   artifactNames,
+  decisions,
 }: SessionSummaryProps) {
   return (
     <div className="animate-slide-up overflow-hidden rounded-xl border border-border/30 bg-card shadow-lg dark:shadow-teal-950/20">
@@ -87,6 +89,28 @@ export function SessionSummary({
                 </a>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Key Decisions */}
+        {decisions && decisions.length > 0 && (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2.5">
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                Key Decisions
+              </span>
+            </div>
+            <ul className="space-y-1.5 pl-6">
+              {decisions.map((d, i) => (
+                <li
+                  key={i}
+                  className="list-disc text-[12px] leading-relaxed text-foreground/75 marker:text-teal-500/40"
+                >
+                  {d}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

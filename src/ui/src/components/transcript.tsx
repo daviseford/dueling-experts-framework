@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { TurnCard } from "./turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
@@ -36,6 +36,37 @@ export function Transcript({
   const turnCount = turns.length
   const thinkingAgent = thinking?.agent ?? null
 
+  // Derive de-duplicated decisions from turns, preferring "decided" status turns
+  const decisions = useMemo(() => {
+    const seen = new Set<string>()
+    const result: string[] = []
+    // First pass: decided turns (final consensus)
+    for (const t of turns) {
+      if (t.status === "decided" && t.decisions?.length) {
+        for (const d of t.decisions) {
+          if (!seen.has(d)) {
+            seen.add(d)
+            result.push(d)
+          }
+        }
+      }
+    }
+    // Second pass: remaining turns with decisions (if no decided turns found)
+    if (result.length === 0) {
+      for (const t of turns) {
+        if (t.decisions?.length) {
+          for (const d of t.decisions) {
+            if (!seen.has(d)) {
+              seen.add(d)
+              result.push(d)
+            }
+          }
+        }
+      }
+    }
+    return result
+  }, [turns])
+
   // Only auto-scroll on new turns, thinking agent change, or session completion
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
@@ -59,6 +90,7 @@ export function Transcript({
             turnsPath={turnsPath}
             artifactsPath={artifactsPath}
             artifactNames={artifactNames}
+            decisions={decisions}
           />
         )}
         <div ref={bottomRef} />
