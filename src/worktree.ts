@@ -95,18 +95,6 @@ export async function captureDiff(worktreePath: string): Promise<string> {
   }
 }
 
-/**
- * Capture a short stat summary of changes in the worktree.
- * Returns something like "3 files changed, 45 insertions(+), 12 deletions(-)".
- */
-export async function captureDiffStat(worktreePath: string): Promise<string> {
-  try {
-    return await git(worktreePath, ['diff', '--cached', '--stat', 'HEAD']);
-  } catch {
-    return '';
-  }
-}
-
 // ── Internal helpers ────────────────────────────────────────────────
 
 function git(cwd: string, args: string[]): Promise<string> {

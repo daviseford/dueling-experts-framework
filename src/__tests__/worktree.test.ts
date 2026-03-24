@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { slugifyTopic, createWorktree, removeWorktree, captureDiff, captureDiffStat } from '../worktree.js';
+import { slugifyTopic, createWorktree, removeWorktree, captureDiff } from '../worktree.js';
 
 describe('slugifyTopic', () => {
   it('lowercases and replaces spaces with hyphens', () => {
@@ -128,21 +128,6 @@ describe('createWorktree / removeWorktree', () => {
 
     const diff = await captureDiff(worktreePath);
     assert.equal(diff, '', 'diff should be empty when no changes made');
-
-    await removeWorktree(testDir, worktreePath);
-  });
-
-  it('captureDiffStat returns stat summary', async () => {
-    const sessionId = randomUUID();
-    const { worktreePath } = await createWorktree(testDir, sessionId, 'stat test');
-
-    await writeFile(join(worktreePath, 'another.txt'), 'content\n');
-
-    // Ensure changes are staged first (captureDiff stages them)
-    await captureDiff(worktreePath);
-    const stat = await captureDiffStat(worktreePath);
-    assert.ok(stat.includes('another.txt'), 'stat should mention the changed file');
-    assert.ok(stat.includes('1 file changed') || stat.includes('insertion'), 'stat should show file change summary');
 
     await removeWorktree(testDir, worktreePath);
   });

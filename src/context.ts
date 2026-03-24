@@ -74,16 +74,15 @@ function reviewPrompt(agent: AgentName, topic: string, decisions: string[], diff
   let diffText: string;
   if (!diff) {
     diffText = '(No changes were made.)';
-  } else if (diff.length > MAX_DIFF_CHARS) {
-    // Summarize large diffs: show stat-like header + truncated content
-    const lines = diff.split('\n');
-    const fileHeaders = lines.filter(l => l.startsWith('diff --git') || l.startsWith('+++') || l.startsWith('---'));
-    const truncated = diff.slice(0, MAX_DIFF_CHARS);
-    const totalLines = lines.length;
-    const shownLines = truncated.split('\n').length;
-    diffText = `**[Diff truncated: showing ${shownLines} of ${totalLines} lines]**\n\n**Files changed:**\n${fileHeaders.join('\n')}\n\n\`\`\`diff\n${truncated}\n\`\`\``;
   } else {
-    diffText = '```diff\n' + diff + '\n```';
+    // Sanitize: escape triple backticks in diff content to prevent code fence escape
+    const safeDiff = diff.replace(/```/g, '` ` `');
+    if (safeDiff.length > MAX_DIFF_CHARS) {
+      const truncated = safeDiff.slice(0, MAX_DIFF_CHARS);
+      diffText = `\`\`\`diff\n${truncated}\n\`\`\`\n\n*[Diff truncated at ${MAX_DIFF_CHARS} characters]*`;
+    } else {
+      diffText = '```diff\n' + safeDiff + '\n```';
+    }
   }
 
   return `You are ${AGENT_NAMES[agent]}, reviewing an implementation by ${other} for: ${topic}
@@ -146,22 +145,21 @@ export async function assemble(session: Session): Promise<string> {
 
   // Load diff for review phase
   let diff: string | null = null;
-  if ((phase || 'debate') === 'review') {
+  if (phase === 'review') {
     diff = await loadDiff(dir);
   }
 
   // Build fixed parts based on phase
-  const currentPhase: SessionPhase = phase || 'debate';
   let systemPrompt: string;
-  if (currentPhase === 'implement') {
+  if (phase === 'implement') {
     systemPrompt = implementPrompt(next_agent, topic, allDecisions);
-  } else if (currentPhase === 'review') {
+  } else if (phase === 'review') {
     systemPrompt = reviewPrompt(next_agent, topic, allDecisions, diff);
   } else {
     systemPrompt = debatePrompt(next_agent, topic);
   }
 
-  const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n**Phase:** ${currentPhase}\n`;
+  const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n**Phase:** ${phase}\n`;
   const yourTurn = '## Your Turn\nRespond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array of strings).';
 
   const fixedChars = systemPrompt.length + sessionBrief.length + yourTurn.length + 20; // newlines

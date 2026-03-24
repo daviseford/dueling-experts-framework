@@ -100,7 +100,7 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Newest turns are prioritized; oldest are dropped first.
 - Only `decisions` arrays from truncated turns are preserved in a summary notice — no other content survives truncation.
 - Prompts are phase-aware: debate prompts encourage challenge, implement prompts include decisions and tool access instructions, review prompts include the git diff.
-- Only `planning` mode is supported. Do not assume other modes exist.
+- Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (debate-only, no implementation).
 
 ## Agent Invocation
 - **Claude debate/review:** `claude --print`, prompt piped via stdin, output captured from stdout.

@@ -85,6 +85,10 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
   // Review turn counter — derive from turn history on recovery
   let reviewTurnCount = 0;
 
+  // Track consecutive empty-diff implement attempts to prevent infinite loops
+  let emptyDiffRetries = 0;
+  const MAX_EMPTY_DIFF_RETRIES = 2;
+
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
     const recovered: RecoveredState = await recoverEphemeralState(session);
@@ -223,7 +227,9 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           // Both agents agreed — transition to implement
           console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
 
-          // Create worktree for isolated implementation (edit mode only)
+          // Create worktree for isolated implementation (edit mode only).
+          // Worktree is required — agents get full tool access and must not
+          // operate on the user's main checkout.
           if (session.mode === 'edit') {
             try {
               const { worktreePath, branchName } = await createWorktree(
@@ -241,7 +247,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
               });
               console.log(`[Turn ${turnCount}] Worktree created: ${branchName}`);
             } catch (err: unknown) {
-              console.log(`[Turn ${turnCount}] Warning: worktree creation failed (${(err as Error).message}). Implementing in main checkout.`);
+              // Hard error: never allow implement phase in main checkout
+              const reason = `worktree creation failed: ${(err as Error).message}`;
+              await writeErrorTurn(session, turnCount, nextAgent, reason, '');
+              const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
+              if (resumed) continue;
+              break;
             }
           }
 
@@ -295,6 +306,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       // Capture a git diff to record what changed.
       const diff = await captureDiff(session.target_repo);
       if (diff) {
+        emptyDiffRetries = 0;
         console.log(`[Turn ${turnCount}] Changes detected. Storing diff artifact.`);
         await writeDiffArtifact(session, turnCount, diff);
 
@@ -310,8 +322,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           next_agent: reviewer,
         });
       } else {
-        // No changes detected — send the agent back to try again
-        console.log(`[Turn ${turnCount}] No changes detected in worktree. Retrying implementation...`);
+        emptyDiffRetries++;
+        if (emptyDiffRetries >= MAX_EMPTY_DIFF_RETRIES) {
+          console.log(`[Turn ${turnCount}] No changes after ${MAX_EMPTY_DIFF_RETRIES} attempts. Ending session.`);
+          break;
+        }
+        console.log(`[Turn ${turnCount}] No changes detected in worktree. Retrying implementation (${emptyDiffRetries}/${MAX_EMPTY_DIFF_RETRIES})...`);
         await updateSession(session.dir, { current_turn: turnCount });
       }
     } else if (phase === 'review') {
@@ -488,7 +504,7 @@ async function invokeOnce(agentName: AgentName, session: Session): Promise<Invok
   const result = await invoke(agentName, { ...session, next_agent: agentName });
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
-    ? `timeout (${session.phase === 'implement' ? '600s' : '180s'})`
+    ? `timeout (${session.phase === 'implement' ? '900s' : '300s'})`
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';

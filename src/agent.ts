@@ -95,9 +95,7 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
     });
 
     // Expose child for SIGINT cleanup (stored on session object)
-    if (session._currentChild !== undefined) {
-      session._currentChild = child;
-    }
+    session._currentChild = child;
 
     // Pipe prompt file to stdin. Using createReadStream + pipe ensures EOF
     // is signaled properly when the file is fully read.
