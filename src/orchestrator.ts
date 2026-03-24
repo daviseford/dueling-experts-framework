@@ -52,6 +52,7 @@ interface CanonicalTurnData {
   from: string;
   timestamp: string;
   status: string;
+  phase: string;
   duration_ms?: number;
   decisions?: string[];
 }
@@ -179,6 +180,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       from: nextAgent,
       timestamp: new Date().toISOString(),
       status: normalizedStatus,
+      phase,
       duration_ms: durationMs,
     };
     if (validData.decisions) {
@@ -203,8 +205,11 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         next_agent: oppositeAgent,
       });
 
-      // Check for consensus signaling
-      if (canonicalData.status === 'decided') {
+      // Check for consensus signaling — treat 'done' as 'decided' in edit mode
+      const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided')
+        ? 'decided' : canonicalData.status;
+
+      if (effectiveStatus === 'decided') {
         if (pendingDecided && pendingDecided !== nextAgent) {
           // Both agents agreed — transition to implement
           console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
@@ -224,17 +229,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         }
       } else {
         // If there was a pending decided and this agent didn't confirm, clear it
-        if (pendingDecided && canonicalData.status === 'complete') {
+        if (pendingDecided && effectiveStatus === 'complete') {
           console.log(`[Turn ${turnCount}] ${nextAgent} contests consensus. Resuming debate.`);
           pendingDecided = null;
         }
 
-        if (canonicalData.status === 'done') {
-          console.log(`[Turn ${turnCount}] Agent signaled done. Ending session.`);
-          break;
-        }
-
-        if (canonicalData.status === 'needs_human') {
+        if (effectiveStatus === 'needs_human') {
           if (server) {
             isPaused = true;
             await updateSession(session.dir, { session_status: 'paused' });
@@ -448,7 +448,7 @@ async function invokeOnce(agentName: AgentName, session: Session): Promise<Invok
   const result = await invoke(agentName, { ...session, next_agent: agentName });
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
-    ? 'timeout (180s)'
+    ? `timeout (${session.phase === 'implement' ? '600s' : '180s'})`
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';

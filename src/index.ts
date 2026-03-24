@@ -13,7 +13,7 @@ interface ParsedArgs {
   resume?: string;
 }
 
-const VALID_MODES = ['planning'];
+const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
 // Parse and validate CLI args
@@ -22,7 +22,7 @@ const opts: ParsedArgs = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
   console.error('       def --resume <session-id>');
   process.exit(1);
 }
@@ -87,7 +87,7 @@ let session: Session;
 try {
   session = await create({
     topic: opts.topic!,
-    mode: opts.mode || 'planning',
+    mode: opts.mode || 'edit',
     maxTurns: opts.maxTurns || 20,
     firstAgent: (opts.first || 'claude') as AgentName,
     implModel: (opts.implModel || 'claude') as AgentName,

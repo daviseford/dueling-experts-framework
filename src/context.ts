@@ -163,8 +163,8 @@ Review the implementation against the debate decisions. Check:
 export async function assemble(session: Session): Promise<string> {
   const { topic, mode, next_agent, dir, phase } = session;
 
-  if (mode !== 'planning') {
-    throw new Error(`Unknown mode: "${mode}". Supported: planning`);
+  if (mode !== 'planning' && mode !== 'edit') {
+    throw new Error(`Unknown mode: "${mode}". Supported: edit, planning`);
   }
   if (!AGENT_NAMES[next_agent]) {
     throw new Error(`Unknown agent: "${next_agent}". Supported: claude, codex`);

@@ -20,7 +20,8 @@ export interface InvokeResult {
   error?: string;
 }
 
-const TIMEOUT_MS = 180_000; // 180 seconds — claude --print can take 90-120s for large prompts
+const TIMEOUT_MS = 180_000; // 180 seconds for debate/review
+const IMPLEMENT_TIMEOUT_MS = 600_000; // 600 seconds (10 min) for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
 const AGENTS: Record<AgentName, AgentConfig> = {
@@ -112,7 +113,7 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
       setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* already dead */ }
       }, 5000);
-    }, TIMEOUT_MS);
+    }, session.phase === 'implement' ? IMPLEMENT_TIMEOUT_MS : TIMEOUT_MS);
 
     function settle(result: InvokeResult): void {
       if (settled) return;

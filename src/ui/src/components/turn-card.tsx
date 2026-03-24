@@ -32,6 +32,12 @@ const BADGE_STYLES: Record<string, string> = {
   system: "bg-amber-500/15 text-amber-400 border-amber-500/25",
 }
 
+const PHASE_STYLES: Record<string, string> = {
+  debate: "bg-orange-500/10 text-orange-400/70 border-orange-500/20",
+  implement: "bg-cyan-500/10 text-cyan-400/70 border-cyan-500/20",
+  review: "bg-pink-500/10 text-pink-400/70 border-pink-500/20",
+}
+
 function formatTimestamp(ts: string): string {
   if (!ts) return ""
   try {
@@ -109,6 +115,15 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
             <span className="font-mono text-[11px] text-muted-foreground">
               #{turn.turn}
             </span>
+            <Badge
+              variant="outline"
+              className={cn(
+                "font-mono text-[9px] font-normal tracking-wide",
+                PHASE_STYLES[turn.phase] || "bg-muted text-muted-foreground"
+              )}
+            >
+              {turn.phase}
+            </Badge>
             {!open && (
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
                 {truncateContent(turn.content)}
