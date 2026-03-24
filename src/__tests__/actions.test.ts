@@ -106,9 +106,9 @@ describe('parseActions', () => {
 });
 
 describe('executeActions', () => {
-  let tmpDir;
+  let tmpDir: string | undefined;
 
-  async function makeTmp() {
+  async function makeTmp(): Promise<string> {
     tmpDir = await mkdtemp(join(tmpdir(), 'def-actions-test-'));
     return tmpDir;
   }
@@ -173,7 +173,7 @@ describe('executeActions', () => {
         repo,
       );
       assert.equal(results[0].ok, false);
-      assert.ok(results[0].error.includes('traversal'));
+      assert.ok(results[0].error!.includes('traversal'));
     } finally {
       await cleanTmp();
     }
@@ -187,7 +187,7 @@ describe('executeActions', () => {
         repo,
       );
       assert.equal(results[0].ok, false);
-      assert.ok(results[0].error.includes('Absolute'));
+      assert.ok(results[0].error!.includes('Absolute'));
     } finally {
       await cleanTmp();
     }
@@ -214,7 +214,7 @@ describe('executeActions', () => {
         repo,
       );
       assert.equal(results[0].ok, true);
-      assert.ok(results[0].output.includes('hello'));
+      assert.ok(results[0].output!.includes('hello'));
     } finally {
       await cleanTmp();
     }
@@ -228,7 +228,7 @@ describe('executeActions', () => {
         repo,
       );
       assert.equal(results[0].ok, false);
-      assert.ok(results[0].error.includes('Unknown'));
+      assert.ok(results[0].error!.includes('Unknown'));
     } finally {
       await cleanTmp();
     }

@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { assemble } from '../context.js';
+import type { Session } from '../session.js';
 
-function makeTurn(turn, from, content, decisions = []) {
+function makeTurn(turn: number, from: string, content: string, decisions: string[] = []): string {
   const decLine = decisions.length > 0
     ? `decisions:\n${decisions.map(d => `  - ${d}`).join('\n')}\n`
     : '';
@@ -23,8 +24,24 @@ function makeTurn(turn, from, content, decisions = []) {
   ].filter(Boolean).join('\n');
 }
 
+function makeSession(overrides: Partial<Session> & { topic: string; mode: string; next_agent: string; dir: string }): Session {
+  return {
+    id: 'test-session',
+    max_turns: 20,
+    target_repo: '/tmp',
+    created: '2026-03-23T00:00:00.000Z',
+    session_status: 'active',
+    current_turn: 0,
+    phase: 'debate',
+    impl_model: 'claude',
+    review_turns: 6,
+    port: null,
+    ...overrides,
+  } as Session;
+}
+
 describe('assemble', () => {
-  let sessionDir;
+  let sessionDir: string;
 
   before(async () => {
     sessionDir = join(tmpdir(), `def-test-${randomUUID()}`);
@@ -36,12 +53,12 @@ describe('assemble', () => {
   });
 
   it('assembles a prompt with zero turns', async () => {
-    const session = {
+    const session = makeSession({
       topic: 'Test topic',
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-    };
+    });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('Test topic'));
     assert.ok(prompt.includes('You are Claude'));
@@ -54,12 +71,12 @@ describe('assemble', () => {
     await writeFile(join(turnsDir, 'turn-0001-claude.md'), makeTurn(1, 'claude', 'Hello from Claude'));
     await writeFile(join(turnsDir, 'turn-0002-codex.md'), makeTurn(2, 'codex', 'Hello from Codex'));
 
-    const session = {
+    const session = makeSession({
       topic: 'Test',
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-    };
+    });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('## Prior Turns'));
     assert.ok(prompt.includes('Hello from Claude'));
@@ -68,12 +85,12 @@ describe('assemble', () => {
   });
 
   it('rejects unknown mode', async () => {
-    const session = { topic: 'T', mode: 'debate', next_agent: 'claude', dir: sessionDir };
+    const session = makeSession({ topic: 'T', mode: 'debate', next_agent: 'claude', dir: sessionDir });
     await assert.rejects(() => assemble(session), /Unknown mode/);
   });
 
   it('rejects unknown agent', async () => {
-    const session = { topic: 'T', mode: 'planning', next_agent: 'gpt4', dir: sessionDir };
+    const session = makeSession({ topic: 'T', mode: 'planning', next_agent: 'gpt4' as any, dir: sessionDir });
     await assert.rejects(() => assemble(session), /Unknown agent/);
   });
 });

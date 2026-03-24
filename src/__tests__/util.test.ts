@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { atomicWrite, isProcessAlive } from '../util.js';
 
 describe('atomicWrite', () => {
-  let testDir;
+  let testDir: string;
 
   before(async () => {
     testDir = join(tmpdir(), `def-test-${randomUUID()}`);

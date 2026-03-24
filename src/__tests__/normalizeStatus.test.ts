@@ -29,6 +29,6 @@ describe('normalizeStatus', () => {
   it('defaults unknown statuses to "complete"', () => {
     assert.equal(normalizeStatus('complete', 1), 'complete');
     assert.equal(normalizeStatus('garbage', 3), 'complete');
-    assert.equal(normalizeStatus(undefined, 1), 'complete');
+    assert.equal(normalizeStatus(undefined as unknown as string, 1), 'complete');
   });
 });

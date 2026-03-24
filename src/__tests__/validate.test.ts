@@ -18,8 +18,8 @@ describe('validate', () => {
     const result = validate(validTurn);
     assert.equal(result.valid, true);
     assert.equal(result.errors.length, 0);
-    assert.equal(result.data.from, 'claude');
-    assert.equal(result.data.status, 'complete');
+    assert.equal(result.data!.from, 'claude');
+    assert.equal(result.data!.status, 'complete');
     assert.equal(result.content, 'Hello world');
   });
 
@@ -47,18 +47,17 @@ describe('validate', () => {
     const raw = validTurn.replace('status: complete', 'status: decided');
     const result = validate(raw);
     assert.equal(result.valid, true);
-    assert.equal(result.data.status, 'decided');
+    assert.equal(result.data!.status, 'decided');
   });
 
   it('validates decisions as array of strings', () => {
     const withDecisions = validTurn.replace('status: complete', 'status: complete\ndecisions:\n  - Use polling\n  - Add tests');
     const result = validate(withDecisions);
     assert.equal(result.valid, true);
-    assert.deepEqual(result.data.decisions, ['Use polling', 'Add tests']);
+    assert.deepEqual(result.data!.decisions, ['Use polling', 'Add tests']);
   });
 
   it('coerces YAML-parsed decision objects to strings', () => {
-    // YAML parses "some text: more text" as { "some text": "more text" }
     const raw = [
       '---',
       'id: turn-0001-claude',
@@ -74,18 +73,17 @@ describe('validate', () => {
     ].join('\n');
     const result = validate(raw);
     assert.equal(result.valid, true);
-    assert.equal(result.data.decisions.length, 2);
-    // First decision gets YAML-parsed as object, should be coerced back
-    assert.equal(typeof result.data.decisions[0], 'string');
-    assert.ok(result.data.decisions[0].includes('Plan agreed'));
-    assert.equal(result.data.decisions[1], 'Normal string decision');
+    assert.equal(result.data!.decisions!.length, 2);
+    assert.equal(typeof result.data!.decisions![0], 'string');
+    assert.ok(result.data!.decisions![0].includes('Plan agreed'));
+    assert.equal(result.data!.decisions![1], 'Normal string decision');
   });
 
   it('extracts frontmatter preceded by preamble text', () => {
     const withPreamble = 'Here is some preamble text\n\n' + validTurn;
     const result = validate(withPreamble);
     assert.equal(result.valid, true);
-    assert.equal(result.data.from, 'claude');
+    assert.equal(result.data!.from, 'claude');
   });
 
   it('rejects missing required fields', () => {
