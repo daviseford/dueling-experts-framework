@@ -119,27 +119,24 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   // phase transition didn't complete before the crash.
   if (pendingReviewDecided) {
     if (pendingReviewDecided.verdict === 'approve') {
-      console.log('[Recovery] Reviewer approved before interruption. Session complete.');
-      tracer.emit('session.end', { phase, data: { turn_count: turnCount, reason: 'recovery-approve' } });
-      await tracer.flush();
-      await updateSession(session.dir, { session_status: 'completed', phase });
-      return;
+      // Skip the main loop and fall through to the shared finalization path
+      // (generateDecisions, PR creation, worktree cleanup, session update).
+      console.log('[Recovery] Reviewer approved before interruption. Finalizing session.');
+      endRequested = true;
+    } else if (reviewLoopCount >= session.review_turns) {
+      // Review loop exhausted — skip to finalization like approve.
+      console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Finalizing session.`);
+      endRequested = true;
+    } else {
+      // verdict === 'fix', under limit — continue to main loop
+      reviewLoopCount++;
+      emptyDiffRetries = 0;
+      phase = 'implement';
+      session.phase = phase;
+      nextAgent = session.impl_model;
+      await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
+      console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
     }
-    // verdict === 'fix' — apply the transition
-    if (reviewLoopCount >= session.review_turns) {
-      console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Session complete.`);
-      tracer.emit('session.end', { phase, data: { turn_count: turnCount, reason: 'recovery-review-limit' } });
-      await tracer.flush();
-      await updateSession(session.dir, { session_status: 'completed', phase });
-      return;
-    }
-    reviewLoopCount++;
-    emptyDiffRetries = 0;
-    phase = 'implement';
-    session.phase = phase;
-    nextAgent = session.impl_model;
-    await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
-    console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
     pendingReviewDecided = null;
   }
 
