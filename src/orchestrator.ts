@@ -270,11 +270,16 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         console.log(`[Turn ${turnCount}] Review decided without verdict. Retrying...`);
         const retryResult = await invokeOnce(nextAgent, session);
         const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
-        if (retryValidation.valid && retryValidation.data?.verdict) {
+        const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
+        const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
+        const retryIsLegacyDone = retryValidation.valid && retryValidation.data!.status === 'done';
+        if (retryValidation.valid && (retryIsValidReview || retryIsLegacyDone)) {
           // Fully replace the turn output with the retry's result
-          canonicalData.verdict = retryValidation.data.verdict;
-          if (retryValidation.data.decisions) {
-            canonicalData.decisions = retryValidation.data.decisions;
+          const retryData = retryValidation.data!;
+          canonicalData.status = retryIsLegacyDone ? 'decided' : retryStatus!;
+          canonicalData.verdict = retryIsLegacyDone ? 'approve' : retryData.verdict!;
+          if (retryData.decisions) {
+            canonicalData.decisions = retryData.decisions;
           }
           validation = retryValidation;
         } else {
