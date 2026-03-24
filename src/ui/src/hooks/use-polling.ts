@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchTurns } from "@/lib/api"
-import type { Turn, ThinkingState } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase } from "@/lib/types"
 
 interface PollingState {
   turns: Turn[]
@@ -11,6 +11,7 @@ interface PollingState {
   thinkingElapsed: string
   statusText: string
   sessionTimer: string
+  phase: SessionPhase
 }
 
 const POLL_INTERVAL = 3000
@@ -41,6 +42,7 @@ export function usePolling(): PollingState {
   const [thinkingElapsed, setThinkingElapsed] = useState("")
   const [statusText, setStatusText] = useState("Connecting...")
   const [sessionTimer, setSessionTimer] = useState("0s")
+  const [phase, setPhase] = useState<SessionPhase>("debate")
 
   const fetchInFlightRef = useRef(false)
   const sessionStartRef = useRef<number>(Date.now())
@@ -69,6 +71,7 @@ export function usePolling(): PollingState {
       // Always update status/topic
       if (data.topic) setTopic(data.topic)
       setTurnCount(data.turn_count)
+      if (data.phase) setPhase(data.phase)
 
       const newStatus = data.session_status
       setSessionStatus(newStatus)
@@ -153,5 +156,5 @@ export function usePolling(): PollingState {
     }
   }, [])
 
-  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer }
+  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase }
 }

@@ -2,15 +2,16 @@ import { useEffect, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { TurnCard } from "./turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
-import type { Turn, ThinkingState } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase } from "@/lib/types"
 
 interface TranscriptProps {
   turns: Turn[]
   thinking: ThinkingState | null
   thinkingElapsed: string
+  phase: SessionPhase
 }
 
-export function Transcript({ turns, thinking, thinkingElapsed }: TranscriptProps) {
+export function Transcript({ turns, thinking, thinkingElapsed, phase }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const turnCount = turns.length
   const thinkingAgent = thinking?.agent ?? null
@@ -27,7 +28,7 @@ export function Transcript({ turns, thinking, thinkingElapsed }: TranscriptProps
           <TurnCard key={turn.id} turn={turn} />
         ))}
         {thinking && (
-          <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} />
+          <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />
         )}
         <div ref={bottomRef} />
       </div>

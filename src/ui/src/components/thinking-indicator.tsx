@@ -1,11 +1,17 @@
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
-import type { ThinkingState } from "@/lib/types"
+import type { ThinkingState, SessionPhase } from "@/lib/types"
 
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
   codex: "CODEX",
+}
+
+const PHASE_LABEL: Record<SessionPhase, string> = {
+  debate: "Thinking",
+  implement: "Implementing",
+  review: "Reviewing",
 }
 
 const ACCENT_COLORS: Record<string, string> = {
@@ -14,21 +20,22 @@ const ACCENT_COLORS: Record<string, string> = {
 }
 
 const BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-500/15 text-blue-400 border-blue-500/25",
-  codex: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
+  claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
+  codex: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
 }
 
 const SPINNER_COLORS: Record<string, string> = {
-  claude: "text-blue-400",
-  codex: "text-emerald-400",
+  claude: "text-blue-600 dark:text-blue-400",
+  codex: "text-emerald-600 dark:text-emerald-400",
 }
 
 interface ThinkingIndicatorProps {
   thinking: ThinkingState
   elapsed: string
+  phase: SessionPhase
 }
 
-export function ThinkingIndicator({ thinking, elapsed }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicatorProps) {
   const label = LABEL_MAP[thinking.agent] || thinking.agent.toUpperCase()
 
   return (
@@ -55,7 +62,7 @@ export function ThinkingIndicator({ thinking, elapsed }: ThinkingIndicatorProps)
           {label}
         </Badge>
         <span className="thinking-glow text-[13px] text-muted-foreground">
-          Thinking
+          {PHASE_LABEL[phase] || "Thinking"}
         </span>
         <span className="font-mono text-[11px] text-muted-foreground/60">
           {elapsed}

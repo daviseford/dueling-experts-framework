@@ -18,6 +18,7 @@ export default function App() {
     thinkingElapsed,
     statusText,
     sessionTimer,
+    phase,
   } = usePolling()
 
   const isCompleted = sessionStatus === "completed"
@@ -38,6 +39,7 @@ export default function App() {
         turns={turns}
         thinking={thinking}
         thinkingElapsed={thinkingElapsed}
+        phase={phase}
       />
       <InterjectionInput disabled={isCompleted} />
       <StatusBar

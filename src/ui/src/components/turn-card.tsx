@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronsUpDown } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
-// TODO: make configurable
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
   codex: "CODEX",
@@ -26,16 +25,16 @@ const ACCENT_COLORS: Record<string, string> = {
 }
 
 const BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-500/15 text-blue-400 border-blue-500/25",
-  codex: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
-  human: "bg-violet-500/15 text-violet-400 border-violet-500/25",
-  system: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
+  codex: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
+  human: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/25",
+  system: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
 }
 
 const PHASE_STYLES: Record<string, string> = {
-  debate: "bg-orange-500/10 text-orange-400/70 border-orange-500/20",
-  implement: "bg-cyan-500/10 text-cyan-400/70 border-cyan-500/20",
-  review: "bg-pink-500/10 text-pink-400/70 border-pink-500/20",
+  debate: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
+  implement: "bg-cyan-500/10 text-cyan-600/70 dark:text-cyan-400/70 border-cyan-500/20",
+  review: "bg-pink-500/10 text-pink-600/70 dark:text-pink-400/70 border-pink-500/20",
 }
 
 function formatTimestamp(ts: string): string {
@@ -55,22 +54,24 @@ function formatTimestamp(ts: string): string {
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000)
-  if (totalSeconds < 60) return `${totalSeconds}s`
+  if (totalSeconds < 60) return totalSeconds + "s"
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
+  if (seconds > 0) return minutes + "m " + seconds + "s"
+  return minutes + "m"
 }
 
 function truncateContent(content: string): string {
   if (!content) return ""
-  // Take the first non-empty line, strip markdown headers/formatting
-  const line = content
-    .split(/\r?\n/)
-    .map(l => l.trim())
-    .find(l => l.length > 0 && !l.startsWith("---") && !l.startsWith("```"))
+  const lines = content.split(/\r?\n/)
+  const trimmed = lines.map(function (l) { return l.trim() })
+  const line = trimmed.find(function (l) {
+    return l.length > 0 && !l.startsWith("---") && !l.startsWith("``" + "`")
+  })
   if (!line) return ""
   const clean = line.replace(/^#+\s*/, "").replace(/\*\*/g, "")
-  return clean.length > 120 ? clean.slice(0, 120) + "…" : clean
+  if (clean.length > 120) return clean.slice(0, 120) + "\u2026"
+  return clean
 }
 
 interface TurnCardProps {
@@ -106,7 +107,7 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
               className={cn(
                 "font-mono text-[10px] font-semibold tracking-wider",
                 isError
-                  ? "border-red-500/25 bg-red-500/15 text-red-400"
+                  ? "border-red-500/25 bg-red-500/15 text-red-600 dark:text-red-400"
                   : BADGE_STYLES[turn.from]
               )}
             >
