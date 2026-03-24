@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react"
 import { Toaster } from "@/components/ui/sonner"
-import { usePolling } from "@/hooks/use-polling"
+import { useSessionData } from "@/hooks/use-session-data"
 import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
 import { PauseBanner } from "@/components/pause-banner"
@@ -25,7 +25,7 @@ export default function App() {
     turnsPath,
     artifactsPath,
     artifactNames,
-  } = usePolling()
+  } = useSessionData()
 
   const isCompleted = sessionStatus === "completed"
 

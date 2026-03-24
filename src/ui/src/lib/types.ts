@@ -32,3 +32,21 @@ export interface TurnsResponse {
   artifacts_path: string | null
   artifact_names: string[]
 }
+
+export interface PollingState {
+  turns: Turn[]
+  sessionStatus: "active" | "paused" | "completed" | "interrupted"
+  topic: string
+  turnCount: number
+  thinking: ThinkingState | null
+  thinkingElapsed: string
+  statusText: string
+  sessionTimer: string
+  phase: SessionPhase
+  branchName: string | null
+  prUrl: string | null
+  prNumber: number | null
+  turnsPath: string | null
+  artifactsPath: string | null
+  artifactNames: string[]
+}
