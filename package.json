@@ -6,8 +6,9 @@
     "def": "./bin/def"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "test": "node --test src/__tests__/*.test.js",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test src/__tests__/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "dev:ui": "cd src/ui && npm run dev",
     "build:ui": "cd src/ui && npm run build",
     "prepare": "cd src/ui && npm install && npm run build"
@@ -15,5 +16,11 @@
   "dependencies": {
     "gray-matter": "^4.0.3",
     "js-yaml": "^3.14.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
   }
 }

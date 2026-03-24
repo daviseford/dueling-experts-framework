@@ -1,7 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env node --import tsx/esm
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-await import(pathToFileURL(resolve(__dirname, '..', 'src', 'index.js')).href);
+await import(pathToFileURL(resolve(__dirname, '..', 'src', 'index.ts')).href);
