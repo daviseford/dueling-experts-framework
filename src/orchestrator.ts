@@ -224,10 +224,16 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
       if (effectiveStatus === 'decided') {
         if (pendingDecided && pendingDecided !== nextAgent) {
-          // Both agents agreed — transition to implement
-          console.log(`[Turn ${turnCount}] Consensus reached. Transitioning to implement phase.`);
+          // Both agents agreed — consensus reached
+          console.log(`[Turn ${turnCount}] Consensus reached.`);
 
-          // Create worktree for isolated implementation (edit mode only).
+          // Planning mode: no implementation, session ends here
+          if (session.mode === 'planning') {
+            console.log(`[Turn ${turnCount}] Planning mode — session complete.`);
+            break;
+          }
+
+          // Create worktree for isolated implementation.
           // Worktree is required — agents get full tool access and must not
           // operate on the user's main checkout.
           if (session.mode === 'edit') {
@@ -257,6 +263,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           }
 
           phase = 'implement';
+          session.phase = phase;
           pendingDecided = null;
           nextAgent = session.impl_model;
           await updateSession(session.dir, {
@@ -313,6 +320,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         // Transition to review
         console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
         phase = 'review';
+        session.phase = phase;
         reviewTurnCount = 0;
         const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
         nextAgent = reviewer;
@@ -347,6 +355,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       // Switch back to implement for fixes
       console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewTurnCount}/${session.review_turns})`);
       phase = 'implement';
+      session.phase = phase;
       nextAgent = session.impl_model;
       await updateSession(session.dir, {
         current_turn: turnCount,
@@ -557,9 +566,11 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     from: agent,
     timestamp: new Date().toISOString(),
     status: 'error',
-    phase: session.phase || 'debate',
+    phase: session.phase,
   };
-  const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${rawOutput || '(empty)'}\n\`\`\``;
+  // Sanitize rawOutput to prevent code fence escape
+  const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
+  const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;
   await writeCanonicalTurn(session, id, data, body);
   console.log(`[Turn ${turnCount}] Error turn written: ${id}`);
 }
@@ -572,7 +583,7 @@ async function writeHumanTurn(session: Session, turnCount: number, content: stri
     from: 'human',
     timestamp: new Date().toISOString(),
     status: 'complete',
-    phase: session.phase || 'debate',
+    phase: session.phase,
   };
   await writeCanonicalTurn(session, id, data, content);
 }

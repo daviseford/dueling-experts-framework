@@ -147,10 +147,11 @@ async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
     if (isDefWorktreePath(session.worktree_path) && await worktreeExists(session.worktree_path)) {
       session.target_repo = session.worktree_path;
     } else {
-      console.log(`Warning: worktree ${session.worktree_path} invalid or missing. Resuming in main checkout.`);
-      session.target_repo = targetRepo;
-      session.worktree_path = null;
-      session.branch_name = null;
+      // Worktree is required for implement/review — refuse to resume in main checkout
+      console.error(`Error: worktree ${session.worktree_path} invalid or missing. Cannot safely resume implement/review in main checkout.`);
+      console.error(`Session ${session.id} marked as completed. Branch may still exist: ${session.branch_name || '(unknown)'}`);
+      await update(sessionDir, { session_status: 'completed' });
+      return;
     }
   } else {
     session.target_repo = targetRepo;
