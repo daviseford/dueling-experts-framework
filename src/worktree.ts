@@ -77,6 +77,36 @@ export function slugifyTopic(topic: string): string {
     .replace(/-$/, '');
 }
 
+// ── Diff capture ────────────────────────────────────────────────────
+
+/**
+ * Capture a unified diff of all changes in the worktree since the branch point.
+ * Stages all changes first to include both committed and uncommitted modifications.
+ * Returns empty string if no changes were made.
+ */
+export async function captureDiff(worktreePath: string): Promise<string> {
+  // Stage everything so we capture all changes in one diff
+  await git(worktreePath, ['add', '-A']);
+  try {
+    return await git(worktreePath, ['diff', '--cached', 'HEAD']);
+  } catch {
+    // HEAD may not exist or diff failed — return empty
+    return '';
+  }
+}
+
+/**
+ * Capture a short stat summary of changes in the worktree.
+ * Returns something like "3 files changed, 45 insertions(+), 12 deletions(-)".
+ */
+export async function captureDiffStat(worktreePath: string): Promise<string> {
+  try {
+    return await git(worktreePath, ['diff', '--cached', '--stat', 'HEAD']);
+  } catch {
+    return '';
+  }
+}
+
 // ── Internal helpers ────────────────────────────────────────────────
 
 function git(cwd: string, args: string[]): Promise<string> {

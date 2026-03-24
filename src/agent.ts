@@ -10,6 +10,7 @@ import type { Session, AgentName } from './session.js';
 interface AgentConfig {
   cmd: string;
   args: string[] | ((outputPath: string) => string[]);
+  implementArgs?: string[];
   captureStdout: boolean;
 }
 
@@ -28,6 +29,13 @@ const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
     cmd: 'claude',
     args: ['--print'],
+    // In implement phase, use -p with tool access. The assembled prompt is piped
+    // to stdin as context; the -p argument is a short instruction.
+    implementArgs: [
+      '-p',
+      'Execute the implementation task described in the context provided via stdin. You have full tool access.',
+      '--allowedTools', '*',
+    ],
     captureStdout: true,
   },
   codex: {
@@ -38,6 +46,7 @@ const AGENTS: Record<AgentName, AgentConfig> = {
       '--skip-git-repo-check',
       '-o', outputPath,
     ],
+    // Codex already has native tool access via --full-auto
     captureStdout: false,
   },
 };
@@ -63,10 +72,15 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
   const prompt = await assemble(session);
   await writeFile(promptPath, prompt, 'utf8');
 
-  // Build args
-  const args = typeof config.args === 'function'
-    ? config.args(outputPath)
-    : config.args;
+  // Build args — use implementArgs for implement phase if available
+  let args: string[];
+  if (session.phase === 'implement' && config.implementArgs) {
+    args = config.implementArgs;
+  } else if (typeof config.args === 'function') {
+    args = config.args(outputPath);
+  } else {
+    args = config.args;
+  }
 
   const startTime = Date.now();
   const logPrefix = `${agentName}-${Date.now()}`;

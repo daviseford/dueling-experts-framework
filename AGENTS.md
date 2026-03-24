@@ -17,7 +17,7 @@ src/context.ts       → Assembles phase-aware prompts from system prompt + prio
 src/validation.ts    → Parses/validates YAML frontmatter from agent output
 src/session.ts       → Session CRUD, lockfile, shutdown handler
 src/recovery.ts      → Crash recovery: stale lock detection, session resume
-src/actions.ts       → Parses def-action blocks and executes file/shell operations
+src/worktree.ts      → Git worktree lifecycle (create, remove, diff capture)
 src/server.ts        → HTTP server (localhost-only) serving API + React UI
 src/util.ts          → atomicWrite (write→fsync→rename), isProcessAlive
 src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/ui)
@@ -25,7 +25,7 @@ src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/u
 
 Session directories live at `.def/sessions/<uuid>/` with:
 - `turns/` — canonical turn files (turn-NNNN-agent.md)
-- `artifacts/` — generated outputs (decisions.md, action-results-NNNN.json)
+- `artifacts/` — generated outputs (decisions.md, diff-NNNN.patch)
 - `runtime/` — ephemeral prompt.md and output.md
 - `logs/` — per-invocation debug logs
 - `session.json` — authoritative session state
@@ -54,7 +54,7 @@ Sessions progress through three phases:
 Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The debate turn budget keeps ticking during contested consensus (no reset).
 
 ### Implement Phase
-After consensus, the agent specified by `--impl-model` (default: `claude`) receives the debate decisions and produces structured `def-action` blocks. DEF parses and executes these actions (write-file, edit-file, shell, mkdir) with path traversal and symlink protection. The implementing agent never directly touches the filesystem.
+After consensus, the agent specified by `--impl-model` (default: `claude`) receives the debate decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree and stores it as `artifacts/diff-NNNN.patch` for review.
 
 ### Review Phase
 The non-implementing agent reviews the implementation. It can approve (`status: done`) or request fixes (`status: complete` with feedback). Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
@@ -86,45 +86,28 @@ decisions:                   # Optional, array of strings
 - **Frontmatter validation** gets one retry (re-invokes the agent) on parse/validation failure.
 - After both retries fail, an `error` turn is written and the session pauses (with UI) or exits (without UI).
 
-## Action Block Protocol
+## Worktree Isolation
 
-During the implement phase, agents produce structured action blocks in their turn content:
-
-```markdown
-```def-action
-type: write-file
-path: relative/path/to/file.js
----
-file content here
-```
-```
-
-### Supported Action Types
-| Type | Required Fields | Description |
-|------|----------------|-------------|
-| `write-file` | `path`, body after `---` | Create or overwrite a file |
-| `edit-file` | `path`, `search`, body after `---` | Replace first occurrence of search string |
-| `shell` | `cmd`, optional `cwd` | Run a shell command (60s timeout, 5MB output cap) |
-| `mkdir` | `path` | Create a directory (recursive) |
-
-### Security Constraints
-- All paths validated against traversal (`..`) and symlink escape
-- Absolute paths rejected
-- Shell commands logged before execution
-- No delete-file, git, or network operations
+Each edit-mode session's implement phase runs in an isolated git worktree:
+- Worktree created at debate→implement transition: `.def/worktrees/<sessionId>`
+- Branch: `def/<short-id>-<slugified-topic>`
+- `session.target_repo` is swapped to the worktree path during implement/review
+- Worktree cleaned up on session completion or SIGINT; branch preserved for push/PR
+- Session fields: `worktree_path`, `branch_name`, `original_repo` (all nullable)
 
 ## Context Assembly
 - `context.ts` builds prompts with a **400K character budget** (~100K tokens).
 - Newest turns are prioritized; oldest are dropped first.
 - Only `decisions` arrays from truncated turns are preserved in a summary notice — no other content survives truncation.
-- Prompts are phase-aware: debate prompts encourage challenge, implement prompts include decisions and action format, review prompts include action results.
+- Prompts are phase-aware: debate prompts encourage challenge, implement prompts include decisions and tool access instructions, review prompts include the git diff.
 - Only `planning` mode is supported. Do not assume other modes exist.
 
 ## Agent Invocation
-- **Claude:** `claude --print`, prompt piped via stdin (file stream), output captured from stdout.
-- **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file.
+- **Claude debate/review:** `claude --print`, prompt piped via stdin, output captured from stdout.
+- **Claude implement:** `claude -p "instruction" --allowedTools "*"`, prompt piped as stdin context, full tool access.
+- **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Already has native tool access.
 - Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims.
-- **180s timeout** → SIGTERM → 5s grace → SIGKILL.
+- **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
 
 ## UI & API

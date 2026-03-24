@@ -6,19 +6,8 @@ import type { Session, AgentName, SessionPhase } from './session.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
-/**
- * Flat shape of action results as serialized to JSON files in the
- * artifacts directory. This differs from the nested `ActionResult`
- * returned by `executeActions` at runtime.
- */
-interface SerializedActionResult {
-  type: string;
-  path: string | null;
-  cmd: string | null;
-  ok: boolean;
-  error: string | null;
-  output: string | null;
-}
+/** Maximum characters of diff to include in review prompt before truncating. */
+const MAX_DIFF_CHARS = 50_000;
 
 /** A turn's content plus metadata extracted during prompt assembly. */
 interface TurnContent {
@@ -64,72 +53,37 @@ function implementPrompt(agent: AgentName, topic: string, decisions: string[]): 
 ${decisionsList}
 
 ## Your Task
-Implement the decisions above by producing structured action blocks. Each action must be wrapped in a fenced code block with the \`def-action\` info string.
+Implement the decisions above. You have full tool access — you can read, write, and edit files, and run shell commands directly. The working directory is the project root.
 
-## Action Format
-
-### Write a file
-\`\`\`def-action
-type: write-file
-path: relative/path/to/file.js
----
-file content here
-\`\`\`
-
-### Edit a file (search and replace)
-\`\`\`def-action
-type: edit-file
-path: relative/path/to/file.js
-search: exact string to find
----
-replacement string
-\`\`\`
-
-### Run a shell command
-\`\`\`def-action
-type: shell
-cmd: npm test
-cwd: .
-\`\`\`
-
-### Create a directory
-\`\`\`def-action
-type: mkdir
-path: relative/path/to/dir
-\`\`\`
-
-## Critical: You Are Running in Print Mode
-You are running via \`claude --print\` or \`codex exec\`. You have NO access to tools, file system, or shell. You CANNOT write files directly. Your ONLY way to make changes is by outputting \`def-action\` blocks in your text response. The orchestrator will parse and execute them for you.
-
-Do NOT ask for permissions. Do NOT try to use tools. Just output the action blocks.
+Make the changes directly. Do not describe what you would do — actually do it.
 
 ## Rules
-- Respond with YAML frontmatter followed by markdown containing your action blocks.
+- Respond with YAML frontmatter followed by a brief markdown summary of what you implemented.
 - Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
 - Set status: complete when your implementation is done.
-- Explain what each action does in markdown before the action block.
-- All paths are relative to the project root.
-- You MUST include at least one \`def-action\` block. A response with no actions will be rejected.
+- Summarize the changes you made (files created/modified, commands run).
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 
-function reviewPrompt(agent: AgentName, topic: string, decisions: string[], actionResults: SerializedActionResult[] | null): string {
+function reviewPrompt(agent: AgentName, topic: string, decisions: string[], diff: string | null): string {
   const other = agent === 'claude' ? 'Codex' : 'Claude';
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(No decisions recorded.)';
 
-  let resultsText = '';
-  if (actionResults && actionResults.length > 0) {
-    resultsText = actionResults.map((r, i) => {
-      const status = r.ok ? 'OK' : `FAILED: ${r.error}`;
-      const desc = r.type === 'shell'
-        ? `shell: ${r.cmd}`
-        : `${r.type}: ${r.path || ''}`;
-      return `${i + 1}. [${status}] ${desc}`;
-    }).join('\n');
+  let diffText: string;
+  if (!diff) {
+    diffText = '(No changes were made.)';
+  } else if (diff.length > MAX_DIFF_CHARS) {
+    // Summarize large diffs: show stat-like header + truncated content
+    const lines = diff.split('\n');
+    const fileHeaders = lines.filter(l => l.startsWith('diff --git') || l.startsWith('+++') || l.startsWith('---'));
+    const truncated = diff.slice(0, MAX_DIFF_CHARS);
+    const totalLines = lines.length;
+    const shownLines = truncated.split('\n').length;
+    diffText = `**[Diff truncated: showing ${shownLines} of ${totalLines} lines]**\n\n**Files changed:**\n${fileHeaders.join('\n')}\n\n\`\`\`diff\n${truncated}\n\`\`\``;
   } else {
-    resultsText = '(No action results available.)';
+    diffText = '```diff\n' + diff + '\n```';
   }
 
   return `You are ${AGENT_NAMES[agent]}, reviewing an implementation by ${other} for: ${topic}
@@ -137,14 +91,14 @@ function reviewPrompt(agent: AgentName, topic: string, decisions: string[], acti
 ## Debate Decisions
 ${decisionsList}
 
-## Implementation Actions & Results
-${resultsText}
+## Implementation Diff
+${diffText}
 
 ## Your Task
-Review the implementation against the debate decisions. Check:
+Review the implementation diff against the debate decisions. Check:
 1. Were all decisions faithfully implemented?
 2. Are there any bugs, errors, or missing pieces?
-3. Did any actions fail that need to be fixed?
+3. Does the code follow project conventions?
 
 ## Rules
 - Respond with YAML frontmatter followed by your review.
@@ -190,10 +144,10 @@ export async function assemble(session: Session): Promise<string> {
   // Collect all decisions from all turns
   const allDecisions = turnContents.flatMap(t => t.decisions);
 
-  // Load action results for review phase
-  let actionResults: SerializedActionResult[] | null = null;
+  // Load diff for review phase
+  let diff: string | null = null;
   if ((phase || 'debate') === 'review') {
-    actionResults = await loadActionResults(dir);
+    diff = await loadDiff(dir);
   }
 
   // Build fixed parts based on phase
@@ -202,7 +156,7 @@ export async function assemble(session: Session): Promise<string> {
   if (currentPhase === 'implement') {
     systemPrompt = implementPrompt(next_agent, topic, allDecisions);
   } else if (currentPhase === 'review') {
-    systemPrompt = reviewPrompt(next_agent, topic, allDecisions, actionResults);
+    systemPrompt = reviewPrompt(next_agent, topic, allDecisions, diff);
   } else {
     systemPrompt = debatePrompt(next_agent, topic);
   }
@@ -251,9 +205,9 @@ export async function assemble(session: Session): Promise<string> {
 }
 
 /**
- * Load action results from the artifacts directory.
+ * Load the most recent diff artifact from the session's artifacts directory.
  */
-async function loadActionResults(sessionDir: string): Promise<SerializedActionResult[] | null> {
+async function loadDiff(sessionDir: string): Promise<string | null> {
   const artifactsDir = join(sessionDir, 'artifacts');
   let files: string[];
   try {
@@ -262,16 +216,14 @@ async function loadActionResults(sessionDir: string): Promise<SerializedActionRe
     return null;
   }
 
-  const resultFiles = files
-    .filter(f => f.startsWith('action-results-') && f.endsWith('.json'))
+  const diffFiles = files
+    .filter(f => f.startsWith('diff-') && f.endsWith('.patch'))
     .sort();
 
-  if (resultFiles.length === 0) return null;
+  if (diffFiles.length === 0) return null;
 
-  // Return the most recent action results
-  const latest = resultFiles[resultFiles.length - 1];
-  const raw = await readFile(join(artifactsDir, latest), 'utf8');
-  return JSON.parse(raw) as SerializedActionResult[];
+  const latest = diffFiles[diffFiles.length - 1];
+  return readFile(join(artifactsDir, latest), 'utf8');
 }
 
 /**

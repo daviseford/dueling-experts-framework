@@ -7,9 +7,7 @@ import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite } from './util.js';
-import { parseActions, executeActions } from './actions.js';
-import type { ActionResult } from './actions.js';
-import { createWorktree, removeWorktree } from './worktree.js';
+import { createWorktree, removeWorktree, captureDiff } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -293,18 +291,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         nextAgent = oppositeAgent;
       }
     } else if (phase === 'implement') {
-      // Parse and execute actions from the turn content
-      const actions = parseActions(validation.content);
-      if (actions.length > 0) {
-        console.log(`[Turn ${turnCount}] Executing ${actions.length} action(s)...`);
-        const results: ActionResult[] = await executeActions(actions, session.target_repo);
-
-        const succeeded: number = results.filter(r => r.ok).length;
-        const failed: number = results.filter(r => !r.ok).length;
-        console.log(`[Turn ${turnCount}] Actions: ${succeeded} succeeded, ${failed} failed.`);
-
-        // Store action results for review
-        await writeActionResults(session, turnCount, results);
+      // Agent made changes directly via native tool access.
+      // Capture a git diff to record what changed.
+      const diff = await captureDiff(session.target_repo);
+      if (diff) {
+        console.log(`[Turn ${turnCount}] Changes detected. Storing diff artifact.`);
+        await writeDiffArtifact(session, turnCount, diff);
 
         // Transition to review
         console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
@@ -318,8 +310,8 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
           next_agent: reviewer,
         });
       } else {
-        // No actions produced — send the agent back to try again
-        console.log(`[Turn ${turnCount}] No def-action blocks found. Retrying implementation...`);
+        // No changes detected — send the agent back to try again
+        console.log(`[Turn ${turnCount}] No changes detected in worktree. Retrying implementation...`);
         await updateSession(session.dir, { current_turn: turnCount });
       }
     } else if (phase === 'review') {
@@ -569,19 +561,11 @@ async function writeHumanTurn(session: Session, turnCount: number, content: stri
   await writeCanonicalTurn(session, id, data, content);
 }
 
-async function writeActionResults(session: Session, turnCount: number, results: ActionResult[]): Promise<void> {
+async function writeDiffArtifact(session: Session, turnCount: number, diff: string): Promise<void> {
   const artifactsDir: string = join(session.dir, 'artifacts');
   await mkdir(artifactsDir, { recursive: true });
-  const filename = `action-results-${String(turnCount).padStart(4, '0')}.json`;
-  const serializable = results.map(r => ({
-    type: r.action.type,
-    path: r.action.path || null,
-    cmd: r.action.cmd || null,
-    ok: r.ok,
-    error: r.error || null,
-    output: r.output ? r.output.slice(0, 2000) : null,
-  }));
-  await atomicWrite(join(artifactsDir, filename), JSON.stringify(serializable, null, 2) + '\n');
+  const filename = `diff-${String(turnCount).padStart(4, '0')}.patch`;
+  await atomicWrite(join(artifactsDir, filename), diff + '\n');
 }
 
 async function generateDecisions(session: Session): Promise<void> {
