@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { usePolling } from "@/hooks/use-polling"
 import { endSession } from "@/lib/api"
@@ -22,6 +22,13 @@ export default function App() {
   } = usePolling()
 
   const isCompleted = sessionStatus === "completed"
+
+  useEffect(() => {
+    if (topic) {
+      const short = topic.length > 30 ? topic.slice(0, 30) + "…" : topic
+      document.title = `DEF - ${short}`
+    }
+  }, [topic])
 
   const handleEndSession = useCallback(async () => {
     await endSession()
