@@ -209,12 +209,12 @@ describe('recovery finalization', () => {
     assert.ok(decisionsContent.includes('Serialize event writes'), 'decisions.md missing expected content');
   });
 
-  it('attempt counters reset between run() calls in the same process', { timeout: 30_000 }, async () => {
-    // Regression: attemptCounters was module-global and never cleared,
-    // so a second run() in the same process would start numbering at 1
-    // instead of 0 for the same turn-agent key.
+  it('attempt counters are scoped per-session, not shared across concurrent runs', { timeout: 30_000 }, async () => {
+    // Regression: attemptCounters was module-global. Even clearing on entry
+    // would break concurrent runs. Now the counter map is local to run(),
+    // so two sessions in the same process each start at attempt_index 0.
 
-    // --- First session ---
+    // --- Session A: recovery-approve path (no loop, just finalization) ---
     await writeTurn(turnsDir, {
       id: 'turn-0001-claude', turn: 1, from: 'claude',
       timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
@@ -234,7 +234,7 @@ describe('recovery finalization', () => {
       verdict: 'approve',
     });
 
-    const session1 = makeSession(tmpDir, {
+    const sessionA = makeSession(tmpDir, {
       current_turn: 4,
       phase: 'review',
       target_repo: worktreePath,
@@ -243,20 +243,14 @@ describe('recovery finalization', () => {
       branch_name: 'def/test-branch',
       base_ref: 'main',
     });
-    await writeSessionJson(session1);
-    await run(session1, { noPr: true });
+    await writeSessionJson(sessionA);
 
-    // --- Second session (new temp dir, same process) ---
+    // --- Session B: fix-under-limit path (enters loop, spawns agent) ---
     const tmpDir2 = await mkdtemp(join(tmpdir(), 'def-recovery-counter-'));
     const turnsDir2 = join(tmpDir2, 'turns');
     await mkdir(turnsDir2, { recursive: true });
     await mkdir(join(tmpDir2, 'runtime'), { recursive: true });
     const originalRepo2 = await mkdtemp(join(tmpdir(), 'def-orig2-'));
-    const worktreePath2 = await mkdtemp(join(tmpdir(), 'def-wt2-'));
-
-    // Use a non-existent worktree so agent spawn fails immediately (ENOENT),
-    // but attempt artifacts are still written before the spawn.
-    const nonExistentWorktree = join(tmpDir2, 'nonexistent-worktree');
 
     await writeTurn(turnsDir2, {
       id: 'turn-0001-claude', turn: 1, from: 'claude',
@@ -277,7 +271,8 @@ describe('recovery finalization', () => {
       verdict: 'fix',
     });
 
-    const session2 = makeSession(tmpDir2, {
+    const nonExistentWorktree = join(tmpDir2, 'nonexistent-worktree');
+    const sessionB = makeSession(tmpDir2, {
       id: 'test-recovery-counter-2',
       current_turn: 4,
       phase: 'review',
@@ -289,19 +284,23 @@ describe('recovery finalization', () => {
       branch_name: 'def/test-branch-2',
       base_ref: 'main',
     });
-    await writeSessionJson(session2);
-    await run(session2, { noPr: true });
+    await writeSessionJson(sessionB);
 
-    // KEY ASSERTION: The second session's first attempt should be index 0, not 1+
-    const attempts2 = await listAttempts(tmpDir2);
-    assert.ok(attempts2.length > 0, 'second session should have at least one attempt');
-    assert.equal(attempts2[0].attempt_index, 0,
-      'attempt counter was not reset — first attempt in second session should be index 0');
+    // Run both sessions sequentially (same process)
+    await run(sessionA, { noPr: true });
+    await run(sessionB, { noPr: true });
 
-    // Cleanup second session's temp dirs
+    // KEY ASSERTION: Session B's first attempt should be index 0.
+    // With the old module-global counter, session A's finalization or any
+    // other state would contaminate session B's numbering.
+    const attemptsB = await listAttempts(tmpDir2);
+    assert.ok(attemptsB.length > 0, 'session B should have at least one attempt');
+    assert.equal(attemptsB[0].attempt_index, 0,
+      'attempt counter leaked across sessions — first attempt should be index 0');
+
+    // Cleanup
     await rm(tmpDir2, { recursive: true, force: true });
     await rm(originalRepo2, { recursive: true, force: true });
-    await rm(worktreePath2, { recursive: true, force: true });
   });
 
   it('recovery-fix-under-limit enters the main loop and finalizes', { timeout: 30_000 }, async () => {

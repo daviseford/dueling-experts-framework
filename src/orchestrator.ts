@@ -79,8 +79,8 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
-  // Reset per-session attempt counters so each run() starts at index 0
-  attemptCounters.clear();
+  // Per-session attempt counters — scoped to this run() so concurrent sessions are isolated
+  const attemptCounters = new Map<string, number>();
 
   // Initialize session tracer for durable attempt artifacts + event stream
   const tracer = new Tracer(session.dir);
@@ -195,7 +195,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
-    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, () => endRequested);
+    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested);
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
@@ -244,7 +244,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         };
       } else {
         console.log(`[Turn ${turnCount}] Retrying...`);
-        result = await invokeOnce(nextAgent, session, turnCount, tracer, 'validation-retry');
+        result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry');
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         if (!validation.valid) {
@@ -294,7 +294,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       } else {
         // decided without verdict — retry once
         console.log(`[Turn ${turnCount}] Review decided without verdict. Retrying...`);
-        const retryResult = await invokeOnce(nextAgent, session, turnCount, tracer, 'verdict-retry');
+        const retryResult = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
         const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
         const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
@@ -732,18 +732,13 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-// Tracks attempt index per turn for attempt artifact naming
-const attemptCounters = new Map<string, number>();
-
-function nextAttemptIndex(turn: number, agent: AgentName): number {
-  const key = `${turn}-${agent}`;
-  const idx = attemptCounters.get(key) ?? 0;
-  attemptCounters.set(key, idx + 1);
-  return idx;
-}
-
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, label?: string): Promise<InvokeOnceResult> {
-  const attemptIdx = turnCount !== undefined ? nextAttemptIndex(turnCount, agentName) : 0;
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string): Promise<InvokeOnceResult> {
+  let attemptIdx = 0;
+  if (turnCount !== undefined && attemptCounters) {
+    const key = `${turnCount}-${agentName}`;
+    attemptIdx = attemptCounters.get(key) ?? 0;
+    attemptCounters.set(key, attemptIdx + 1);
+  }
   const startMs = Date.now();
 
   if (tracer && turnCount !== undefined) {
@@ -791,14 +786,14 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
   let ticker: Ticker | null = startTicker(turnCount, agentName);
-  let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer);
+  let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters);
   stopTicker(ticker);
   if (!result.ok && !shouldAbort?.()) {
     console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
     ticker = startTicker(turnCount, agentName, 'retry');
-    result = await invokeOnce(agentName, session, turnCount, tracer, 'retry');
+    result = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, 'retry');
     stopTicker(ticker);
   }
   return result;
