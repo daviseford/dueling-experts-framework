@@ -11,8 +11,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Moon, Radio, Sun } from "lucide-react"
-import { useTheme } from "next-themes"
+import { Radio } from "lucide-react"
 
 interface SessionHeaderProps {
   topic: string
@@ -21,10 +20,6 @@ interface SessionHeaderProps {
 }
 
 export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderProps) {
-  const { resolvedTheme, setTheme } = useTheme()
-
-  const isDark = resolvedTheme === "dark"
-
   return (
     <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
@@ -42,15 +37,6 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
         )}
       </div>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-        >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          <span className="sr-only">Toggle theme</span>
-        </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
