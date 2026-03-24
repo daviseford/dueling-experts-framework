@@ -10,7 +10,6 @@ interface ParsedArgs {
   first?: string;
   implModel?: string;
   reviewTurns?: number;
-  resume?: string;
 }
 
 const VALID_MODES = ['edit', 'planning'];
@@ -20,10 +19,9 @@ const VALID_AGENTS = ['claude', 'codex'];
 const args: string[] = process.argv.slice(2);
 const opts: ParsedArgs = parseArgs(args);
 
-if (!opts.topic && !opts.resume) {
+if (!opts.topic) {
   console.error('Usage: def <topic>');
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
-  console.error('       def --resume <session-id>');
   process.exit(1);
 }
 
@@ -54,33 +52,6 @@ if (opts.reviewTurns !== undefined) {
 }
 
 const targetRepo = resolve(process.cwd());
-
-// Handle --resume
-if (opts.resume) {
-  const { resumeSession } = await import('./recovery.js');
-  await resumeSession(targetRepo, opts.resume);
-  process.exit(0);
-}
-
-// Check for recoverable sessions
-try {
-  const { checkForRecovery } = await import('./recovery.js');
-  const result = await checkForRecovery(targetRepo);
-  if (result === true) {
-    process.exit(0);
-  }
-  if (result && result.multiple) {
-    console.log('Multiple interrupted sessions found:\n');
-    for (const s of result.sessions) {
-      console.log(`  ${s.id}  (turn ${s.current_turn}, ${s.session_status})`);
-      console.log(`    Topic: ${s.topic}\n`);
-    }
-    console.log('Use --resume <session-id> to resume one.');
-    process.exit(1);
-  }
-} catch {
-  // recovery module not loaded — continue
-}
 
 // Create new session
 let session: Session;
@@ -150,9 +121,6 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--first':
         result.first = argv[++i];
-        break;
-      case '--resume':
-        result.resume = argv[++i];
         break;
       case '--impl-model':
         result.implModel = argv[++i];

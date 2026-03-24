@@ -148,7 +148,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
-    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount);
+    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, () => endRequested);
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
@@ -542,11 +542,11 @@ async function invokeOnce(agentName: AgentName, session: Session): Promise<Invok
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number): Promise<InvokeOnceResult> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
   let ticker: Ticker | null = startTicker(turnCount, agentName);
   let result: InvokeOnceResult = await invokeOnce(agentName, session);
   stopTicker(ticker);
-  if (!result.ok) {
+  if (!result.ok && !shouldAbort?.()) {
     console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
     ticker = startTicker(turnCount, agentName, 'retry');
     result = await invokeOnce(agentName, session);

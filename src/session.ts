@@ -147,7 +147,7 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
         } catch { /* best effort */ }
       }
 
-      await update(sessionDir, { session_status: 'interrupted' });
+      await update(sessionDir, { session_status: 'completed' });
     } catch { /* best effort */ }
     process.exit(0);
   });
