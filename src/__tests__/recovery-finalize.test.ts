@@ -83,9 +83,9 @@ describe('recovery finalization', () => {
   });
 
   afterEach(async () => {
-    await rm(tmpDir, { recursive: true, force: true });
-    await rm(originalRepo, { recursive: true, force: true });
-    await rm(worktreePath, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    await rm(originalRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    await rm(worktreePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
   });
 
   it('recovery-approve runs shared finalization: decisions, trace, target_repo restoration', async () => {
@@ -299,8 +299,8 @@ describe('recovery finalization', () => {
       'attempt counter leaked across sessions — first attempt should be index 0');
 
     // Cleanup
-    await rm(tmpDir2, { recursive: true, force: true });
-    await rm(originalRepo2, { recursive: true, force: true });
+    await rm(tmpDir2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    await rm(originalRepo2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
   });
 
   it('recovery-fix-under-limit enters the main loop and finalizes', { timeout: 30_000 }, async () => {

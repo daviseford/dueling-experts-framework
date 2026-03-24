@@ -133,9 +133,20 @@ export class Tracer {
 // ── Read helpers (for API endpoints) ─────────────────────────────────
 
 /**
- * Read all events from events.jsonl, optionally filtered by `since` timestamp.
+ * Read all events from events.jsonl, optionally filtered.
+ *
+ * - `since` (timestamp string): return events with `ts > since`.
+ * - `afterSeq` (number): return events with `seq > afterSeq`.
+ *   More reliable than timestamp filtering when events share the same
+ *   millisecond (e.g. rapid-fire emits).
+ *
+ * When both are provided, `afterSeq` takes precedence.
  */
-export async function readEvents(sessionDir: string, since?: string): Promise<SessionEvent[]> {
+export async function readEvents(
+  sessionDir: string,
+  since?: string,
+  afterSeq?: number,
+): Promise<SessionEvent[]> {
   const eventsPath = join(sessionDir, 'events.jsonl');
   let raw: string;
   try {
@@ -148,7 +159,11 @@ export async function readEvents(sessionDir: string, since?: string): Promise<Se
     if (!line.trim()) continue;
     try {
       const evt: SessionEvent = JSON.parse(line);
-      if (since && evt.ts <= since) continue;
+      if (afterSeq !== undefined) {
+        if (evt.seq <= afterSeq) continue;
+      } else if (since && evt.ts <= since) {
+        continue;
+      }
       events.push(evt);
     } catch {
       // skip malformed lines (e.g. partial write on crash)

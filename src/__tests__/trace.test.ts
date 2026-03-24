@@ -37,11 +37,11 @@ describe('Tracer', () => {
     assert.equal(events[2].seq, 2);
   });
 
-  it('readEvents filters by since parameter', async () => {
+  it('readEvents filters by afterSeq parameter', async () => {
     const events = await readEvents(sessionDir);
-    const since = events[0].ts;
-    const filtered = await readEvents(sessionDir, since);
-    assert.equal(filtered.length, 2); // events after the first
+    // Use seq-based filtering — reliable even when events share the same millisecond
+    const filtered = await readEvents(sessionDir, undefined, events[0].seq);
+    assert.equal(filtered.length, 2); // events with seq > 0
     assert.equal(filtered[0].event, 'turn.written');
   });
 
