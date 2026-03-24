@@ -24,7 +24,6 @@ export default function App() {
     prNumber,
     turnsPath,
     artifactsPath,
-    artifactNames,
   } = useSessionData()
 
   const isCompleted = sessionStatus === "completed"
@@ -59,7 +58,6 @@ export default function App() {
         prNumber={prNumber}
         turnsPath={turnsPath}
         artifactsPath={artifactsPath}
-        artifactNames={artifactNames}
       />
       <InterjectionInput disabled={isCompleted} />
       <StatusBar

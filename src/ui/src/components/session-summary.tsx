@@ -8,7 +8,6 @@ export interface SessionSummaryProps {
   prNumber: number | null
   turnsPath: string | null
   artifactsPath: string | null
-  artifactNames: string[]
   decisions?: string[]
 }
 
@@ -28,7 +27,6 @@ export function SessionSummary({
   prNumber,
   turnsPath,
   artifactsPath,
-  artifactNames,
   decisions,
 }: SessionSummaryProps) {
   return (
@@ -44,7 +42,7 @@ export function SessionSummary({
               Session Completed
             </h3>
             <div className="mt-0.5 flex items-center gap-1.5">
-              <Layers className="h-3 w-3 text-muted-foreground/50" />
+              <Layers className="h-3 w-3 text-muted-foreground/60" />
               <span className="text-[11px] capitalize text-muted-foreground">
                 {phase} phase
               </span>
@@ -61,8 +59,8 @@ export function SessionSummary({
             {branchName && (
               <div className="rounded-lg border border-border/40 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
                 <div className="mb-1.5 flex items-center gap-1.5">
-                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                     Branch
                   </span>
                 </div>
@@ -74,8 +72,8 @@ export function SessionSummary({
             {prUrl && (
               <div className="rounded-lg border border-border/40 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
                 <div className="mb-1.5 flex items-center gap-1.5">
-                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50" />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                     Pull Request
                   </span>
                 </div>
@@ -96,8 +94,8 @@ export function SessionSummary({
         {decisions && decisions.length > 0 && (
           <div className="space-y-2.5">
             <div className="flex items-center gap-2.5">
-              <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Key Decisions
               </span>
             </div>
@@ -118,39 +116,25 @@ export function SessionSummary({
         <div className="space-y-2">
           {turnsPath && (
             <div className="flex items-center gap-2.5">
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-              <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+              <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Turns
               </span>
-              <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/60">
+              <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
                 {shortenPath(turnsPath)}
               </code>
             </div>
           )}
 
           {artifactsPath && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5">
-                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-                <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
-                  Artifacts
-                </span>
-                <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/60">
-                  {shortenPath(artifactsPath)}
-                </code>
-              </div>
-              {artifactNames.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pl-6">
-                  {artifactNames.map((name) => (
-                    <span
-                      key={name}
-                      className="inline-flex rounded-md border border-border/30 bg-muted/30 px-2 py-0.5 font-mono text-[10px] text-muted-foreground/70 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-                    >
-                      {name}
-                    </span>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center gap-2.5">
+              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+              <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Artifacts
+              </span>
+              <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
+                {shortenPath(artifactsPath)}
+              </code>
             </div>
           )}
         </div>
