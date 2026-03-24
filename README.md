@@ -1,4 +1,4 @@
-# DEF — Debate Engine Framework
+# DEF — Dueling Experts Framework
 
 A local CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents alternate turns, output is validated, and a browser UI lets you watch and interject.
 

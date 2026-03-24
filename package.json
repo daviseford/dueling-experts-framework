@@ -1,5 +1,5 @@
 {
-  "name": "debate-engine-framework",
+  "name": "dueling-experts-framework",
   "version": "0.1.0",
   "type": "module",
   "bin": {
