@@ -159,8 +159,11 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
         '=== STDOUT (first 2000 chars) ===',
         stdout.slice(0, 2000) || '(empty)',
         '',
-        '=== STDERR (first 2000 chars) ===',
-        stderr.slice(0, 2000) || '(empty)',
+        '=== STDERR (first 8000 chars) ===',
+        stderr.slice(0, 8000) || '(empty)',
+        '',
+        stderr.length > 8000 ? '=== STDERR (last 2000 chars) ===' : null,
+        stderr.length > 8000 ? stderr.slice(-2000) : null,
       ].filter(Boolean).join('\n');
 
       writeFile(join(logsDir, `${logPrefix}.log`), log, 'utf8').catch(() => {});

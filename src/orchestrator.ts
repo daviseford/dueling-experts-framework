@@ -230,7 +230,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
-    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
+    const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
+    let result: InvokeOnceResult = retryResult;
+    if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
@@ -845,17 +847,25 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult & { effectiveTier?: 'full' | 'fast' }> {
   let ticker: Ticker | null = startTicker(turnCount, agentName, undefined, tier);
   let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
   stopTicker(ticker);
+  let effectiveTier = tier;
   if (!result.ok && !shouldAbort?.()) {
-    console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
-    ticker = startTicker(turnCount, agentName, 'retry', tier);
-    result = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, 'retry', tier);
+    // Escalate fast→full on invocation failure (same pattern as validation retry)
+    const retryTier = tier === 'fast' ? 'full' : tier;
+    if (tier === 'fast') {
+      console.log(`[Turn ${turnCount}] Fast model failed (${result.reason}). Escalating to full model...`);
+    } else {
+      console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
+    }
+    ticker = startTicker(turnCount, agentName, 'retry', retryTier);
+    result = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, 'retry', retryTier);
     stopTicker(ticker);
+    if (result.ok) effectiveTier = retryTier;
   }
-  return result;
+  return { ...result, effectiveTier };
 }
 
 // --- Turn file helpers ---
