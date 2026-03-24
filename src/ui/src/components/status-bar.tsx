@@ -6,7 +6,7 @@ import { Clock, Hash, Radio } from "lucide-react"
 interface StatusBarProps {
   statusText: string
   turnCount: number
-  sessionStatus: "active" | "paused" | "completed"
+  sessionStatus: "active" | "paused" | "completed" | "interrupted"
   sessionTimer: string
 }
 

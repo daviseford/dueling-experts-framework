@@ -49,7 +49,7 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
           <AlertDialogHeader>
             <AlertDialogTitle>End this session?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will stop the agent collaboration. This action cannot be undone.
+              This will stop the debate session. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

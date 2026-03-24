@@ -4,7 +4,7 @@ import type { Turn, ThinkingState } from "@/lib/types"
 
 interface PollingState {
   turns: Turn[]
-  sessionStatus: "active" | "paused" | "completed"
+  sessionStatus: "active" | "paused" | "completed" | "interrupted"
   topic: string
   turnCount: number
   thinking: ThinkingState | null
@@ -34,7 +34,7 @@ function formatDuration(ms: number): string {
 
 export function usePolling(): PollingState {
   const [turns, setTurns] = useState<Turn[]>([])
-  const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed">("active")
+  const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed" | "interrupted">("active")
   const [topic, setTopic] = useState("")
   const [turnCount, setTurnCount] = useState(0)
   const [thinking, setThinking] = useState<ThinkingState | null>(null)
