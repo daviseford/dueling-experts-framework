@@ -4,7 +4,7 @@ import { run } from './orchestrator.js';
 import { load, installShutdownHandler, update } from './session.js';
 import type { Session } from './session.js';
 import { isProcessAlive } from './util.js';
-import { worktreeExists } from './worktree.js';
+import { worktreeExists, isDefWorktreePath } from './worktree.js';
 
 interface RecoverableSession {
   id: string;
@@ -141,19 +141,22 @@ async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
   // Load session and resume
   const session = await load(sessionDir);
 
-  // If session has an active worktree (implement/review in progress), verify it still
-  // exists on disk before using it as target_repo. If missing, fall back to main checkout.
+  // If session has an active worktree (implement/review in progress), validate the path
+  // structurally and verify it exists on disk before using it as target_repo.
   if (session.worktree_path && (session.phase === 'implement' || session.phase === 'review')) {
-    if (await worktreeExists(session.worktree_path)) {
+    if (isDefWorktreePath(session.worktree_path) && await worktreeExists(session.worktree_path)) {
       session.target_repo = session.worktree_path;
-      session.original_repo = targetRepo;
     } else {
-      console.log(`Warning: worktree ${session.worktree_path} no longer exists. Resuming in main checkout.`);
+      console.log(`Warning: worktree ${session.worktree_path} invalid or missing. Resuming in main checkout.`);
       session.target_repo = targetRepo;
+      session.worktree_path = null;
+      session.branch_name = null;
     }
   } else {
     session.target_repo = targetRepo;
   }
+  // Always use the known-good targetRepo as original_repo, not the persisted value
+  session.original_repo = targetRepo;
 
   installShutdownHandler(sessionDir, targetRepo, session);
 

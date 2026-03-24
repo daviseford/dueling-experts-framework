@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { join, sep } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import { access, rm } from 'node:fs/promises';
 
 interface WorktreeResult {
@@ -92,10 +92,16 @@ function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * Validate that a path looks like it's inside a .def/worktrees/ directory.
- * Prevents accidental rm -rf on arbitrary paths.
+ * Validate that a resolved path is structurally inside a .def/worktrees/ directory.
+ * Resolves the path to prevent traversal attacks, rejects ".." components.
+ * Exported for use in recovery path validation.
  */
-function isDefWorktreePath(p: string): boolean {
-  const normalized = p.replace(/\\/g, '/');
-  return normalized.includes('.def/worktrees/');
+export function isDefWorktreePath(p: string): boolean {
+  const resolved = resolvePath(p).replace(/\\/g, '/');
+  const parts = resolved.split('/');
+  const defIdx = parts.indexOf('.def');
+  if (defIdx === -1) return false;
+  if (parts[defIdx + 1] !== 'worktrees') return false;
+  if (!parts[defIdx + 2]) return false;
+  return !parts.includes('..');
 }
