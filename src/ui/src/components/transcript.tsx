@@ -16,6 +16,8 @@ interface TranscriptProps {
   prNumber: number | null
   turnsPath: string | null
   artifactsPath: string | null
+  openMap: Record<string, boolean>
+  onTurnOpenChange: (id: string, open: boolean) => void
 }
 
 export function Transcript({
@@ -29,6 +31,8 @@ export function Transcript({
   prNumber,
   turnsPath,
   artifactsPath,
+  openMap,
+  onTurnOpenChange,
 }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const turnCount = turns.length
@@ -74,7 +78,12 @@ export function Transcript({
     <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-3 px-5 py-4">
         {turns.map((turn) => (
-          <TurnCard key={turn.id} turn={turn} />
+          <TurnCard
+            key={turn.id}
+            turn={turn}
+            open={openMap[turn.id] ?? true}
+            onOpenChange={(open) => onTurnOpenChange(turn.id, open)}
+          />
         ))}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />

@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -77,16 +76,16 @@ function truncateContent(content: string): string {
 
 interface TurnCardProps {
   turn: Turn
-  defaultOpen?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
-  const [open, setOpen] = useState(defaultOpen)
+export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
   const isError = turn.status === "error"
   const label = LABEL_MAP[turn.from] || turn.from.toUpperCase()
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={open} onOpenChange={onOpenChange}>
       <div
         className={cn(
           "overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 shadow-sm transition-all duration-200 hover:shadow-md",
@@ -135,7 +134,7 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
               </span>
             )}
             {!open && (
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
                 {truncateContent(turn.content)}
               </span>
             )}
@@ -156,7 +155,7 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
               variant="ghost"
               size="sm"
               className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
-              onClick={() => setOpen(false)}
+              onClick={() => onOpenChange(false)}
             >
               <ChevronsUpDown className="h-3 w-3" />
               Collapse

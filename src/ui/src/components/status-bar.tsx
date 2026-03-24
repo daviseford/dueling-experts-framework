@@ -1,13 +1,17 @@
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { ThemeToggle } from "./theme-toggle"
 import { cn } from "@/lib/utils"
-import { Clock, Hash, Radio } from "lucide-react"
+import { ChevronsDownUp, ChevronsUpDown, Clock, Hash, Radio } from "lucide-react"
 
 interface StatusBarProps {
   statusText: string
   turnCount: number
   sessionStatus: "active" | "paused" | "completed" | "interrupted"
   sessionTimer: string
+  allCollapsed: boolean
+  onToggleAll: () => void
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -22,7 +26,7 @@ const DOT_COLORS: Record<string, string> = {
   completed: "text-muted-foreground",
 }
 
-export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }: StatusBarProps) {
+export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll }: StatusBarProps) {
   return (
     <div className="flex items-center gap-3 border-t border-border/30 bg-card/80 px-5 py-2.5">
       <Badge
@@ -56,6 +60,31 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }
         <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
         <span className="font-mono font-medium">{sessionTimer}</span>
       </div>
+
+      <span className="flex-1" />
+
+      {turnCount > 1 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
+          onClick={onToggleAll}
+        >
+          {allCollapsed ? (
+            <>
+              <ChevronsUpDown className="h-3 w-3" />
+              Expand all
+            </>
+          ) : (
+            <>
+              <ChevronsDownUp className="h-3 w-3" />
+              Collapse all
+            </>
+          )}
+        </Button>
+      )}
+
+      <ThemeToggle />
     </div>
   )
 }
