@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite } from './util.js';
@@ -24,8 +24,8 @@ export interface Session {
   impl_model: AgentName;
   review_turns: number;
   port: number | null;
+  pid: number;
   dir: string;
-  lockPath?: string;
   _currentChild?: ChildProcess | null;
 }
 
@@ -43,17 +43,13 @@ export interface CreateSessionOptions {
 
 /**
  * Create a new session directory and session.json.
- * Acquires a lockfile — errors if one already exists.
+ * Each session is independent — multiple sessions can run concurrently.
  */
 export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
-  const lockPath = join(defDir, 'lock');
 
   // Ensure .def/ exists
   await mkdir(defDir, { recursive: true });
-
-  // Acquire lockfile atomically (wx = exclusive create, fails if exists)
-  await acquireLock(lockPath);
 
   // Create session directory
   const id = randomUUID();
@@ -62,7 +58,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
   await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
   await mkdir(join(sessionDir, 'runtime'), { recursive: true });
 
-  const session: Omit<Session, 'dir' | 'lockPath'> = {
+  const session: Omit<Session, 'dir'> = {
     id,
     topic,
     mode,
@@ -76,6 +72,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     impl_model: implModel || 'claude',
     review_turns: reviewTurns || 6,
     port: null,
+    pid: process.pid,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);
@@ -83,7 +80,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
   // Add .def/ to .gitignore if not already present
   await ensureGitignore(targetRepo);
 
-  return { ...session, dir: sessionDir, lockPath };
+  return { ...session, dir: sessionDir };
 }
 
 /**
@@ -108,20 +105,8 @@ export async function update(sessionDir: string, fields: Partial<Session>): Prom
 /**
  * Write JSON atomically with fsync via shared utility.
  */
-async function atomicWriteJson(filePath: string, data: Omit<Session, 'dir' | 'lockPath'> | Session): Promise<void> {
+async function atomicWriteJson(filePath: string, data: Record<string, unknown>): Promise<void> {
   await atomicWrite(filePath, JSON.stringify(data, null, 2) + '\n');
-}
-
-/**
- * Remove the lockfile.
- */
-export async function releaseLock(targetRepo: string): Promise<void> {
-  const lockPath = join(targetRepo, '.def', 'lock');
-  try {
-    await unlink(lockPath);
-  } catch {
-    // Already removed or doesn't exist — fine
-  }
 }
 
 /**
@@ -148,24 +133,9 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
       }
 
       await update(sessionDir, { session_status: 'interrupted' });
-      await releaseLock(targetRepo);
     } catch { /* best effort */ }
     process.exit(0);
   });
-}
-
-/**
- * Acquire a lockfile atomically. Fails if already exists.
- */
-export async function acquireLock(lockPath: string): Promise<void> {
-  try {
-    await writeFile(lockPath, String(process.pid), { flag: 'wx' });
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error('A session may already be running. Delete .def/lock to proceed.');
-    }
-    throw err;
-  }
 }
 
 /**

@@ -1,7 +1,7 @@
-import { readdir, readFile, access, rm, unlink } from 'node:fs/promises';
+import { readdir, readFile, rm, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run } from './orchestrator.js';
-import { load, releaseLock, acquireLock, installShutdownHandler } from './session.js';
+import { load, installShutdownHandler, update } from './session.js';
 import type { Session } from './session.js';
 import { isProcessAlive } from './util.js';
 
@@ -15,26 +15,11 @@ interface RecoverableSession {
 
 /**
  * Check for recoverable sessions on startup.
+ * Scans all sessions and uses the PID in session.json to detect stale ones.
  * Returns true if a session was auto-resumed, false otherwise.
  */
 export async function checkForRecovery(targetRepo: string): Promise<boolean | { multiple: true; sessions: RecoverableSession[] }> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
-  const lockPath = join(targetRepo, '.def', 'lock');
-
-  // If lockfile exists, check whether the owning process is still alive
-  try {
-    await access(lockPath);
-    const pidStr = await readFile(lockPath, 'utf8');
-    const pid = parseInt(pidStr.trim(), 10);
-    if (!isNaN(pid) && isProcessAlive(pid)) {
-      return false; // Another session is genuinely running
-    }
-    // Stale lockfile — owning process is dead, clean it up
-    console.log('Detected stale lockfile (process no longer running). Removing.');
-    await unlink(lockPath);
-  } catch {
-    // No lockfile — can proceed with recovery check
-  }
 
   let sessionDirs;
   try {
@@ -54,6 +39,15 @@ export async function checkForRecovery(targetRepo: string): Promise<boolean | { 
       const data = JSON.parse(raw);
 
       if (data.session_status === 'active' || data.session_status === 'paused' || data.session_status === 'interrupted') {
+        // If the owning process is still alive, skip — it's a running session
+        if (data.pid && isProcessAlive(data.pid)) {
+          continue;
+        }
+        // Stale active session — mark as interrupted so it's recoverable
+        if (data.session_status === 'active') {
+          await update(sessionDir, { session_status: 'interrupted' });
+          data.session_status = 'interrupted';
+        }
         recoverable.push({
           id: data.id,
           dir: sessionDir,
@@ -124,9 +118,8 @@ export async function resumeSession(targetRepo: string, sessionId: string): Prom
 }
 
 async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
-  // Acquire lockfile atomically
-  const lockPath = join(targetRepo, '.def', 'lock');
-  await acquireLock(lockPath);
+  // Claim this session by writing our PID
+  await update(sessionDir, { pid: process.pid, session_status: 'active' });
 
   // Discard incomplete runtime files
   const runtimeDir = join(sessionDir, 'runtime');
@@ -162,7 +155,6 @@ async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
   } catch (err: unknown) {
     console.error(`Orchestrator error: ${(err as Error).message}`);
   } finally {
-    await releaseLock(targetRepo);
     if (server) {
       await new Promise((r) => setTimeout(r, 5000));
       server.stop();

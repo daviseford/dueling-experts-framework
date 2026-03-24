@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { create, releaseLock, installShutdownHandler } from './session.js';
+import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
 
@@ -21,7 +21,8 @@ const args: string[] = process.argv.slice(2);
 const opts: ParsedArgs = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
-  console.error('Usage: def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
+  console.error('Usage: def <topic>');
+  console.error('       def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
   console.error('       def --resume <session-id>');
   process.exit(1);
 }
@@ -125,7 +126,6 @@ try {
   console.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
-  await releaseLock(targetRepo);
   if (server) {
     // Give the UI time to poll the completed status before shutting down
     await new Promise((r) => setTimeout(r, 5000));
@@ -136,6 +136,7 @@ try {
 
 function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = {};
+  const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--topic':
@@ -159,7 +160,16 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--review-turns':
         result.reviewTurns = parseInt(argv[++i], 10);
         break;
+      default:
+        if (!argv[i].startsWith('--')) {
+          positional.push(argv[i]);
+        }
+        break;
     }
+  }
+  // Allow bare positional args as the topic: def add dark mode
+  if (!result.topic && positional.length > 0) {
+    result.topic = positional.join(' ');
   }
   return result;
 }
