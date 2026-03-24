@@ -1,10 +1,53 @@
 #!/usr/bin/env node
 
+import { statSync, readdirSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, resolve, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, '..');
+const uiDir = resolve(root, 'src', 'ui');
+const distMarker = resolve(uiDir, 'dist', 'index.html');
+const uiSrcDir = resolve(uiDir, 'src');
+const uiIndex = resolve(uiDir, 'index.html');
+
+// ── UI staleness check ──────────────────────────────────────────────
+
+function newestMtime(dir) {
+  let max = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const full = join(entry.parentPath ?? entry.path, entry.name);
+    const mt = statSync(full).mtimeMs;
+    if (mt > max) max = mt;
+  }
+  return max;
+}
+
+function uiBuildNeeded() {
+  try {
+    const distTime = statSync(distMarker).mtimeMs;
+    const srcTime = Math.max(newestMtime(uiSrcDir), statSync(uiIndex).mtimeMs);
+    return srcTime > distTime;
+  } catch {
+    // dist/index.html doesn't exist — need a build
+    return true;
+  }
+}
+
+if (uiBuildNeeded()) {
+  console.log('[def] UI sources changed — rebuilding…');
+  try {
+    execSync('npm run build', { cwd: uiDir, stdio: 'inherit' });
+  } catch {
+    console.error('[def] UI build failed — launching with stale UI');
+  }
+}
+
+// ── Launch DEF ──────────────────────────────────────────────────────
+
 // Register tsx ESM loader so .ts imports resolve correctly
 await import('tsx/esm');
 
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, resolve } from 'node:path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-await import(pathToFileURL(resolve(__dirname, '..', 'src', 'index.ts')).href);
+await import(pathToFileURL(resolve(root, 'src', 'index.ts')).href);

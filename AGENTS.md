@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repo.
 
 ## What This Is
 
-DEF (Debate Engine Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **debate → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection.
+DEF (Dueling Experts Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **debate → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection.
 
 ## Files That Matter
 
