@@ -107,6 +107,22 @@ export class Tracer {
   }
 
   /**
+   * Update an existing attempt's meta.json with additional fields (e.g. validation_errors).
+   * Reads the current meta, merges the patch, and writes back atomically.
+   */
+  async updateAttemptMeta(attemptDir: string, patch: Partial<AttemptMeta>): Promise<void> {
+    const metaPath = join(this.attemptsDir, attemptDir, 'meta.json');
+    try {
+      const raw = await readFile(metaPath, 'utf8');
+      const meta: AttemptMeta = JSON.parse(raw);
+      const updated = { ...meta, ...patch };
+      await atomicWrite(metaPath, JSON.stringify(updated, null, 2) + '\n');
+    } catch {
+      // Attempt dir may not exist (e.g. tracer was disabled) — skip silently
+    }
+  }
+
+  /**
    * Flush the serialized write chain. Call before process exit.
    */
   async flush(): Promise<void> {

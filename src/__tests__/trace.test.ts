@@ -116,4 +116,36 @@ describe('Tracer', () => {
     assert.equal(attempts.length, 0);
     await rm(emptyDir, { recursive: true, force: true });
   });
+
+  it('updateAttemptMeta merges validation_errors into existing meta.json', async () => {
+    const tracer = new Tracer(sessionDir);
+    const meta = {
+      turn: 3,
+      agent: 'claude' as const,
+      attempt_index: 0,
+      phase: 'plan' as const,
+      elapsed_ms: 2000,
+      exit_code: 0,
+      timed_out: false,
+      cmd: 'claude',
+      cwd: '/tmp/repo',
+    };
+    const dirName = await tracer.saveAttempt(3, 'claude', 0, 'prompt', 'bad output', meta);
+
+    // Simulate validation failure — update meta with errors
+    await tracer.updateAttemptMeta(dirName, { validation_errors: ['missing frontmatter', 'no id field'] });
+
+    const updatedMeta = JSON.parse(
+      await readFile(join(sessionDir, 'artifacts', 'attempts', dirName, 'meta.json'), 'utf8'),
+    );
+    assert.equal(updatedMeta.turn, 3);
+    assert.equal(updatedMeta.agent, 'claude');
+    assert.deepEqual(updatedMeta.validation_errors, ['missing frontmatter', 'no id field']);
+  });
+
+  it('updateAttemptMeta is a no-op for nonexistent attempt dir', async () => {
+    const tracer = new Tracer(sessionDir);
+    // Should not throw
+    await tracer.updateAttemptMeta('attempt-9999-claude-0', { validation_errors: ['test'] });
+  });
 });

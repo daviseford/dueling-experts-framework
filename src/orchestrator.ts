@@ -19,6 +19,7 @@ interface InvokeOnceResult {
   output: string;
   rawOutput: string;
   reason: string;
+  attemptDir?: string;
 }
 
 export interface Controller {
@@ -119,12 +120,16 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   if (pendingReviewDecided) {
     if (pendingReviewDecided.verdict === 'approve') {
       console.log('[Recovery] Reviewer approved before interruption. Session complete.');
+      tracer.emit('session.end', { phase, data: { turn_count: turnCount, reason: 'recovery-approve' } });
+      await tracer.flush();
       await updateSession(session.dir, { session_status: 'completed', phase });
       return;
     }
     // verdict === 'fix' — apply the transition
     if (reviewLoopCount >= session.review_turns) {
       console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Session complete.`);
+      tracer.emit('session.end', { phase, data: { turn_count: turnCount, reason: 'recovery-review-limit' } });
+      await tracer.flush();
       await updateSession(session.dir, { session_status: 'completed', phase });
       return;
     }
@@ -215,6 +220,11 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Output preview: ${preview}`);
       tracer.emit('attempt.validation_failed', { turn: turnCount, agent: nextAgent, phase, data: { errors: validation.errors } });
 
+      // Persist validation errors into the attempt's meta.json
+      if (result.attemptDir) {
+        await tracer.updateAttemptMeta(result.attemptDir, { validation_errors: validation.errors });
+      }
+
       // In implement phase, the frontmatter is ceremonial — the orchestrator
       // assigns canonical values and the real output is the git diff.
       // Synthesize frontmatter instead of crashing.
@@ -238,6 +248,10 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         if (!validation.valid) {
+          // Persist validation errors into the retry attempt's meta.json
+          if (result.attemptDir) {
+            await tracer.updateAttemptMeta(result.attemptDir, { validation_errors: validation.errors });
+          }
           tracer.emit('turn.error', { turn: turnCount, agent: nextAgent, phase, data: { reason: 'invalid frontmatter after retry', errors: validation.errors } });
           await writeErrorTurn(session, turnCount, nextAgent,
             `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
@@ -771,6 +785,7 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
       phase: session.phase,
       data: { attempt_dir: attemptDir, exit_code: result.exitCode, elapsed_ms: elapsedMs, timed_out: result.timedOut, ok: !failed },
     });
+    return { ok: !failed, output: result.output, rawOutput: result.output, reason, attemptDir };
   }
 
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
