@@ -10,6 +10,7 @@
     "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/server-metadata.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
     "typecheck": "tsc --noEmit",
     "dev:ui": "cd src/ui && npm run dev",
+    "dev:ui:mock": "cd src/ui && npm run dev:mock",
     "build:ui": "cd src/ui && npm run build",
     "prepare": "cd src/ui && npm install && npm run build"
   },
