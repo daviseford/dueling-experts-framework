@@ -9,6 +9,8 @@ import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
+import { Tracer } from './trace.js';
+import type { AttemptMeta } from './trace.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -75,6 +77,13 @@ interface DecisionEntry {
 export async function run(session: Session, { server, noPr }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
+
+  // Initialize session tracer for durable attempt artifacts + event stream
+  const tracer = new Tracer(session.dir);
+  tracer.emit('session.start', {
+    phase: session.phase,
+    data: { topic: session.topic, mode: session.mode, max_turns: session.max_turns },
+  });
 
   let turnCount: number = session.current_turn;
   let nextAgent: AgentName = session.next_agent;
@@ -181,7 +190,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
-    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, () => endRequested);
+    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, () => endRequested);
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
@@ -192,6 +201,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     }
 
     if (!result.ok) {
+      tracer.emit('turn.error', { turn: turnCount, agent: nextAgent, phase, data: { reason: result.reason } });
       await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput);
       const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
       if (resumed) continue;
@@ -203,6 +213,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     if (!validation.valid) {
       const preview = result.output.slice(0, 200).replace(/\n/g, '\\n');
       console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Output preview: ${preview}`);
+      tracer.emit('attempt.validation_failed', { turn: turnCount, agent: nextAgent, phase, data: { errors: validation.errors } });
 
       // In implement phase, the frontmatter is ceremonial — the orchestrator
       // assigns canonical values and the real output is the git diff.
@@ -223,10 +234,11 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         };
       } else {
         console.log(`[Turn ${turnCount}] Retrying...`);
-        result = await invokeOnce(nextAgent, session);
+        result = await invokeOnce(nextAgent, session, turnCount, tracer, 'validation-retry');
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         if (!validation.valid) {
+          tracer.emit('turn.error', { turn: turnCount, agent: nextAgent, phase, data: { reason: 'invalid frontmatter after retry', errors: validation.errors } });
           await writeErrorTurn(session, turnCount, nextAgent,
             `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
           const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
@@ -268,7 +280,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       } else {
         // decided without verdict — retry once
         console.log(`[Turn ${turnCount}] Review decided without verdict. Retrying...`);
-        const retryResult = await invokeOnce(nextAgent, session);
+        const retryResult = await invokeOnce(nextAgent, session, turnCount, tracer, 'verdict-retry');
         const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
         const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
@@ -299,6 +311,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
     await savePromptForTurn(session, canonicalId);
+    tracer.emit('turn.written', { turn: turnCount, agent: nextAgent, phase, data: { id: canonicalId, status: canonicalData.status, duration_ms: durationMs } });
     console.log(`[Turn ${turnCount}] [${phase}] Written: ${canonicalId} (status: ${canonicalData.status})`);
 
     const oppositeAgent: AgentName = nextAgent === 'claude' ? 'codex' : 'claude';
@@ -318,6 +331,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       if (effectiveStatus === 'decided') {
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
           // Both agents agreed — consensus reached
+          tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           console.log(`[Turn ${turnCount}] Consensus reached.`);
 
           // Generate plan artifact from plan-phase turns
@@ -364,6 +378,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           session.phase = phase;
           pendingPlanDecided = null;
           nextAgent = session.impl_model;
+          tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'plan', to_phase: 'implement' } });
           await updateSession(session.dir, {
             phase: 'implement',
             next_agent: nextAgent,
@@ -428,6 +443,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         pendingReviewDecided = null;
         const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
         nextAgent = reviewer;
+        tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'implement', to_phase: 'review' } });
         await updateSession(session.dir, {
           current_turn: turnCount,
           phase: 'review',
@@ -467,6 +483,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         phase = 'implement';
         session.phase = phase;
         nextAgent = session.impl_model;
+        tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'review', to_phase: 'implement', review_loop: reviewLoopCount } });
         await updateSession(session.dir, {
           current_turn: turnCount,
           phase: 'implement',
@@ -527,6 +544,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         if (prResult) {
           session.pr_url = prResult.url;
           session.pr_number = prResult.number;
+          tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
           console.log(`Draft PR created: ${prResult.url}`);
         }
       } else {
@@ -544,6 +562,9 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       session.target_repo = session.original_repo;
     }
   }
+
+  tracer.emit('session.end', { phase, data: { turn_count: turnCount, pr_url: session.pr_url ?? null } });
+  await tracer.flush();
 
   await updateSession(session.dir, {
     session_status: 'completed',
@@ -697,25 +718,72 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session): Promise<InvokeOnceResult> {
+// Tracks attempt index per turn for attempt artifact naming
+const attemptCounters = new Map<string, number>();
+
+function nextAttemptIndex(turn: number, agent: AgentName): number {
+  const key = `${turn}-${agent}`;
+  const idx = attemptCounters.get(key) ?? 0;
+  attemptCounters.set(key, idx + 1);
+  return idx;
+}
+
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, label?: string): Promise<InvokeOnceResult> {
+  const attemptIdx = turnCount !== undefined ? nextAttemptIndex(turnCount, agentName) : 0;
+  const startMs = Date.now();
+
+  if (tracer && turnCount !== undefined) {
+    tracer.emit('attempt.start', { turn: turnCount, agent: agentName, phase: session.phase, data: { attempt_index: attemptIdx, label } });
+  }
+
   const result = await invoke(agentName, { ...session, next_agent: agentName });
+  const elapsedMs = Date.now() - startMs;
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
     ? `timeout (${session.phase === 'implement' ? '900s' : '300s'})`
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';
+
+  // Save attempt artifact (prompt from runtime/prompt.md, full output)
+  if (tracer && turnCount !== undefined) {
+    let prompt = '';
+    try {
+      prompt = await readFile(join(session.dir, 'runtime', 'prompt.md'), 'utf8');
+    } catch { /* prompt may not exist */ }
+
+    const meta: AttemptMeta = {
+      turn: turnCount,
+      agent: agentName,
+      attempt_index: attemptIdx,
+      phase: session.phase,
+      elapsed_ms: elapsedMs,
+      exit_code: result.exitCode,
+      timed_out: result.timedOut,
+      cmd: agentName,
+      cwd: session.target_repo,
+    };
+
+    const attemptDir = await tracer.saveAttempt(turnCount, agentName, attemptIdx, prompt, result.output, meta);
+    tracer.emit('attempt.end', {
+      turn: turnCount,
+      agent: agentName,
+      phase: session.phase,
+      data: { attempt_dir: attemptDir, exit_code: result.exitCode, elapsed_ms: elapsedMs, timed_out: result.timedOut, ok: !failed },
+    });
+  }
+
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
   let ticker: Ticker | null = startTicker(turnCount, agentName);
-  let result: InvokeOnceResult = await invokeOnce(agentName, session);
+  let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer);
   stopTicker(ticker);
   if (!result.ok && !shouldAbort?.()) {
     console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
     ticker = startTicker(turnCount, agentName, 'retry');
-    result = await invokeOnce(agentName, session);
+    result = await invokeOnce(agentName, session, turnCount, tracer, 'retry');
     stopTicker(ticker);
   }
   return result;

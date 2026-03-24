@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/server-metadata.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
+    "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/server-metadata.test.ts src/__tests__/trace.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
     "typecheck": "tsc --noEmit",
     "dev:ui": "cd src/ui && npm run dev",
     "build:ui": "cd src/ui && npm run build",
