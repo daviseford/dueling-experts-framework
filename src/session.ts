@@ -9,7 +9,7 @@ import { removeWorktree, commitChanges } from './worktree.js';
 
 export type AgentName = 'claude' | 'codex';
 export type SessionStatus = 'active' | 'paused' | 'completed' | 'interrupted';
-export type SessionPhase = 'debate' | 'implement' | 'review';
+export type SessionPhase = 'plan' | 'implement' | 'review';
 
 export interface Session {
   id: string;
@@ -75,7 +75,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     session_status: 'active',
     current_turn: 0,
     next_agent: firstAgent,
-    phase: 'debate',
+    phase: 'plan',
     impl_model: implModel || 'claude',
     review_turns: reviewTurns || 6,
     port: null,
@@ -101,7 +101,12 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
  */
 export async function load(sessionDir: string): Promise<Session> {
   const raw = await readFile(join(sessionDir, 'session.json'), 'utf8');
-  return { ...JSON.parse(raw), dir: sessionDir } as Session;
+  const parsed = JSON.parse(raw);
+  // Normalize legacy 'debate' phase to 'plan'
+  if (parsed.phase === 'debate') {
+    parsed.phase = 'plan';
+  }
+  return { ...parsed, dir: sessionDir } as Session;
 }
 
 /**

@@ -32,6 +32,7 @@ const BADGE_STYLES: Record<string, string> = {
 }
 
 const PHASE_STYLES: Record<string, string> = {
+  plan: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
   debate: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
   implement: "bg-cyan-500/10 text-cyan-600/70 dark:text-cyan-400/70 border-cyan-500/20",
   review: "bg-pink-500/10 text-pink-600/70 dark:text-pink-400/70 border-pink-500/20",

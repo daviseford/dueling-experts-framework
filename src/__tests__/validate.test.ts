@@ -113,4 +113,32 @@ describe('validate', () => {
     assert.equal(result.valid, false);
     assert.ok(result.errors.some(e => e.includes('Missing required field')));
   });
+
+  it('accepts valid verdict field', () => {
+    const raw = validTurn.replace('status: complete', 'status: decided\nverdict: approve');
+    const result = validate(raw);
+    assert.equal(result.valid, true);
+    assert.equal(result.data!.verdict, 'approve');
+  });
+
+  it('accepts fix verdict', () => {
+    const raw = validTurn.replace('status: complete', 'status: decided\nverdict: fix');
+    const result = validate(raw);
+    assert.equal(result.valid, true);
+    assert.equal(result.data!.verdict, 'fix');
+  });
+
+  it('rejects invalid verdict', () => {
+    const raw = validTurn.replace('status: complete', 'status: decided\nverdict: reject');
+    const result = validate(raw);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('Invalid verdict')));
+  });
+
+  it('allows missing verdict field', () => {
+    const raw = validTurn.replace('status: complete', 'status: decided');
+    const result = validate(raw);
+    assert.equal(result.valid, true);
+    assert.equal(result.data!.verdict, undefined);
+  });
 });

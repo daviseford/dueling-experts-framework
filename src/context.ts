@@ -25,7 +25,7 @@ const AGENT_NAMES: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex
 // Reserve headroom for the model's response.
 const CHAR_BUDGET = 400_000;
 
-function debatePrompt(agent: AgentName, topic: string): string {
+function planPrompt(agent: AgentName, topic: string): string {
   const other = agent === 'claude' ? 'Codex' : 'Claude';
   return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${other}).
 You are collaborating on: ${topic}
@@ -102,8 +102,9 @@ Review the implementation diff against the debate decisions. Check:
 ## Rules
 - Respond with YAML frontmatter followed by your review.
 - Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
-- If the implementation is correct and complete, set status: done.
-- If fixes are needed, set status: complete and describe what needs to change. The implementing agent will get another turn.
+- If the implementation is correct and complete, set status: decided and verdict: approve.
+- If fixes are needed, set status: decided and verdict: fix, then describe what needs to change. The implementing agent will get another turn.
+- The verdict field is REQUIRED when status is decided. Must be either "approve" or "fix".
 - Be specific about what's wrong and how to fix it.
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
@@ -156,7 +157,7 @@ export async function assemble(session: Session): Promise<string> {
   } else if (phase === 'review') {
     systemPrompt = reviewPrompt(next_agent, topic, allDecisions, diff);
   } else {
-    systemPrompt = debatePrompt(next_agent, topic);
+    systemPrompt = planPrompt(next_agent, topic);
   }
 
   const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n**Phase:** ${phase}\n`;

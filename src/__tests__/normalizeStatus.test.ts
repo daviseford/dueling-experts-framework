@@ -43,4 +43,22 @@ describe('normalizeStatus', () => {
   it('allows "needs_human" in implement phase', () => {
     assert.equal(normalizeStatus('needs_human', 5, 'implement'), 'needs_human');
   });
+
+  // Review phase tests
+  it('maps "done" to "decided" in review phase (legacy compat)', () => {
+    assert.equal(normalizeStatus('done', 5, 'review'), 'decided');
+  });
+
+  it('allows "decided" in review phase', () => {
+    assert.equal(normalizeStatus('decided', 5, 'review'), 'decided');
+  });
+
+  it('allows "needs_human" in review phase', () => {
+    assert.equal(normalizeStatus('needs_human', 5, 'review'), 'needs_human');
+  });
+
+  it('defaults unknown statuses to "complete" in review phase', () => {
+    assert.equal(normalizeStatus('complete', 5, 'review'), 'complete');
+    assert.equal(normalizeStatus('garbage', 5, 'review'), 'complete');
+  });
 });

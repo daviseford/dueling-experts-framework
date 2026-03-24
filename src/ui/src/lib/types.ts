@@ -4,7 +4,8 @@ export interface Turn {
   from: "claude" | "codex" | "human" | "system"
   timestamp: string
   status: "complete" | "needs_human" | "done" | "decided" | "error"
-  phase: "debate" | "implement" | "review"
+  phase: "plan" | "debate" | "implement" | "review"
+  verdict?: "approve" | "fix"
   duration_ms?: number
   decisions: string[]
   content: string
@@ -15,7 +16,7 @@ export interface ThinkingState {
   since: string
 }
 
-export type SessionPhase = "debate" | "implement" | "review"
+export type SessionPhase = "plan" | "debate" | "implement" | "review"
 
 export interface TurnsResponse {
   turns: Turn[]
