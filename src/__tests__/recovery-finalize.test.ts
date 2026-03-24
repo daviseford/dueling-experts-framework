@@ -352,6 +352,15 @@ describe('recovery finalization', () => {
     // KEY: attempt.start proves the main loop was entered (not skipped via endRequested)
     assert.ok(eventTypes.includes('attempt.start'), 'missing attempt.start — loop was not entered');
 
+    // phase.changed must appear for the recovery review→implement transition
+    const phaseChanged = events.find(
+      (e: { event: string; data?: Record<string, unknown> }) =>
+        e.event === 'phase.changed' && e.data?.from_phase === 'review' && e.data?.to_phase === 'implement',
+    );
+    assert.ok(phaseChanged, 'missing phase.changed event for recovery review→implement transition');
+    assert.equal((phaseChanged as { data: Record<string, unknown> }).data.recovery, true,
+      'recovery phase.changed should have recovery: true in data');
+
     // Finalization still ran after the loop broke on agent failure
     assert.ok(eventTypes.includes('session.end'), 'missing session.end — finalization did not run');
 

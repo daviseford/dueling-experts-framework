@@ -76,7 +76,7 @@ describe('Tracer', () => {
     assert.equal(metaJson.exit_code, 0);
   });
 
-  it('saves empty output as "(empty)"', async () => {
+  it('saves empty output verbatim (not substituted)', async () => {
     const tracer = new Tracer(sessionDir);
     const meta = {
       turn: 2,
@@ -91,7 +91,7 @@ describe('Tracer', () => {
     };
     const dirName = await tracer.saveAttempt(2, 'codex', 0, 'prompt', '', meta);
     const output = await readFile(join(sessionDir, 'artifacts', 'attempts', dirName, 'output.md'), 'utf8');
-    assert.equal(output, '(empty)');
+    assert.equal(output, '', 'empty output must be preserved verbatim');
   });
 
   it('listAttempts returns all attempt metadata', async () => {

@@ -137,6 +137,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       phase = 'implement';
       session.phase = phase;
       nextAgent = session.impl_model;
+      tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'review', to_phase: 'implement', review_loop: reviewLoopCount, recovery: true } });
       await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
       console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
     }

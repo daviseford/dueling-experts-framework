@@ -100,7 +100,7 @@ export class Tracer {
     await mkdir(dir, { recursive: true });
     await Promise.all([
       atomicWrite(join(dir, 'prompt.md'), prompt),
-      atomicWrite(join(dir, 'output.md'), output || '(empty)'),
+      atomicWrite(join(dir, 'output.md'), output),
       atomicWrite(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n'),
     ]);
     return dirName;
