@@ -42,7 +42,7 @@ export async function hasBranchDelta(repoPath: string, baseRef: string | null): 
 }
 
 /**
- * Push the branch and create a draft PR on GitHub.
+ * Push the branch and create a PR on GitHub.
  * Best-effort: returns null on any failure (logged, never throws).
  */
 export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null> {
@@ -61,11 +61,10 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
   const body = await buildPrBody(sessionDir, topic, sessionId, repoPath, baseRef);
   await atomicWrite(bodyPath, body);
 
-  // 3. Create draft PR
+  // 3. Create PR
   try {
     const ghArgs = [
       'pr', 'create',
-      '--draft',
       '--title', title,
       '--body-file', bodyPath,
       '--head', branchName,
@@ -84,7 +83,7 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
 
     return { url: prUrl, number: prNumber };
   } catch (err: unknown) {
-    console.log(`Could not create draft PR: ${(err as Error).message}. Branch preserved: ${branchName}`);
+    console.log(`Could not create PR: ${(err as Error).message}. Branch preserved: ${branchName}`);
     return null;
   }
 }
@@ -134,7 +133,7 @@ export function parseDiffstatSummary(diffstat: string): string {
 export async function buildPrBody(sessionDir: string, topic: string, sessionId: string, repoPath: string, baseRef: string | null): Promise<string> {
   const lines: string[] = [];
 
-  lines.push(`> Automated draft PR from DEF session \`${sessionId.slice(0, 8)}\``);
+  lines.push(`> Automated PR from DEF session \`${sessionId.slice(0, 8)}\``);
   lines.push('');
   lines.push('## Summary');
   lines.push('');
