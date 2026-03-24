@@ -134,7 +134,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
               </span>
             )}
             {!open && (
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
                 {truncateContent(turn.content)}
               </span>
             )}
