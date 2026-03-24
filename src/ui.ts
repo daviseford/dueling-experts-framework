@@ -1,25 +1,25 @@
 /**
- * src/ui.ts — Single module owning all terminal formatting.
+ * src/ui.ts -- Single module owning all terminal formatting.
  *
  * API surface (slim by design):
- *   intro()           – gradient banner + session info
- *   status()          – typed event logging
- *   startActivity()   – spinner/ticker (absorbs old startTicker/stopTicker)
- *   outro()           – session-end summary
- *   warn()            – yellow warning
- *   error()           – red error
+ *   intro()           - gradient banner + session info
+ *   status()          - typed event logging
+ *   startActivity()   - spinner/ticker (absorbs old startTicker/stopTicker)
+ *   outro()           - session-end summary
+ *   warn()            - yellow warning
+ *   error()           - red error
  */
 
 import pc from 'picocolors';
 import * as clack from '@clack/prompts';
 import gradient from 'gradient-string';
 
-// ── Environment detection ───────────────────────────────────────────
+// -- Environment detection ---------------------------------------------------
 
 const isTTY = process.stdout.isTTY === true;
 const noColor = !!process.env.NO_COLOR;
 
-// ── Color helpers (respect NO_COLOR) ────────────────────────────────
+// -- Color helpers (respect NO_COLOR) ----------------------------------------
 
 const c = noColor
   ? { dim: (s: string) => s, bold: (s: string) => s, cyan: (s: string) => s,
@@ -29,20 +29,20 @@ const c = noColor
       bgYellow: (s: string) => s, bgRed: (s: string) => s, bgMagenta: (s: string) => s }
   : pc;
 
-// ── Symbols ─────────────────────────────────────────────────────────
+// -- Symbols -----------------------------------------------------------------
 
 const SYM = {
-  bullet: '●',
-  arrow: '→',
-  check: '✔',
-  cross: '✖',
-  warn: '⚠',
-  info: 'ℹ',
-  bar: '│',
-  dot: '·',
+  bullet: '*',
+  arrow: '->',
+  check: '+',
+  cross: 'x',
+  warn: '!',
+  info: 'i',
+  bar: '|',
+  dot: '.',
 };
 
-// ── Typed status events ─────────────────────────────────────────────
+// -- Typed status events -----------------------------------------------------
 
 interface StatusPayloads {
   'turn.written':       { turn: number; phase: string; tier: string; id: string; status: string };
@@ -96,7 +96,7 @@ interface StatusPayloads {
 
 type StatusEvent = keyof StatusPayloads;
 
-// ── Badge helpers ───────────────────────────────────────────────────
+// -- Badge helpers -----------------------------------------------------------
 
 function phaseBadge(phase: string): string {
   switch (phase) {
@@ -115,7 +115,7 @@ function turnPrefix(turn: number): string {
   return c.dim(`[Turn ${turn}]`);
 }
 
-// ── intro() ─────────────────────────────────────────────────────────
+// -- intro() -----------------------------------------------------------------
 
 export interface SessionInfo {
   id: string;
@@ -132,24 +132,28 @@ export function intro(session: SessionInfo): void {
   // Gradient banner (TTY + color only)
   if (isTTY && !noColor) {
     const banner = gradient.vice.multiline([
-      '  ╔══════════════════════════════════╗',
-      '  ║     D E F  —  Dueling Experts    ║',
-      '  ╚══════════════════════════════════╝',
+      '  +------------------------------------+',
+      '  |     D E F  --  Dueling Experts     |',
+      '  +------------------------------------+',
     ].join('\n'));
     console.log('');
     console.log(banner);
-    console.log('');
   } else {
     console.log('');
-    console.log('  DEF — Dueling Experts Framework');
-    console.log('');
+    console.log('  DEF -- Dueling Experts Framework');
+  }
+
+  // clack.intro for session title (TTY + color only)
+  if (isTTY && !noColor) {
+    clack.intro(c.cyan(c.bold(`Session ${session.id.slice(0, 8)}`)));
+  } else {
+    console.log(`  Session ${session.id.slice(0, 8)}`);
   }
 
   // Session info block
   const kv = (key: string, val: string) =>
     `  ${c.dim(key.padEnd(14))} ${c.bold(val)}`;
 
-  console.log(kv('Session', session.id.slice(0, 8)));
   console.log(kv('Topic', session.topic));
   console.log(kv('Mode', session.mode));
   console.log(kv('Max turns', String(session.max_turns)));
@@ -160,7 +164,7 @@ export function intro(session: SessionInfo): void {
   console.log('');
 }
 
-// ── status() ────────────────────────────────────────────────────────
+// -- status() ----------------------------------------------------------------
 
 export function status<E extends StatusEvent>(event: E, details: StatusPayloads[E]): void {
   const d = details as Record<string, unknown>;
@@ -193,7 +197,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     }
     case 'turn.downgrade': {
       const { turn, claimed } = d as StatusPayloads['turn.downgrade'];
-      return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Agent signaled ${c.bold(claimed)} too early — downgrading to complete.`;
+      return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Agent signaled ${c.bold(claimed)} too early -- downgrading to complete.`;
     }
 
     // Tier
@@ -223,7 +227,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     }
     case 'phase.planning.done': {
       const { turn } = d as StatusPayloads['phase.planning.done'];
-      return `${turnPrefix(turn)} ${c.green(SYM.check)} Planning mode — session complete.`;
+      return `${turnPrefix(turn)} ${c.green(SYM.check)} Planning mode -- session complete.`;
     }
     case 'worktree.created': {
       const { turn, branch } = d as StatusPayloads['worktree.created'];
@@ -298,7 +302,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       return `  ${c.green(SYM.check)} PR created: ${c.cyan(c.bold(url))}`;
     }
     case 'pr.skipped':
-      return `  ${c.dim(SYM.info)} No changes on branch — skipping PR creation.`;
+      return `  ${c.dim(SYM.info)} No changes on branch -- skipping PR creation.`;
 
     // Artifacts
     case 'artifact.plan': {
@@ -383,7 +387,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
   }
 }
 
-// ── startActivity() / ActivityHandle ────────────────────────────────
+// -- startActivity() / ActivityHandle ----------------------------------------
 
 export interface ActivityHandle {
   stop(message?: string): void;
@@ -396,7 +400,8 @@ export function startActivity(turn: number, agent: string, label?: string, tier?
     : `Invoking ${agent}`;
   const display = `[Turn ${turn}]${tierTag} ${prefix}`;
 
-  if (!isTTY) {
+  // Fall back to plain text when not a TTY or when NO_COLOR is set
+  if (!isTTY || noColor) {
     console.log(`${display}...`);
     return { stop() {} };
   }
@@ -410,7 +415,7 @@ export function startActivity(turn: number, agent: string, label?: string, tier?
   };
 }
 
-// ── outro() ─────────────────────────────────────────────────────────
+// -- outro() -----------------------------------------------------------------
 
 export interface SessionSummary {
   phase: string;
@@ -444,7 +449,7 @@ export function outro(summary: SessionSummary): void {
   }
 }
 
-// ── warn() / error() ────────────────────────────────────────────────
+// -- warn() / error() --------------------------------------------------------
 
 export function warn(msg: string): void {
   console.log(`${c.yellow(SYM.warn)} ${c.yellow(msg)}`);
