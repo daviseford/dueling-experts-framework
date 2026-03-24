@@ -32,7 +32,7 @@ function makeSession(overrides: Partial<Session> & { topic: string; mode: string
     created: '2026-03-23T00:00:00.000Z',
     session_status: 'active',
     current_turn: 0,
-    phase: 'debate',
+    phase: 'plan',
     impl_model: 'claude',
     review_turns: 6,
     port: null,

@@ -222,7 +222,8 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
         from: parsed.data?.from,
         timestamp: parsed.data?.timestamp,
         status: parsed.data?.status,
-        phase: parsed.data?.phase || 'debate',
+        phase: parsed.data?.phase || 'plan',
+        verdict: parsed.data?.verdict,
         duration_ms: parsed.data?.duration_ms,
         decisions: parsed.data?.decisions || [],
         content: parsed.content || raw,
@@ -244,7 +245,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
   res.end(JSON.stringify({
     turns,
     session_status: sessionStatus,
-    phase: controllerRef!.phase || 'debate',
+    phase: controllerRef!.phase || 'plan',
     topic: sessionRef!.topic,
     turn_count: turns.length,
     thinking: controllerRef!.thinking || null,

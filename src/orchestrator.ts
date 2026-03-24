@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
-import type { TurnData, TurnStatus } from './validation.js';
+import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
@@ -42,9 +42,10 @@ interface RunOptions {
   noPr?: boolean;
 }
 
-interface RecoveredState {
-  pendingDecided: AgentName | null;
-  reviewTurnCount: number;
+export interface RecoveredState {
+  pendingPlanDecided: AgentName | null;
+  pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null;
+  reviewLoopCount: number;
 }
 
 interface CanonicalTurnData {
@@ -54,6 +55,7 @@ interface CanonicalTurnData {
   timestamp: string;
   status: string;
   phase: string;
+  verdict?: 'approve' | 'fix';
   duration_ms?: number;
   decisions?: string[];
 }
@@ -79,13 +81,16 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   let endRequested = false;
 
   // Phase tracking
-  let phase: SessionPhase = session.phase || 'debate';
+  let phase: SessionPhase = session.phase || 'plan';
 
-  // Consensus tracking for debate phase — derive from turn history on recovery
-  let pendingDecided: AgentName | null = null;
+  // Consensus tracking for plan phase — derive from turn history on recovery
+  let pendingPlanDecided: AgentName | null = null;
 
-  // Review turn counter — derive from turn history on recovery
-  let reviewTurnCount = 0;
+  // Review consensus tracking — separate from plan consensus
+  let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
+
+  // Review loop counter — increments only on review consensus fix transitions
+  let reviewLoopCount = 0;
 
   // Track consecutive empty-diff implement attempts to prevent infinite loops
   let emptyDiffRetries = 0;
@@ -94,8 +99,34 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
     const recovered: RecoveredState = await recoverEphemeralState(session);
-    pendingDecided = recovered.pendingDecided;
-    reviewTurnCount = recovered.reviewTurnCount;
+    pendingPlanDecided = recovered.pendingPlanDecided;
+    pendingReviewDecided = recovered.pendingReviewDecided;
+    reviewLoopCount = recovered.reviewLoopCount;
+  }
+
+  // Apply pending review decision from recovery before entering the loop.
+  // This handles the case where a review verdict was written but the
+  // phase transition didn't complete before the crash.
+  if (pendingReviewDecided) {
+    if (pendingReviewDecided.verdict === 'approve') {
+      console.log('[Recovery] Reviewer approved before interruption. Session complete.');
+      await updateSession(session.dir, { session_status: 'completed', phase });
+      return;
+    }
+    // verdict === 'fix' — apply the transition
+    if (reviewLoopCount >= session.review_turns) {
+      console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Session complete.`);
+      await updateSession(session.dir, { session_status: 'completed', phase });
+      return;
+    }
+    reviewLoopCount++;
+    emptyDiffRetries = 0;
+    phase = 'implement';
+    session.phase = phase;
+    nextAgent = session.impl_model;
+    await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
+    console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
+    pendingReviewDecided = null;
   }
 
   // Interjection queue and pause state (active when server is present)
@@ -224,6 +255,44 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       canonicalData.decisions = validData.decisions;
     }
 
+    // Review-phase verdict handling:
+    // - Legacy 'done' maps to decided + verdict:approve (compat shim)
+    // - 'decided' with verdict passes through
+    // - 'decided' without verdict: retry once, then error (never silently approve)
+    if (phase === 'review' && normalizedStatus === 'decided') {
+      if (validData.status === 'done') {
+        // Legacy compat: done in review = approve
+        canonicalData.verdict = 'approve';
+      } else if (validData.verdict) {
+        canonicalData.verdict = validData.verdict;
+      } else {
+        // decided without verdict — retry once
+        console.log(`[Turn ${turnCount}] Review decided without verdict. Retrying...`);
+        const retryResult = await invokeOnce(nextAgent, session);
+        const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+        const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
+        const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
+        const retryIsLegacyDone = retryValidation.valid && retryValidation.data!.status === 'done';
+        if (retryValidation.valid && (retryIsValidReview || retryIsLegacyDone)) {
+          // Fully replace the turn output with the retry's result
+          const retryData = retryValidation.data!;
+          canonicalData.status = retryIsLegacyDone ? 'decided' : retryStatus!;
+          canonicalData.verdict = retryIsLegacyDone ? 'approve' : retryData.verdict!;
+          if (retryData.decisions) {
+            canonicalData.decisions = retryData.decisions;
+          }
+          validation = retryValidation;
+        } else {
+          // Still no verdict after retry — write error turn and pause/exit
+          const reason = 'review decided without verdict after retry';
+          await writeErrorTurn(session, turnCount, nextAgent, reason, retryResult.ok ? retryResult.output : retryResult.reason);
+          const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
+          if (resumed) continue;
+          break;
+        }
+      }
+    }
+
     if (normalizedStatus !== validData.status) {
       console.log(`[Turn ${turnCount}] Agent signaled ${validData.status} too early — downgrading to complete.`);
     }
@@ -236,7 +305,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 
     // === Phase-specific post-turn logic ===
 
-    if (phase === 'debate') {
+    if (phase === 'plan') {
       await updateSession(session.dir, {
         current_turn: turnCount,
         next_agent: oppositeAgent,
@@ -247,9 +316,12 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         ? 'decided' : canonicalData.status;
 
       if (effectiveStatus === 'decided') {
-        if (pendingDecided && pendingDecided !== nextAgent) {
+        if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
           // Both agents agreed — consensus reached
           console.log(`[Turn ${turnCount}] Consensus reached.`);
+
+          // Generate plan artifact from plan-phase turns
+          await generatePlan(session);
 
           // Planning mode: no implementation, session ends here
           if (session.mode === 'planning') {
@@ -290,7 +362,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 
           phase = 'implement';
           session.phase = phase;
-          pendingDecided = null;
+          pendingPlanDecided = null;
           nextAgent = session.impl_model;
           await updateSession(session.dir, {
             phase: 'implement',
@@ -299,15 +371,15 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           continue;
         } else {
           // First decided — record and let the other agent respond
-          pendingDecided = nextAgent;
+          pendingPlanDecided = nextAgent;
           console.log(`[Turn ${turnCount}] ${nextAgent} signals decided. Waiting for ${oppositeAgent} to confirm.`);
           nextAgent = oppositeAgent;
         }
       } else {
         // If there was a pending decided and this agent didn't confirm, clear it
-        if (pendingDecided && effectiveStatus === 'complete') {
-          console.log(`[Turn ${turnCount}] ${nextAgent} contests consensus. Resuming debate.`);
-          pendingDecided = null;
+        if (pendingPlanDecided && effectiveStatus === 'complete') {
+          console.log(`[Turn ${turnCount}] ${nextAgent} contests consensus. Resuming plan.`);
+          pendingPlanDecided = null;
         }
 
         if (effectiveStatus === 'needs_human') {
@@ -353,7 +425,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
         phase = 'review';
         session.phase = phase;
-        reviewTurnCount = 0;
+        pendingReviewDecided = null;
         const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
         nextAgent = reviewer;
         await updateSession(session.dir, {
@@ -371,33 +443,47 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         await updateSession(session.dir, { current_turn: turnCount });
       }
     } else if (phase === 'review') {
-      reviewTurnCount++;
+      if (canonicalData.status === 'decided' && canonicalData.verdict) {
+        // Review agent emitted a verdict
+        if (canonicalData.verdict === 'approve') {
+          console.log(`[Turn ${turnCount}] Reviewer approved. Session complete.`);
+          break;
+        }
 
-      if (canonicalData.status === 'done') {
-        console.log(`[Turn ${turnCount}] Reviewer approved. Session complete.`);
-        break;
+        // verdict === 'fix' — check review loop budget
+        if (reviewLoopCount >= session.review_turns) {
+          console.log(`[Turn ${turnCount}] Review loop limit (${session.review_turns}) reached. Ending session.`);
+          break;
+        }
+
+        // Increment review loop count on fix verdict transition back to implement
+        reviewLoopCount++;
+
+        // Reset emptyDiffRetries when transitioning from review back to implement
+        emptyDiffRetries = 0;
+
+        // Switch back to implement for fixes
+        console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewLoopCount}/${session.review_turns})`);
+        phase = 'implement';
+        session.phase = phase;
+        nextAgent = session.impl_model;
+        await updateSession(session.dir, {
+          current_turn: turnCount,
+          phase: 'implement',
+          next_agent: nextAgent,
+        });
+      } else {
+        // Non-decided review turn (complete, needs_human, etc.) — update session
+        await updateSession(session.dir, {
+          current_turn: turnCount,
+          next_agent: oppositeAgent,
+        });
+        nextAgent = oppositeAgent;
       }
-
-      // Reviewer requested fixes
-      if (reviewTurnCount >= session.review_turns) {
-        console.log(`[Turn ${turnCount}] Review turn limit (${session.review_turns}) reached. Ending session.`);
-        break;
-      }
-
-      // Switch back to implement for fixes
-      console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewTurnCount}/${session.review_turns})`);
-      phase = 'implement';
-      session.phase = phase;
-      nextAgent = session.impl_model;
-      await updateSession(session.dir, {
-        current_turn: turnCount,
-        phase: 'implement',
-        next_agent: nextAgent,
-      });
     }
 
     // Drain interjection queue (one item per turn boundary, debate phase only)
-    if (phase === 'debate' && interjectionQueue.length > 0) {
+    if (phase === 'plan' && interjectionQueue.length > 0) {
       const content: string = interjectionQueue.shift()!;
       turnCount++;
       await writeHumanTurn(session, turnCount, content);
@@ -409,8 +495,8 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     }
 
     // Warn about dropped interjections on phase transitions
-    if (phase !== 'debate' && interjectionQueue.length > 0) {
-      console.log(`[Turn ${turnCount}] Warning: ${interjectionQueue.length} queued interjection(s) dropped (not in debate phase).`);
+    if (phase !== 'plan' && interjectionQueue.length > 0) {
+      console.log(`[Turn ${turnCount}] Warning: ${interjectionQueue.length} queued interjection(s) dropped (not in plan phase).`);
       interjectionQueue.length = 0;
     }
   }
@@ -515,15 +601,23 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 
 /**
  * Reconstruct ephemeral state from turn history on session recovery.
- * Returns { pendingDecided, reviewTurnCount }.
+ * Uses canonical turn `phase` data rather than inferring phase from transitions.
+ *
+ * Review model: single-agent verdict (the reviewer alone decides approve/fix).
+ * A review `decided` turn sets a pending verdict. An implement turn following
+ * it means the fix transition completed (increment reviewLoopCount, clear pending).
+ * If no implement turn follows, the verdict is still pending and the live loop
+ * must apply it on startup.
+ *
+ * Returns { pendingPlanDecided, pendingReviewDecided, reviewLoopCount }.
  */
-async function recoverEphemeralState(session: Session): Promise<RecoveredState> {
+export async function recoverEphemeralState(session: Session): Promise<RecoveredState> {
   const turnsDir: string = join(session.dir, 'turns');
   const turnFiles: string[] = await listTurnFiles(turnsDir);
 
-  let pendingDecided: AgentName | null = null;
-  let reviewTurnCount = 0;
-  let inReviewPhase = false;
+  let pendingPlanDecided: AgentName | null = null;
+  let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
+  let reviewLoopCount = 0;
 
   for (const file of turnFiles) {
     const raw: string = await readFile(join(turnsDir, file), 'utf8');
@@ -531,32 +625,45 @@ async function recoverEphemeralState(session: Session): Promise<RecoveredState> 
     if (!parsed.valid || !parsed.data) continue;
 
     const { status, from } = parsed.data;
+    const turnPhase = (parsed.data as Record<string, unknown>).phase as string | undefined;
+    const verdict = (parsed.data as Record<string, unknown>).verdict as 'approve' | 'fix' | undefined;
 
-    // Track consensus state: if the last decided was uncontested, it's still pending
-    if (status === 'decided') {
-      if (pendingDecided && pendingDecided !== from) {
-        // Both agents agreed — consensus was reached, implementation follows
-        pendingDecided = null;
-        inReviewPhase = true;
-      } else {
-        pendingDecided = from as AgentName;
+    if (turnPhase === 'plan' || turnPhase === 'debate') {
+      // Plan-phase consensus tracking (two-agent model)
+      if (status === 'decided' || status === 'done') {
+        if (pendingPlanDecided && pendingPlanDecided !== from) {
+          // Both agents agreed — plan consensus reached
+          pendingPlanDecided = null;
+        } else {
+          pendingPlanDecided = from as AgentName;
+        }
+      } else if (status === 'complete' && pendingPlanDecided) {
+        // Contested — clear pending
+        pendingPlanDecided = null;
       }
-    } else if (status === 'complete' && pendingDecided) {
-      // Contested — clear pending
-      pendingDecided = null;
-    }
-
-    // Count review-phase turns (turns after the phase transitioned to review)
-    if (session.phase === 'review' || session.phase === 'implement') {
-      // If we see a turn from the non-impl agent after consensus, it's a review turn
-      const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
-      if (from === reviewer && inReviewPhase) {
-        reviewTurnCount++;
+    } else if (turnPhase === 'review') {
+      // Review-phase: single-agent verdict model.
+      // Only track verdicts we can trust:
+      // - Legacy 'done' → approve (compat shim)
+      // - 'decided' with verdict → use it
+      // - 'decided' without verdict → skip (the live loop would have errored/retried)
+      if (status === 'done') {
+        // Legacy compat: done in review = approve
+        pendingReviewDecided = { agent: from as AgentName, verdict: 'approve' };
+      } else if (status === 'decided' && verdict) {
+        pendingReviewDecided = { agent: from as AgentName, verdict };
       }
+      // decided without verdict: the live loop errored — don't set pending
+    } else if (turnPhase === 'implement') {
+      // An implement turn after a pending review fix means the transition completed
+      if (pendingReviewDecided && pendingReviewDecided.verdict === 'fix') {
+        reviewLoopCount++;
+      }
+      pendingReviewDecided = null;
     }
   }
 
-  return { pendingDecided, reviewTurnCount };
+  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount };
 }
 
 // --- Status normalization ---
@@ -565,12 +672,21 @@ async function recoverEphemeralState(session: Session): Promise<RecoveredState> 
  * Normalize agent-claimed status to orchestrator canonical status.
  * Prevents premature "done" when the session hasn't had enough turns.
  */
-export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: number, phase: string = 'debate'): string {
+export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: number, phase: string = 'plan'): string {
   // In implement phase, agents should only emit 'complete' — downgrade everything else
   if (phase === 'implement') {
     if (agentStatus === 'needs_human') return 'needs_human';
     return 'complete';
   }
+  // In review phase, 'done' is legacy for 'decided + verdict:approve';
+  // 'decided' passes through (verdict validated separately by orchestrator)
+  if (phase === 'review') {
+    if (agentStatus === 'done') return 'decided';
+    if (agentStatus === 'decided') return 'decided';
+    if (agentStatus === 'needs_human') return 'needs_human';
+    return 'complete';
+  }
+  // Plan phase
   if (agentStatus === 'done' && turnCount < 2) return 'complete';
   if (agentStatus === 'done') return 'done';
   if (agentStatus === 'decided' && turnCount < 2) return 'complete';
@@ -665,6 +781,56 @@ async function writeDiffArtifact(session: Session, turnCount: number, diff: stri
   await mkdir(artifactsDir, { recursive: true });
   const filename = `diff-${String(turnCount).padStart(4, '0')}.patch`;
   await atomicWrite(join(artifactsDir, filename), diff + '\n');
+}
+
+async function generatePlan(session: Session): Promise<void> {
+  const turnsDir: string = join(session.dir, 'turns');
+  const turnFiles: string[] = await listTurnFiles(turnsDir);
+  if (turnFiles.length === 0) return;
+
+  const planTurns: { turn: number; from: string; decisions: string[]; content: string }[] = [];
+  for (const file of turnFiles) {
+    const raw: string = await readFile(join(turnsDir, file), 'utf8');
+    const parsed = validate(raw);
+    if (!parsed.valid || !parsed.data) continue;
+    // Only include plan-phase turns (phase may be 'plan' or legacy 'debate')
+    const turnPhase = (parsed.data as Record<string, unknown>).phase as string | undefined;
+    if (turnPhase && turnPhase !== 'plan' && turnPhase !== 'debate') continue;
+    planTurns.push({
+      turn: parsed.data.turn,
+      from: parsed.data.from,
+      decisions: parsed.data.decisions || [],
+      content: parsed.content,
+    });
+  }
+
+  if (planTurns.length === 0) return;
+
+  const allDecisions = planTurns.flatMap(t => t.decisions);
+  const lines: string[] = ['# Plan', ''];
+  lines.push(`**Topic:** ${session.topic}`, '');
+
+  if (allDecisions.length > 0) {
+    lines.push('## Decisions', '');
+    for (const d of allDecisions) {
+      lines.push(`- ${d}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## Discussion Summary', '');
+  for (const t of planTurns) {
+    lines.push(`### Turn ${t.turn} (${t.from})`, '');
+    // Include a truncated version of each turn's content
+    const summary = t.content.length > 2000 ? t.content.slice(0, 2000) + '\n\n*[Truncated]*' : t.content;
+    lines.push(summary, '');
+  }
+
+  const artifactsDir: string = join(session.dir, 'artifacts');
+  await mkdir(artifactsDir, { recursive: true });
+  const planPath: string = join(artifactsDir, 'plan.md');
+  await atomicWrite(planPath, lines.join('\n'));
+  console.log(`Plan artifact written: ${planPath} (${planTurns.length} turn(s), ${allDecisions.length} decision(s))`);
 }
 
 async function generateDecisions(session: Session): Promise<void> {

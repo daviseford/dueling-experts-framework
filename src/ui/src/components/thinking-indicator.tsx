@@ -8,8 +8,9 @@ const LABEL_MAP: Record<string, string> = {
   codex: "CODEX",
 }
 
-const PHASE_LABEL: Record<SessionPhase, string> = {
-  debate: "Thinking",
+const PHASE_LABEL: Record<string, string> = {
+  plan: "Planning",
+  debate: "Planning",
   implement: "Implementing",
   review: "Reviewing",
 }

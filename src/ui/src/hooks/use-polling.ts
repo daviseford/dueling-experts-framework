@@ -42,7 +42,7 @@ export function usePolling(): PollingState {
   const [thinkingElapsed, setThinkingElapsed] = useState("")
   const [statusText, setStatusText] = useState("Connecting...")
   const [sessionTimer, setSessionTimer] = useState("0s")
-  const [phase, setPhase] = useState<SessionPhase>("debate")
+  const [phase, setPhase] = useState<SessionPhase>("plan")
 
   const fetchInFlightRef = useRef(false)
   const sessionStartRef = useRef<number>(Date.now())

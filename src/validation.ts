@@ -6,12 +6,15 @@ export type TurnStatus = 'complete' | 'needs_human' | 'done' | 'decided' | 'erro
 export type AgentName = 'claude' | 'codex';
 export type TurnFrom = 'claude' | 'codex' | 'human' | 'system';
 
+export type ReviewVerdict = 'approve' | 'fix';
+
 export interface TurnData {
   id: string;
   turn: number;
   from: string;
   timestamp: string;
   status: TurnStatus;
+  verdict?: ReviewVerdict;
   decisions?: string[];
   [key: string]: unknown;  // gray-matter may add extra fields
 }
@@ -27,6 +30,7 @@ export interface ValidationResult {
 
 const VALID_STATUS = /^(complete|needs_human|done|decided|error)$/;
 const VALID_FROM = /^(claude|codex|human|system)$/;
+const VALID_VERDICT = /^(approve|fix)$/;
 
 // Disable gray-matter's JavaScript/CoffeeScript engines to prevent RCE via agent output.
 const SAFE_ENGINES: Record<string, { parse: (input: string) => object }> = {
@@ -158,6 +162,13 @@ export function validate(raw: string, expectedFrom?: string): ValidationResult {
   // Warn if agent claims to be someone else (orchestrator overrides, but log it)
   if (expectedFrom && data.from && data.from !== expectedFrom) {
     console.warn(`[validation] Agent claimed from="${data.from}" but expected "${expectedFrom}" (will override)`);
+  }
+
+  // Validate verdict field if present
+  if (data.verdict !== undefined && data.verdict !== null) {
+    if (!VALID_VERDICT.test(String(data.verdict))) {
+      errors.push(`Invalid verdict: "${data.verdict}". Must be: approve or fix`);
+    }
   }
 
   // Validate decisions is an array if present.
