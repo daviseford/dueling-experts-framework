@@ -1,4 +1,6 @@
 import { open, rename } from 'node:fs/promises';
+import { exec } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 
 /**
  * Write a file atomically: write to .tmp, fsync, then rename.
@@ -20,6 +22,20 @@ export async function atomicWrite(finalPath: string, content: string): Promise<v
  * Check if a process with the given PID is still alive.
  * Cross-platform: works on both Unix and Windows.
  */
+/**
+ * Kill a child process tree cross-platform.
+ * On Windows, uses taskkill /T /F to kill the entire process tree
+ * (necessary because shell:true spawns a cmd.exe wrapper).
+ */
+export function killChildProcess(child: ChildProcess, signal: NodeJS.Signals = 'SIGTERM'): void {
+  if (!child || child.killed || !child.pid) return;
+  if (process.platform === 'win32') {
+    exec(`taskkill /pid ${child.pid} /T /F`);
+  } else {
+    child.kill(signal);
+  }
+}
+
 export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);

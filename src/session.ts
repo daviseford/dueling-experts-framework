@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
-import { atomicWrite } from './util.js';
+import { atomicWrite, killChildProcess } from './util.js';
 import { removeWorktree, commitChanges } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -130,13 +130,7 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
       // Kill the running agent child process
       const child = session?._currentChild;
       if (child && !child.killed) {
-        if (process.platform === 'win32') {
-          import('node:child_process').then(({ exec }) => {
-            exec(`taskkill /pid ${child.pid} /T /F`);
-          }).catch(() => {});
-        } else {
-          child.kill('SIGTERM');
-        }
+        killChildProcess(child);
       }
 
       // Commit any uncommitted changes before worktree removal

@@ -6,7 +6,7 @@ import type { TurnData, TurnStatus } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
-import { atomicWrite } from './util.js';
+import { atomicWrite, killChildProcess } from './util.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -122,7 +122,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       // Kill the running agent so the loop unblocks immediately
       const child = session._currentChild;
       if (child && !child.killed) {
-        child.kill('SIGTERM');
+        killChildProcess(child);
       }
     },
   };
