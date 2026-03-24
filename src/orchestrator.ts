@@ -370,13 +370,16 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
   await generateDecisions(session);
 
   // Clean up worktree (branch persists for push/PR)
+  // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.
   if (session.worktree_path && session.original_repo) {
     try {
       await removeWorktree(session.original_repo, session.worktree_path);
     } catch { /* best effort */ }
+    // Restore target_repo to original so session.json reflects the real repo path
+    session.target_repo = session.original_repo;
   }
 
-  await updateSession(session.dir, { session_status: 'completed', phase });
+  await updateSession(session.dir, { session_status: 'completed', phase, target_repo: session.target_repo });
   console.log('');
   console.log('Session completed.');
   console.log(`  Phase:     ${phase}`);

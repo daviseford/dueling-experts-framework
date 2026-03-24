@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
-import { rm } from 'node:fs/promises';
+import { join, sep } from 'node:path';
+import { access, rm } from 'node:fs/promises';
 
 interface WorktreeResult {
   worktreePath: string;
@@ -20,8 +20,8 @@ export async function createWorktree(
   // Resolve the git toplevel (don't assume targetRepo is the root)
   const gitRoot = await git(targetRepo, ['rev-parse', '--show-toplevel']);
   const shortId = sessionId.slice(0, 8);
-  const slug = slugifyTopic(topic);
-  const branchName = `def/${shortId}-${slug}`.slice(0, 50);
+  const slug = slugifyTopic(topic) || 'session';
+  const branchName = `def/${shortId}-${slug}`;
   const worktreePath = join(gitRoot, '.def', 'worktrees', sessionId);
 
   await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName]);
@@ -38,21 +38,35 @@ export async function removeWorktree(
   worktreePath: string,
 ): Promise<void> {
   try {
-    const gitRoot = await git(targetRepo, ['rev-parse', '--show-toplevel']);
-    await git(gitRoot, ['worktree', 'remove', worktreePath, '--force']);
+    await git(targetRepo, ['worktree', 'remove', worktreePath, '--force']);
   } catch {
-    // Already removed or not a valid worktree — clean up the directory manually
-    try {
-      await rm(worktreePath, { recursive: true, force: true });
-    } catch {
-      // Best effort
+    // Already removed or not a valid worktree — clean up directory if it's inside .def/worktrees/
+    if (isDefWorktreePath(worktreePath)) {
+      try {
+        await rm(worktreePath, { recursive: true, force: true });
+      } catch {
+        // Best effort
+      }
     }
+  }
+}
+
+/**
+ * Check if a worktree path at the given location actually exists on disk.
+ */
+export async function worktreeExists(worktreePath: string): Promise<boolean> {
+  try {
+    await access(worktreePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
 /**
  * Slugify a topic string for use in branch names.
  * Lowercase, non-alphanumeric → hyphens, collapsed, trimmed to 30 chars.
+ * Exported for testability.
  */
 export function slugifyTopic(topic: string): string {
   return topic
@@ -63,7 +77,7 @@ export function slugifyTopic(topic: string): string {
     .replace(/-$/, '');
 }
 
-// ── Internal helper ─────────────────────────────────────────────────
+// ── Internal helpers ────────────────────────────────────────────────
 
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,4 +89,13 @@ function git(cwd: string, args: string[]): Promise<string> {
       resolve(stdout.trim());
     });
   });
+}
+
+/**
+ * Validate that a path looks like it's inside a .def/worktrees/ directory.
+ * Prevents accidental rm -rf on arbitrary paths.
+ */
+function isDefWorktreePath(p: string): boolean {
+  const normalized = p.replace(/\\/g, '/');
+  return normalized.includes('.def/worktrees/');
 }

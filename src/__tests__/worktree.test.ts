@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, rm, readFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -31,8 +31,7 @@ describe('slugifyTopic', () => {
     assert.ok(!result.endsWith('-'));
   });
 
-  it('truncates cleanly at word boundary when possible', () => {
-    // "implement-the-worktree-isolation-feature" → truncated to 30, no trailing hyphen
+  it('truncates long topics and strips trailing hyphen after truncation', () => {
     const result = slugifyTopic('implement the worktree isolation feature');
     assert.ok(result.length <= 30);
     assert.ok(!result.endsWith('-'));
@@ -55,7 +54,7 @@ describe('createWorktree / removeWorktree', () => {
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: testDir });
     // Need at least one commit for worktree to branch from
     const readmePath = join(testDir, 'README.md');
-    await import('node:fs/promises').then(fs => fs.writeFile(readmePath, '# Test\n'));
+    await writeFile(readmePath, '# Test\n');
     execFileSync('git', ['add', '.'], { cwd: testDir });
     execFileSync('git', ['commit', '-m', 'init'], { cwd: testDir });
   });
