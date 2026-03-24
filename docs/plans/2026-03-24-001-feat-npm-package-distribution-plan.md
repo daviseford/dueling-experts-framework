@@ -165,17 +165,18 @@ Update these fields:
 Key changes:
 - `name`: `dueling-experts-framework` → `@daviseford/def`
 - `files`: Whitelist only compiled output, bin, README, LICENSE. Note: `dist/ui/dist/` is inside `dist/` so it's covered.
-- `prepare` script: **Remove entirely.** Replace with:
+- `prepare` script: **Replace** with a dev-only setup. Change to `"prepare": "node scripts/dev-setup.js"` which detects a local clone (checks for `.git/`) and runs `cd src/ui && npm install && npm run build` only in that case. On npm install from registry, `.git/` doesn't exist, so it's a no-op.
   - `"build"`: `tsc -p tsconfig.build.json`
   - `"build:ui"`: stays as-is (`cd src/ui && npm run build`)
+  - `"prebuild"`: `node -e "const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})"` — clean stale output before each build
   - `"prepublishOnly"`: `npm run build && npm run build:ui && node scripts/copy-ui-dist.js`
 - `publishConfig`: `{ "access": "public" }` for scoped package
 
-### Phase 5: UI Dist Copy Script
+### Phase 5: Build Scripts
 
-**Files:** `scripts/copy-ui-dist.js` (new)
+**Files:** `scripts/copy-ui-dist.js` (new), `scripts/dev-setup.js` (new)
 
-A small cross-platform Node.js script that copies `src/ui/dist/` to `dist/ui/dist/`. Using a script instead of shell commands ensures Windows compatibility.
+**copy-ui-dist.js** — Cross-platform script that copies `src/ui/dist/` to `dist/ui/dist/`:
 
 ```javascript
 import { cpSync, mkdirSync } from 'node:fs';
@@ -189,7 +190,29 @@ mkdirSync(dirname(dest), { recursive: true });
 cpSync(src, dest, { recursive: true });
 ```
 
-### Phase 6: Update README
+**dev-setup.js** — Runs UI install + build only in a local dev clone (not when installed from npm):
+
+```javascript
+import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+// Only run in a git checkout (not when installed from npm registry)
+if (!existsSync(resolve(root, '.git'))) process.exit(0);
+console.log('[def] Dev setup: installing UI dependencies and building...');
+execSync('npm install', { cwd: resolve(root, 'src', 'ui'), stdio: 'inherit' });
+execSync('npm run build', { cwd: resolve(root, 'src', 'ui'), stdio: 'inherit' });
+```
+
+### Phase 6: Add LICENSE File
+
+**Files:** `LICENSE` (new)
+
+Create an MIT LICENSE file in the project root. The README and package.json already reference MIT but no LICENSE file exists.
+
+### Phase 7: Update README
 
 **Files:** `README.md`
 
@@ -207,13 +230,13 @@ npx @daviseford/def "your topic"
 
 Move the clone-based install instructions to a "Development" section at the bottom.
 
-### Phase 7: Update Release Config
+### Phase 8: Update Release Config
 
 **Files:** `.release-please-manifest.json`
 
 Update the manifest to reflect the new package name. No automated npm publish — the workflow stays as-is per scope decision (see origin: docs/brainstorms/2026-03-24-npm-package-distribution-requirements.md, Scope Boundaries).
 
-### Phase 8: Verify and Publish
+### Phase 9: Verify and Publish
 
 Manual verification steps:
 
