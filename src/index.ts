@@ -10,6 +10,7 @@ interface ParsedArgs {
   first?: string;
   implModel?: string;
   reviewTurns?: number;
+  noPr?: boolean;
 }
 
 const VALID_MODES = ['edit', 'planning'];
@@ -21,7 +22,7 @@ const opts: ParsedArgs = parseArgs(args);
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr]');
   process.exit(1);
 }
 
@@ -92,7 +93,7 @@ try {
 
 // Run the turn loop
 try {
-  await run(session, { server });
+  await run(session, { server, noPr: opts.noPr });
 } catch (err: unknown) {
   console.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
@@ -127,6 +128,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--review-turns':
         result.reviewTurns = parseInt(argv[++i], 10);
+        break;
+      case '--no-pr':
+        result.noPr = true;
         break;
       default:
         if (!argv[i].startsWith('--')) {

@@ -5,6 +5,7 @@ import { access, rm } from 'node:fs/promises';
 interface WorktreeResult {
   worktreePath: string;
   branchName: string;
+  baseRef: string | null;
 }
 
 /**
@@ -19,6 +20,16 @@ export async function createWorktree(
 ): Promise<WorktreeResult> {
   // Resolve the git toplevel (don't assume targetRepo is the root)
   const gitRoot = await git(targetRepo, ['rev-parse', '--show-toplevel']);
+
+  // Capture the current branch before creating the worktree.
+  // This becomes the PR base ref so we target the branch the user started from.
+  let baseRef: string | null = null;
+  try {
+    baseRef = await git(targetRepo, ['symbolic-ref', '--short', 'HEAD']);
+  } catch {
+    // Detached HEAD — leave null, gh will use repo default
+  }
+
   const shortId = sessionId.slice(0, 8);
   const slug = slugifyTopic(topic) || 'session';
   const branchName = `def/${shortId}-${slug}`;
@@ -26,7 +37,7 @@ export async function createWorktree(
 
   await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName]);
 
-  return { worktreePath, branchName };
+  return { worktreePath, branchName, baseRef };
 }
 
 /**
