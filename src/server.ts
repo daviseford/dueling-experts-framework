@@ -232,6 +232,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
         duration_ms: parsed.data?.duration_ms,
         decisions: parsed.data?.decisions || [],
         content: parsed.content || raw,
+        model_tier: parsed.data?.model_tier,
       };
     })
   );

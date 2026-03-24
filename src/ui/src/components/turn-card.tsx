@@ -30,6 +30,8 @@ const BADGE_STYLES: Record<string, string> = {
   system: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
 }
 
+const FAST_BADGE_STYLE = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
+
 const PHASE_STYLES: Record<string, string> = {
   plan: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
   debate: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
@@ -125,6 +127,17 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                 )}
               >
                 {turn.phase}
+              </Badge>
+            )}
+            {turn.model_tier === "fast" && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "font-mono text-[9px] font-normal tracking-wide",
+                  FAST_BADGE_STYLE
+                )}
+              >
+                fast
               </Badge>
             )}
             {turn.duration_ms != null && (

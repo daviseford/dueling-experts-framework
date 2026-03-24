@@ -22,7 +22,9 @@ interface TurnContent {
 const AGENT_NAMES: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex' };
 
 // Budget: ~100K tokens × 4 chars/token = 400K chars.
-// Reserve headroom for the model's response.
+// Must stay within Haiku's 200K-token context window when fast-tier is active.
+// Code-heavy content may compress to ~3 chars/token (~133K tokens). Reserve headroom
+// for the model's response.
 const CHAR_BUDGET = 400_000;
 
 function planPrompt(agent: AgentName, topic: string): string {
