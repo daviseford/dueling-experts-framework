@@ -86,6 +86,27 @@ describe('validate', () => {
     assert.equal(result.data!.from, 'claude');
   });
 
+  it('recovers from decisions with YAML-breaking colons and backticks', () => {
+    const raw = [
+      '---',
+      'id: turn-0001-claude',
+      'turn: 1',
+      'from: claude',
+      'timestamp: 2026-03-23T14:30:00.000Z',
+      'status: complete',
+      'decisions:',
+      "  - Keep `session_status: 'paused'` for live in-process human wait",
+      '  - Remove recovery.ts and --resume flag entirely',
+      '---',
+      'body',
+    ].join('\n');
+    const result = validate(raw);
+    assert.equal(result.valid, true, `Expected valid but got errors: ${result.errors.join(', ')}`);
+    assert.equal(result.data!.decisions!.length, 2);
+    assert.ok(result.data!.decisions![0].includes('session_status'));
+    assert.ok(result.data!.decisions![1].includes('recovery'));
+  });
+
   it('rejects missing required fields', () => {
     const raw = ['---', 'from: claude', 'status: complete', '---', 'body'].join('\n');
     const result = validate(raw);

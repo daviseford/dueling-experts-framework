@@ -69,6 +69,36 @@ export function extractFrontmatterBlock(raw: string): string | null {
 }
 
 /**
+ * Pre-process frontmatter to wrap decision list items in double quotes.
+ * Agents often produce unquoted strings with colons, backticks, or other
+ * YAML-special characters that break the parser.
+ */
+function quoteDecisionItems(frontmatterBlock: string): string {
+  const lines = frontmatterBlock.split('\n');
+  let inDecisions = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^decisions:\s*$/.test(lines[i])) {
+      inDecisions = true;
+      continue;
+    }
+    if (inDecisions) {
+      // Still in the decisions list — items start with "  - "
+      const match = lines[i].match(/^(\s+-\s+)(.*)/);
+      if (match) {
+        const [, prefix, value] = match;
+        // Wrap in double quotes, escaping existing double quotes and backslashes
+        const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        lines[i] = `${prefix}"${escaped}"`;
+      } else if (/^\S/.test(lines[i]) || lines[i] === '---') {
+        // Non-indented line or closing delimiter — end of decisions block
+        inDecisions = false;
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
  * Parse and validate a turn's YAML frontmatter.
  * Returns { valid, errors, data, content }.
  */
@@ -89,13 +119,20 @@ export function validate(raw: string, expectedFrom?: string): ValidationResult {
   let parsed: matter.GrayMatterFile<string>;
   try {
     parsed = matter(frontmatterBlock, { engines: SAFE_ENGINES });
-  } catch (err) {
-    return {
-      valid: false,
-      errors: [`Failed to parse frontmatter: ${(err as Error).message}`],
-      data: null,
-      content: raw,
-    };
+  } catch {
+    // YAML parse failed — likely unquoted special characters in decisions.
+    // Pre-process to quote list items and retry.
+    const fixed = quoteDecisionItems(frontmatterBlock);
+    try {
+      parsed = matter(fixed, { engines: SAFE_ENGINES });
+    } catch (err2) {
+      return {
+        valid: false,
+        errors: [`Failed to parse frontmatter: ${(err2 as Error).message}`],
+        data: null,
+        content: raw,
+      };
+    }
   }
 
   const data = parsed.data as Record<string, unknown>;

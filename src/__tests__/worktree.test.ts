@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { slugifyTopic, createWorktree, removeWorktree } from '../worktree.js';
+import { slugifyTopic, createWorktree, removeWorktree, captureDiff } from '../worktree.js';
 
 describe('slugifyTopic', () => {
   it('lowercases and replaces spaces with hyphens', () => {
@@ -105,6 +105,31 @@ describe('createWorktree / removeWorktree', () => {
   it('removeWorktree succeeds silently if already removed', async () => {
     // Should not throw
     await removeWorktree(testDir, join(testDir, '.def', 'worktrees', 'nonexistent'));
+  });
+
+  it('captureDiff returns diff of changes in worktree', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'diff test');
+
+    // Make a change in the worktree
+    await writeFile(join(worktreePath, 'new-file.txt'), 'hello world\n');
+
+    const diff = await captureDiff(worktreePath);
+    assert.ok(diff.includes('new-file.txt'), 'diff should include the new file');
+    assert.ok(diff.includes('+hello world'), 'diff should include the added content');
+
+    // Clean up
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('captureDiff returns empty string when no changes', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'no changes');
+
+    const diff = await captureDiff(worktreePath);
+    assert.equal(diff, '', 'diff should be empty when no changes made');
+
+    await removeWorktree(testDir, worktreePath);
   });
 
   it('createWorktree fails with clear error outside a git repo', async () => {
