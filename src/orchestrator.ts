@@ -42,7 +42,7 @@ interface RunOptions {
   noPr?: boolean;
 }
 
-interface RecoveredState {
+export interface RecoveredState {
   pendingPlanDecided: AgentName | null;
   pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null;
   reviewLoopCount: number;
@@ -102,6 +102,31 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     pendingPlanDecided = recovered.pendingPlanDecided;
     pendingReviewDecided = recovered.pendingReviewDecided;
     reviewLoopCount = recovered.reviewLoopCount;
+  }
+
+  // Apply pending review decision from recovery before entering the loop.
+  // This handles the case where a review verdict was written but the
+  // phase transition didn't complete before the crash.
+  if (pendingReviewDecided) {
+    if (pendingReviewDecided.verdict === 'approve') {
+      console.log('[Recovery] Reviewer approved before interruption. Session complete.');
+      await updateSession(session.dir, { session_status: 'completed', phase });
+      return;
+    }
+    // verdict === 'fix' — apply the transition
+    if (reviewLoopCount >= session.review_turns) {
+      console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Session complete.`);
+      await updateSession(session.dir, { session_status: 'completed', phase });
+      return;
+    }
+    reviewLoopCount++;
+    emptyDiffRetries = 0;
+    phase = 'implement';
+    session.phase = phase;
+    nextAgent = session.impl_model;
+    await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
+    console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
+    pendingReviewDecided = null;
   }
 
   // Interjection queue and pause state (active when server is present)
@@ -246,7 +271,12 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         const retryResult = await invokeOnce(nextAgent, session);
         const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         if (retryValidation.valid && retryValidation.data?.verdict) {
+          // Fully replace the turn output with the retry's result
           canonicalData.verdict = retryValidation.data.verdict;
+          if (retryValidation.data.decisions) {
+            canonicalData.decisions = retryValidation.data.decisions;
+          }
+          validation = retryValidation;
         } else {
           // Still no verdict after retry — write error turn and pause/exit
           const reason = 'review decided without verdict after retry';
@@ -567,9 +597,16 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 /**
  * Reconstruct ephemeral state from turn history on session recovery.
  * Uses canonical turn `phase` data rather than inferring phase from transitions.
+ *
+ * Review model: single-agent verdict (the reviewer alone decides approve/fix).
+ * A review `decided` turn sets a pending verdict. An implement turn following
+ * it means the fix transition completed (increment reviewLoopCount, clear pending).
+ * If no implement turn follows, the verdict is still pending and the live loop
+ * must apply it on startup.
+ *
  * Returns { pendingPlanDecided, pendingReviewDecided, reviewLoopCount }.
  */
-async function recoverEphemeralState(session: Session): Promise<RecoveredState> {
+export async function recoverEphemeralState(session: Session): Promise<RecoveredState> {
   const turnsDir: string = join(session.dir, 'turns');
   const turnFiles: string[] = await listTurnFiles(turnsDir);
 
@@ -587,7 +624,7 @@ async function recoverEphemeralState(session: Session): Promise<RecoveredState> 
     const verdict = (parsed.data as Record<string, unknown>).verdict as 'approve' | 'fix' | undefined;
 
     if (turnPhase === 'plan' || turnPhase === 'debate') {
-      // Plan-phase consensus tracking
+      // Plan-phase consensus tracking (two-agent model)
       if (status === 'decided' || status === 'done') {
         if (pendingPlanDecided && pendingPlanDecided !== from) {
           // Both agents agreed — plan consensus reached
@@ -600,24 +637,25 @@ async function recoverEphemeralState(session: Session): Promise<RecoveredState> 
         pendingPlanDecided = null;
       }
     } else if (turnPhase === 'review') {
-      // Review-phase consensus tracking
-      if (status === 'decided' || status === 'done') {
-        const effectiveVerdict: 'approve' | 'fix' = verdict || (status === 'done' ? 'approve' : 'approve');
-        if (pendingReviewDecided && pendingReviewDecided.agent !== from) {
-          // Both agents agreed on review verdict
-          if (effectiveVerdict === 'fix' || pendingReviewDecided.verdict === 'fix') {
-            // Either agent said fix → increment review loop count
-            reviewLoopCount++;
-          }
-          pendingReviewDecided = null;
-        } else {
-          pendingReviewDecided = { agent: from as AgentName, verdict: effectiveVerdict };
-        }
-      } else if (status === 'complete' && pendingReviewDecided) {
-        pendingReviewDecided = null;
+      // Review-phase: single-agent verdict model.
+      // Only track verdicts we can trust:
+      // - Legacy 'done' → approve (compat shim)
+      // - 'decided' with verdict → use it
+      // - 'decided' without verdict → skip (the live loop would have errored/retried)
+      if (status === 'done') {
+        // Legacy compat: done in review = approve
+        pendingReviewDecided = { agent: from as AgentName, verdict: 'approve' };
+      } else if (status === 'decided' && verdict) {
+        pendingReviewDecided = { agent: from as AgentName, verdict };
       }
+      // decided without verdict: the live loop errored — don't set pending
+    } else if (turnPhase === 'implement') {
+      // An implement turn after a pending review fix means the transition completed
+      if (pendingReviewDecided && pendingReviewDecided.verdict === 'fix') {
+        reviewLoopCount++;
+      }
+      pendingReviewDecided = null;
     }
-    // Implement-phase turns don't affect consensus state — skip
   }
 
   return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount };
