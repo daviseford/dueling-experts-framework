@@ -4,28 +4,29 @@ Instructions for AI coding agents working in this repo.
 
 ## What This Is
 
-DEF (Dueling Experts Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **debate → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection.
+DEF (Dueling Experts Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **debate → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection. On completion, a draft PR is automatically created via the GitHub CLI.
 
 ## Files That Matter
 
 ```
 bin/def              → CLI entrypoint (ESM shim, tsx loader)
-src/index.ts         → Arg parsing, session creation, recovery check
+src/index.ts         → Arg parsing, session creation, orchestrator entry
+src/cli.ts           → CLI argument parser (--topic, --mode, --no-pr, etc.)
 src/orchestrator.ts  → Turn loop: phase-aware invoke → validate → write → repeat
 src/agent.ts         → Spawns claude/codex as child processes
 src/context.ts       → Assembles phase-aware prompts from system prompt + prior turns
 src/validation.ts    → Parses/validates YAML frontmatter from agent output
-src/session.ts       → Session CRUD, lockfile, shutdown handler
-src/recovery.ts      → Crash recovery: stale lock detection, session resume
-src/worktree.ts      → Git worktree lifecycle (create, remove, diff capture)
+src/session.ts       → Session CRUD, shutdown handler
+src/worktree.ts      → Git worktree lifecycle (create, remove, diff capture, commit)
+src/pr.ts            → Push branch + create draft PR via gh CLI
 src/server.ts        → HTTP server (localhost-only) serving API + React UI
-src/util.ts          → atomicWrite (write→fsync→rename), isProcessAlive
+src/util.ts          → atomicWrite, killChildProcess, isProcessAlive
 src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/ui)
 ```
 
 Session directories live at `.def/sessions/<uuid>/` with:
 - `turns/` — canonical turn files (turn-NNNN-agent.md)
-- `artifacts/` — generated outputs (decisions.md, diff-NNNN.patch)
+- `artifacts/` — generated outputs (decisions.md, diff-NNNN.patch, pr-body.md)
 - `runtime/` — ephemeral prompt.md and output.md
 - `logs/` — per-invocation debug logs
 - `session.json` — authoritative session state
@@ -42,22 +43,26 @@ Session directories live at `.def/sessions/<uuid>/` with:
 ### Do
 - **Use `atomicWrite()` from `src/util.ts` for session.json, turn files, and artifacts.** These are the crash-safety boundary. Other files (prompt.md, .gitignore, debug logs) use plain `writeFile`.
 - **Use conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
-- **Add tests when adding backend logic.** Tests use the Node.js built-in test runner via tsx: `tsx --test src/__tests__/*.test.ts`. No mocking frameworks.
+- **Add tests when adding backend logic.** Tests use the Node.js built-in test runner via tsx. Test files must be listed explicitly in `package.json` (no shell glob) for Windows compatibility.
 - **Update session state via `session.update()`**, never by writing `session.json` directly.
 - **Record durable choices in `decisions`.** Architecture choices, accepted tradeoffs, scope cuts, and protocol interpretations that later turns must preserve. These entries survive context truncation and are compiled into the final decisions log.
+- **Use `killChildProcess()` from `src/util.ts`** to kill agent child processes. It handles Windows process tree cleanup via `taskkill /T /F`.
 
 ## Session Lifecycle
 
-Sessions progress through three phases:
+Sessions are single-use — there is no resume or recovery mechanism. Each `def` invocation creates a new session. SIGINT marks the session as `completed` and cleans up.
 
 ### Debate Phase
 Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The debate turn budget keeps ticking during contested consensus (no reset).
 
 ### Implement Phase
-After consensus, the agent specified by `--impl-model` (default: `claude`) receives the debate decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree and stores it as `artifacts/diff-NNNN.patch` for review.
+After consensus, the agent specified by `--impl-model` (default: `claude`) receives the debate decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
 
 ### Review Phase
 The non-implementing agent reviews the implementation. It can approve (`status: done`) or request fixes (`status: complete` with feedback). Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
+
+### Automatic PR Creation
+After the session completes (in `edit` mode), the orchestrator checks if the branch has commits beyond the base ref. If so, it pushes the branch and creates a draft PR via `gh pr create --draft`. The PR body includes the topic, compiled decisions, commit log, and diffstat. Use `--no-pr` to skip this step.
 
 ## Status Semantics
 
@@ -69,6 +74,7 @@ turn: 1                      # Orchestrator-assigned
 from: claude                 # claude | codex | human | system
 timestamp: 2026-03-23T...   # Orchestrator-assigned
 status: complete             # complete | needs_human | done | decided
+phase: debate                # debate | implement | review
 decisions:                   # Optional, array of strings
   - "Key decision made"
 ---
@@ -82,7 +88,7 @@ decisions:                   # Optional, array of strings
 - **`error`** — orchestrator-only. Never emitted by agents.
 
 ### Retry & Error Handling
-- **Agent invocation** gets one automatic retry on failure (timeout, non-zero exit, empty output).
+- **Agent invocation** gets one automatic retry on failure (timeout, non-zero exit, empty output). Retry is skipped if an end-session request is pending.
 - **Frontmatter validation** gets one retry (re-invokes the agent) on parse/validation failure.
 - After both retries fail, an `error` turn is written and the session pauses (with UI) or exits (without UI).
 
@@ -92,8 +98,9 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Worktree created at debate→implement transition: `.def/worktrees/<sessionId>`
 - Branch: `def/<short-id>-<slugified-topic>`
 - `session.target_repo` is swapped to the worktree path during implement/review
+- Changes are committed to the branch after each implementation turn
 - Worktree cleaned up on session completion or SIGINT; branch preserved for push/PR
-- Session fields: `worktree_path`, `branch_name`, `original_repo` (all nullable)
+- Session fields: `worktree_path`, `branch_name`, `original_repo`, `base_ref` (all nullable)
 
 ## Context Assembly
 - `context.ts` builds prompts with a **400K character budget** (~100K tokens).
@@ -104,9 +111,9 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 
 ## Agent Invocation
 - **Claude debate/review:** `claude --print`, prompt piped via stdin, output captured from stdout.
-- **Claude implement:** `claude -p "instruction" --allowedTools "*"`, prompt piped as stdin context, full tool access.
+- **Claude implement:** `claude -p "instruction" --allowedTools "*" --dangerously-skip-permissions`, prompt piped as stdin context, full tool access.
 - **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Already has native tool access.
-- Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims.
+- Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims. Process kill uses `taskkill /T /F` for proper tree cleanup.
 - **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
 
@@ -117,7 +124,7 @@ The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadc
 ### API Endpoints (localhost-only)
 - `GET /api/turns` — returns all turns, session status, phase, and thinking state
 - `POST /api/interject` — inject a human message (`{ content: string }`, 10K char limit, JSON Content-Type required)
-- `POST /api/end-session` — request graceful session end
+- `POST /api/end-session` — request graceful session end (kills running agent, stops loop)
 
 ### Server Security
 - Binds to `127.0.0.1` only
@@ -125,18 +132,12 @@ The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadc
 - Directory traversal protection on static files
 - JSON Content-Type required on POST (CSRF defense)
 
-## Recovery & Crash Safety
-- SIGINT sets session to `interrupted` and releases the lockfile.
-- On startup, `recovery.ts` checks for interrupted/active/paused sessions.
-- Stale lockfiles are detected by PID liveness check.
-- On resume: orphaned `.tmp` files in `turns/` are cleaned, runtime files are deleted.
-- Ephemeral state (`pendingDecided`, `reviewTurnCount`) is reconstructed from turn history on recovery.
-
 ## Commands
 ```sh
 npm start -- --topic "Your topic"                    # Run the CLI
 npm start -- --topic "..." --impl-model codex        # Use Codex for implementation
 npm start -- --topic "..." --review-turns 10         # Set review loop limit
+npm start -- --topic "..." --no-pr                   # Skip draft PR creation
 npm test                                              # Run tests (tsx)
 npm run typecheck                                     # Type-check (tsc --noEmit)
 npm run dev:ui                                        # Dev UI (hot reload)

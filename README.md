@@ -1,6 +1,17 @@
 # DEF — Dueling Experts Framework
 
-A local CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents alternate turns, output is validated, and a browser UI lets you watch and interject.
+A local CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents debate a topic, implement changes in an isolated git worktree, review each other's work, and open a draft PR — all while you watch in a browser UI.
+
+## Usage
+
+Run `def` from anywhere:
+
+```sh
+cd ~/Projects/my-app
+def "plan a REST API for user management"
+```
+
+This creates a `.def/` session directory in the target repo, starts the agent loop, and opens a watcher UI in your browser.
 
 ## Installation
 
@@ -32,52 +43,59 @@ Add-Content $PROFILE "`n`$env:PATH = `"$HOME\tools\def\bin;`$env:PATH`""
 
 ## Prerequisites
 
-- **Node.js 20+** (required for `crypto.randomUUID()`)
+- **Node.js 20+**
 - **Claude Code CLI** (`claude`) — installed and authenticated
 - **Codex CLI** (`codex`) — installed and authenticated (requires ChatGPT Pro)
-- Both CLIs available on PATH
-
-## Usage
-
-Run `def` from any git repo:
-
-```sh
-cd ~/Projects/my-app
-def --topic "Plan a REST API for user management"
-```
-
-This creates a `.def/` session directory in the target repo, starts the agent loop, and opens a watcher UI in your browser.
+- **GitHub CLI** (`gh`) — installed and authenticated (for automatic draft PR creation)
+- Both agent CLIs available on PATH
 
 ### Options
 
 ```
---topic <string>       Conversation topic (required)
---mode <string>        Session mode (default: planning)
---max-turns <number>   Maximum turns, 1-100 (default: 20)
---first <agent>        Which agent goes first: claude or codex (default: claude)
---resume <session-id>  Resume an interrupted session
+--topic <string>              Conversation topic (required, or pass as positional args)
+--mode <string>               edit (default) or planning (debate-only, no implementation)
+--max-turns <number>          Maximum turns, 1-100 (default: 20)
+--first <agent>               Which agent goes first: claude or codex (default: claude)
+--impl-model <agent>          Which agent implements: claude or codex (default: claude)
+--review-turns <number>       Max review/fix cycles, 1-50 (default: 6)
+--no-pr                       Skip automatic draft PR creation
 ```
 
 ### Examples
 
 ```sh
-# Start a planning session, Codex goes first
-def --topic "Design a caching layer for the API" --first codex
+# Quick start — positional args become the topic
+def add dark mode to the dashboard
 
-# Limit to 6 turns
-def --topic "Review error handling in src/api/" --max-turns 6
+# Planning-only session, Codex goes first
+def --topic "Design a caching layer for the API" --mode planning --first codex
 
-# Resume a crashed session
-def --resume 550e8400-e29b-41d4-a716-446655440000
+# Limit to 6 turns, use Codex for implementation
+def --topic "Refactor auth module" --max-turns 6 --impl-model codex
+
+# Skip automatic PR creation
+def --topic "Fix error handling in src/api/" --no-pr
 ```
 
 ## How It Works
 
-1. The orchestrator alternately invokes `claude --print` and `codex exec` as subprocesses
-2. Each agent receives all prior turns as context and responds with YAML frontmatter + markdown
-3. Output is validated, and the orchestrator assigns canonical turn numbers and filenames
-4. Turns are written as immutable markdown files in `.def/sessions/<id>/turns/`
-5. A local HTTP server (bound to `127.0.0.1`) serves a watcher UI with 3-second polling
+Sessions progress through three phases:
+
+### 1. Debate
+
+Agents alternate turns debating the topic. When both agents signal `status: decided`, consensus is reached and the session advances. In `planning` mode, the session ends here.
+
+### 2. Implement
+
+In `edit` mode, a git worktree is created on a new branch (`def/<id>-<topic-slug>`). The implementing agent (set by `--impl-model`) gets full tool access and makes changes directly. The orchestrator captures a git diff after each implementation turn.
+
+### 3. Review
+
+The non-implementing agent reviews the changes. It can approve (`status: done`) or request fixes, cycling back to implement. This repeats until approval or the `--review-turns` limit is reached.
+
+### Automatic PR Creation
+
+When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **draft PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
 
 ### Watcher UI
 
@@ -92,7 +110,7 @@ Open it in a browser to:
 - Watch the conversation in real time
 - Type a message to interject at the next turn boundary
 - Respond to agent escalations (`status: needs_human`)
-- End the session cleanly
+- End the session cleanly via the End Session button
 
 ### Session Directory
 
@@ -107,13 +125,12 @@ my-app/
             │   ├── turn-0002-codex.md
             │   └── ...
             ├── artifacts/
-            │   └── decisions.md   # Best-effort decisions log
-            └── runtime/           # Ephemeral (prompt/output scratch files)
+            │   ├── decisions.md   # Compiled decisions log
+            │   ├── diff-NNNN.patch
+            │   └── pr-body.md     # Generated PR description
+            ├── runtime/           # Ephemeral (prompt/output scratch files)
+            └── logs/              # Per-invocation debug logs
 ```
-
-### Crash Recovery
-
-If the process is interrupted, restart `def` in the same repo. It automatically detects and resumes interrupted sessions. If multiple interrupted sessions exist, use `--resume <session-id>` to pick one.
 
 ## Turn Schema
 
@@ -126,14 +143,14 @@ turn: 1
 from: claude
 timestamp: 2026-03-23T14:30:00.000Z
 status: complete
+phase: debate
 decisions:
   - Use polling over fs.watch
 ---
-
 The markdown response body goes here.
 ```
 
-**Status values:** `complete`, `needs_human`, `done`, `error`
+**Status values:** `complete`, `needs_human`, `done`, `decided`, `error` (orchestrator-only)
 
 ## License
 
