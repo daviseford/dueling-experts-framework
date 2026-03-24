@@ -24,7 +24,7 @@ const DOT_COLORS: Record<string, string> = {
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer }: StatusBarProps) {
   return (
-    <div className="flex items-center gap-3 border-t border-border/50 bg-card/80 px-5 py-2">
+    <div className="flex items-center gap-3 border-t border-border/30 bg-card/80 px-5 py-2.5">
       <Badge
         variant="outline"
         className={cn(

@@ -42,11 +42,19 @@ export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicato
   return (
     <div
       className={cn(
-        "rounded-lg border-l-[3px] bg-card/50",
+        "relative overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 ring-border/10",
         ACCENT_COLORS[thinking.agent] || "border-l-muted-foreground"
       )}
     >
-      <div className="flex items-center gap-2.5 px-3 py-2.5">
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 animate-scan",
+          thinking.agent === "claude"
+            ? "bg-gradient-to-r from-transparent via-blue-500/8 to-transparent"
+            : "bg-gradient-to-r from-transparent via-emerald-500/8 to-transparent"
+        )}
+      />
+      <div className="relative flex items-center gap-2.5 px-4 py-3">
         <Spinner
           className={cn(
             "h-3.5 w-3.5",

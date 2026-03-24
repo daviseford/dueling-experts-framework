@@ -89,10 +89,10 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
     <Collapsible open={open} onOpenChange={setOpen}>
       <div
         className={cn(
-          "rounded-lg border-l-[3px] bg-card/50 transition-colors",
+          "overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 shadow-sm transition-all duration-200 hover:shadow-md",
           isError
-            ? "border-l-red-500 ring-1 ring-red-500/20"
-            : ACCENT_COLORS[turn.from] || "border-l-muted-foreground"
+            ? "border-l-red-500 ring-red-500/20"
+            : cn(ACCENT_COLORS[turn.from] || "border-l-muted-foreground", "ring-border/10 hover:ring-border/20")
         )}
       >
         <CollapsibleTrigger asChild>
@@ -146,12 +146,12 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t border-border/50 px-4 py-3">
-            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/90">
+          <div className="border-t border-border/40 px-4 py-3">
+            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/85">
               {turn.content}
             </pre>
           </div>
-          <div className="flex justify-center border-t border-border/30 py-1">
+          <div className="flex justify-center border-t border-border/20 py-1.5">
             <Button
               variant="ghost"
               size="sm"
