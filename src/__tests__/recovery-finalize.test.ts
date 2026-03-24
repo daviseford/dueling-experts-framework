@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
 import { run } from '../orchestrator.js';
-import { readEvents } from '../trace.js';
+import { readEvents, listAttempts } from '../trace.js';
 import type { Session } from '../session.js';
 
 /**
@@ -207,6 +207,101 @@ describe('recovery finalization', () => {
     const decisionsPath = join(tmpDir, 'artifacts', 'decisions.md');
     const decisionsContent = await readFile(decisionsPath, 'utf8');
     assert.ok(decisionsContent.includes('Serialize event writes'), 'decisions.md missing expected content');
+  });
+
+  it('attempt counters reset between run() calls in the same process', { timeout: 30_000 }, async () => {
+    // Regression: attemptCounters was module-global and never cleared,
+    // so a second run() in the same process would start numbering at 1
+    // instead of 0 for the same turn-agent key.
+
+    // --- First session ---
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+      decisions: ['Decision A'],
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0003-claude', turn: 3, from: 'claude',
+      timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'implement',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0004-codex', turn: 4, from: 'codex',
+      timestamp: '2026-01-01T00:04:00Z', status: 'decided', phase: 'review',
+      verdict: 'approve',
+    });
+
+    const session1 = makeSession(tmpDir, {
+      current_turn: 4,
+      phase: 'review',
+      target_repo: worktreePath,
+      worktree_path: worktreePath,
+      original_repo: originalRepo,
+      branch_name: 'def/test-branch',
+      base_ref: 'main',
+    });
+    await writeSessionJson(session1);
+    await run(session1, { noPr: true });
+
+    // --- Second session (new temp dir, same process) ---
+    const tmpDir2 = await mkdtemp(join(tmpdir(), 'def-recovery-counter-'));
+    const turnsDir2 = join(tmpDir2, 'turns');
+    await mkdir(turnsDir2, { recursive: true });
+    await mkdir(join(tmpDir2, 'runtime'), { recursive: true });
+    const originalRepo2 = await mkdtemp(join(tmpdir(), 'def-orig2-'));
+    const worktreePath2 = await mkdtemp(join(tmpdir(), 'def-wt2-'));
+
+    // Use a non-existent worktree so agent spawn fails immediately (ENOENT),
+    // but attempt artifacts are still written before the spawn.
+    const nonExistentWorktree = join(tmpDir2, 'nonexistent-worktree');
+
+    await writeTurn(turnsDir2, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+      decisions: ['Decision B'],
+    });
+    await writeTurn(turnsDir2, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
+    await writeTurn(turnsDir2, {
+      id: 'turn-0003-claude', turn: 3, from: 'claude',
+      timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'implement',
+    });
+    await writeTurn(turnsDir2, {
+      id: 'turn-0004-codex', turn: 4, from: 'codex',
+      timestamp: '2026-01-01T00:04:00Z', status: 'decided', phase: 'review',
+      verdict: 'fix',
+    });
+
+    const session2 = makeSession(tmpDir2, {
+      id: 'test-recovery-counter-2',
+      current_turn: 4,
+      phase: 'review',
+      review_turns: 6,
+      max_turns: 10,
+      target_repo: nonExistentWorktree,
+      worktree_path: nonExistentWorktree,
+      original_repo: originalRepo2,
+      branch_name: 'def/test-branch-2',
+      base_ref: 'main',
+    });
+    await writeSessionJson(session2);
+    await run(session2, { noPr: true });
+
+    // KEY ASSERTION: The second session's first attempt should be index 0, not 1+
+    const attempts2 = await listAttempts(tmpDir2);
+    assert.ok(attempts2.length > 0, 'second session should have at least one attempt');
+    assert.equal(attempts2[0].attempt_index, 0,
+      'attempt counter was not reset — first attempt in second session should be index 0');
+
+    // Cleanup second session's temp dirs
+    await rm(tmpDir2, { recursive: true, force: true });
+    await rm(originalRepo2, { recursive: true, force: true });
+    await rm(worktreePath2, { recursive: true, force: true });
   });
 
   it('recovery-fix-under-limit enters the main loop and finalizes', { timeout: 30_000 }, async () => {

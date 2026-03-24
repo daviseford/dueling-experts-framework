@@ -79,6 +79,9 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
+  // Reset per-session attempt counters so each run() starts at index 0
+  attemptCounters.clear();
+
   // Initialize session tracer for durable attempt artifacts + event stream
   const tracer = new Tracer(session.dir);
   tracer.emit('session.start', {
