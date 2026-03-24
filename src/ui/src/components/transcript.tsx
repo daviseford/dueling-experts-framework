@@ -16,7 +16,6 @@ interface TranscriptProps {
   prNumber: number | null
   turnsPath: string | null
   artifactsPath: string | null
-  artifactNames: string[]
 }
 
 export function Transcript({
@@ -30,7 +29,6 @@ export function Transcript({
   prNumber,
   turnsPath,
   artifactsPath,
-  artifactNames,
 }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const turnCount = turns.length
@@ -89,7 +87,6 @@ export function Transcript({
             prNumber={prNumber}
             turnsPath={turnsPath}
             artifactsPath={artifactsPath}
-            artifactNames={artifactNames}
             decisions={decisions}
           />
         )}
