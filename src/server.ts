@@ -222,6 +222,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
         from: parsed.data?.from,
         timestamp: parsed.data?.timestamp,
         status: parsed.data?.status,
+        duration_ms: parsed.data?.duration_ms,
         decisions: parsed.data?.decisions || [],
         content: parsed.content || raw,
       };

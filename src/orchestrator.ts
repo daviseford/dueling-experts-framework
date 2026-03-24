@@ -52,6 +52,7 @@ interface CanonicalTurnData {
   from: string;
   timestamp: string;
   status: string;
+  duration_ms?: number;
   decisions?: string[];
 }
 
@@ -137,7 +138,9 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
+    const invokeStart: number = Date.now();
     let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount);
+    const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
 
@@ -169,13 +172,14 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
     // Orchestrator assigns canonical turn number, id, filename
     const canonicalId = `turn-${String(turnCount).padStart(4, '0')}-${nextAgent}`;
-    const normalizedStatus: string = normalizeStatus(validData.status, turnCount);
+    const normalizedStatus: string = normalizeStatus(validData.status, turnCount, phase);
     const canonicalData: CanonicalTurnData = {
       id: canonicalId,
       turn: turnCount,
       from: nextAgent,
       timestamp: new Date().toISOString(),
       status: normalizedStatus,
+      duration_ms: durationMs,
     };
     if (validData.decisions) {
       canonicalData.decisions = validData.decisions;
@@ -267,19 +271,23 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
         // Store action results for review
         await writeActionResults(session, turnCount, results);
-      }
 
-      // Transition to review
-      console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
-      phase = 'review';
-      reviewTurnCount = 0;
-      const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
-      nextAgent = reviewer;
-      await updateSession(session.dir, {
-        current_turn: turnCount,
-        phase: 'review',
-        next_agent: reviewer,
-      });
+        // Transition to review
+        console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
+        phase = 'review';
+        reviewTurnCount = 0;
+        const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
+        nextAgent = reviewer;
+        await updateSession(session.dir, {
+          current_turn: turnCount,
+          phase: 'review',
+          next_agent: reviewer,
+        });
+      } else {
+        // No actions produced — send the agent back to try again
+        console.log(`[Turn ${turnCount}] No def-action blocks found. Retrying implementation...`);
+        await updateSession(session.dir, { current_turn: turnCount });
+      }
     } else if (phase === 'review') {
       reviewTurnCount++;
 
@@ -420,7 +428,12 @@ async function recoverEphemeralState(session: Session): Promise<RecoveredState> 
  * Normalize agent-claimed status to orchestrator canonical status.
  * Prevents premature "done" when the session hasn't had enough turns.
  */
-export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: number): string {
+export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: number, phase: string = 'debate'): string {
+  // In implement phase, agents should only emit 'complete' — downgrade everything else
+  if (phase === 'implement') {
+    if (agentStatus === 'needs_human') return 'needs_human';
+    return 'complete';
+  }
   if (agentStatus === 'done' && turnCount < 2) return 'complete';
   if (agentStatus === 'done') return 'done';
   if (agentStatus === 'decided' && turnCount < 2) return 'complete';

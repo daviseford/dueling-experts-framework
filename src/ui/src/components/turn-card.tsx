@@ -47,6 +47,14 @@ function formatTimestamp(ts: string): string {
   }
 }
 
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000)
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
+}
+
 function truncateContent(content: string): string {
   if (!content) return ""
   // Take the first non-empty line, strip markdown headers/formatting
@@ -107,6 +115,11 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
               </span>
             )}
             {open && <span className="flex-1" />}
+            {turn.duration_ms != null && (
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground/40">
+                {formatDuration(turn.duration_ms)}
+              </span>
+            )}
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
               {formatTimestamp(turn.timestamp)}
             </span>

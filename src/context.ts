@@ -98,12 +98,18 @@ type: mkdir
 path: relative/path/to/dir
 \`\`\`
 
+## Critical: You Are Running in Print Mode
+You are running via \`claude --print\` or \`codex exec\`. You have NO access to tools, file system, or shell. You CANNOT write files directly. Your ONLY way to make changes is by outputting \`def-action\` blocks in your text response. The orchestrator will parse and execute them for you.
+
+Do NOT ask for permissions. Do NOT try to use tools. Just output the action blocks.
+
 ## Rules
 - Respond with YAML frontmatter followed by markdown containing your action blocks.
 - Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
 - Set status: complete when your implementation is done.
 - Explain what each action does in markdown before the action block.
 - All paths are relative to the project root.
+- You MUST include at least one \`def-action\` block. A response with no actions will be rejected.
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 

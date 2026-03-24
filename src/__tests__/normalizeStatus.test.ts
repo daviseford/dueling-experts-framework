@@ -31,4 +31,16 @@ describe('normalizeStatus', () => {
     assert.equal(normalizeStatus('garbage', 3), 'complete');
     assert.equal(normalizeStatus(undefined as unknown as string, 1), 'complete');
   });
+
+  it('downgrades "done" to "complete" in implement phase', () => {
+    assert.equal(normalizeStatus('done', 5, 'implement'), 'complete');
+  });
+
+  it('downgrades "decided" to "complete" in implement phase', () => {
+    assert.equal(normalizeStatus('decided', 5, 'implement'), 'complete');
+  });
+
+  it('allows "needs_human" in implement phase', () => {
+    assert.equal(normalizeStatus('needs_human', 5, 'implement'), 'needs_human');
+  });
 });

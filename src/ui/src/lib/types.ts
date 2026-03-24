@@ -4,6 +4,7 @@ export interface Turn {
   from: "claude" | "codex" | "human" | "system"
   timestamp: string
   status: "complete" | "needs_human" | "done" | "decided" | "error"
+  duration_ms?: number
   decisions: string[]
   content: string
 }
