@@ -13,7 +13,7 @@ const opts = parseArgs(args);
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   process.exit(1);
 }
 
@@ -84,7 +84,7 @@ try {
 
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
 } catch (err: unknown) {
   console.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;

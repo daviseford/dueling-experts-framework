@@ -6,6 +6,7 @@ export interface ParsedArgs {
   implModel?: string;
   reviewTurns?: number;
   noPr?: boolean;
+  noFast?: boolean;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -33,6 +34,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-pr':
         result.noPr = true;
+        break;
+      case '--no-fast':
+        result.noFast = true;
         break;
       default:
         if (!argv[i].startsWith('--')) {

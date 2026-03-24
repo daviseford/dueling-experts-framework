@@ -70,6 +70,7 @@ describe('recoverEphemeralState', () => {
     assert.equal(result.pendingPlanDecided, null);
     assert.equal(result.pendingReviewDecided, null);
     assert.equal(result.reviewLoopCount, 0);
+    assert.equal(result.bothEverDecided, false);
   });
 
   // --- Plan-phase recovery ---
@@ -336,5 +337,75 @@ describe('recoverEphemeralState', () => {
     const result = await recoverEphemeralState(session);
     assert.equal(result.reviewLoopCount, 0);
     assert.equal(result.pendingReviewDecided, null);
+  });
+
+  // --- bothEverDecided recovery ---
+
+  it('sets bothEverDecided when both agents have emitted decided', async () => {
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 2 });
+    const result = await recoverEphemeralState(session);
+    assert.equal(result.bothEverDecided, true);
+  });
+
+  it('bothEverDecided is false when only one agent has decided', async () => {
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'complete', phase: 'plan',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 2 });
+    const result = await recoverEphemeralState(session);
+    assert.equal(result.bothEverDecided, false);
+  });
+
+  it('bothEverDecided persists even after contested consensus', async () => {
+    // Claude decides
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'decided', phase: 'plan',
+    });
+    // Codex decides — both have now decided
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
+    // Suppose debate resumed (consensus was contested somehow) — still both have decided
+    await writeTurn(turnsDir, {
+      id: 'turn-0003-claude', turn: 3, from: 'claude',
+      timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'plan',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 3 });
+    const result = await recoverEphemeralState(session);
+    // Monotonically additive — still true
+    assert.equal(result.bothEverDecided, true);
+  });
+
+  it('treats legacy done as decided for bothEverDecided tracking', async () => {
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'done', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'done', phase: 'plan',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 2 });
+    const result = await recoverEphemeralState(session);
+    assert.equal(result.bothEverDecided, true);
   });
 });

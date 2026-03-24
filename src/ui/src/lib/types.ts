@@ -9,6 +9,7 @@ export interface Turn {
   duration_ms?: number
   decisions: string[]
   content: string
+  model_tier?: "full" | "fast"
 }
 
 export interface ThinkingState {

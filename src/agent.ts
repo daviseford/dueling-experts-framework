@@ -25,6 +25,11 @@ const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
+const FAST_MODELS = {
+  claude: 'haiku',
+  codex: 'o4-mini',
+} as const satisfies Record<AgentName, string>;
+
 const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
     cmd: 'claude',
@@ -56,7 +61,7 @@ const AGENTS: Record<AgentName, AgentConfig> = {
  * Invoke an agent CLI with the assembled prompt.
  * Returns { exitCode, output, timedOut }.
  */
-export async function invoke(agentName: AgentName, session: Session): Promise<InvokeResult> {
+export async function invoke(agentName: AgentName, session: Session, tier?: 'full' | 'fast'): Promise<InvokeResult> {
   const config = AGENTS[agentName];
   if (!config) {
     throw new Error(`Unknown agent: "${agentName}". Supported: claude, codex`);
@@ -81,6 +86,11 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
     args = config.args(outputPath);
   } else {
     args = config.args;
+  }
+
+  // Append --model flag when using the fast tier
+  if (tier === 'fast') {
+    args = [...args, '--model', FAST_MODELS[agentName]];
   }
 
   const startTime = Date.now();
