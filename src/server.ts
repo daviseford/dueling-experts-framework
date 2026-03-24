@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session } from './session.js';
+import { readEvents, listAttempts } from './trace.js';
 
 interface Controller {
   readonly isPaused: boolean;
@@ -138,6 +139,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // API routes first
     if (url.pathname === '/api/turns' && req.method === 'GET') {
       await handleGetTurns(res);
+    } else if (url.pathname === '/api/events' && req.method === 'GET') {
+      await handleGetEvents(res, url);
+    } else if (url.pathname === '/api/attempts' && req.method === 'GET') {
+      await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
@@ -250,6 +255,19 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
     artifacts_path: join(sessionRef!.dir, 'artifacts'),
     artifact_names: metadata.artifactNames,
   }));
+}
+
+async function handleGetEvents(res: ServerResponse, url: URL): Promise<void> {
+  const since = url.searchParams.get('since') ?? undefined;
+  const events = await readEvents(sessionRef!.dir, since);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(events));
+}
+
+async function handleGetAttempts(res: ServerResponse): Promise<void> {
+  const attempts = await listAttempts(sessionRef!.dir);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(attempts));
 }
 
 interface SessionMetadata {
