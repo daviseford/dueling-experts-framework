@@ -8,7 +8,6 @@ export interface SessionSummaryProps {
   prNumber: number | null
   turnsPath: string | null
   artifactsPath: string | null
-  artifactNames: string[]
   decisions?: string[]
 }
 
@@ -28,7 +27,6 @@ export function SessionSummary({
   prNumber,
   turnsPath,
   artifactsPath,
-  artifactNames,
   decisions,
 }: SessionSummaryProps) {
   return (
