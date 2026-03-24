@@ -1,13 +1,29 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemble } from './context.js';
+import type { Session, AgentName } from './session.js';
+
+// ── Type definitions ────────────────────────────────────────────────
+
+interface AgentConfig {
+  cmd: string;
+  args: string[] | ((outputPath: string) => string[]);
+  captureStdout: boolean;
+}
+
+export interface InvokeResult {
+  exitCode: number;
+  output: string;
+  timedOut: boolean;
+  error?: string;
+}
 
 const TIMEOUT_MS = 180_000; // 180 seconds — claude --print can take 90-120s for large prompts
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
-const AGENTS = {
+const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
     cmd: 'claude',
     args: ['--print'],
@@ -15,7 +31,7 @@ const AGENTS = {
   },
   codex: {
     cmd: 'codex',
-    args: (outputPath) => [
+    args: (outputPath: string) => [
       'exec',
       '--full-auto',
       '--skip-git-repo-check',
@@ -29,7 +45,7 @@ const AGENTS = {
  * Invoke an agent CLI with the assembled prompt.
  * Returns { exitCode, output, timedOut }.
  */
-export async function invoke(agentName, session) {
+export async function invoke(agentName: AgentName, session: Session): Promise<InvokeResult> {
   const config = AGENTS[agentName];
   if (!config) {
     throw new Error(`Unknown agent: "${agentName}". Supported: claude, codex`);
@@ -54,8 +70,8 @@ export async function invoke(agentName, session) {
   const startTime = Date.now();
   const logPrefix = `${agentName}-${Date.now()}`;
 
-  return new Promise((resolve) => {
-    const child = spawn(config.cmd, args, {
+  return new Promise<InvokeResult>((resolve) => {
+    const child: ChildProcess = spawn(config.cmd, args, {
       cwd: session.target_repo,
       stdio: ['pipe', 'pipe', 'pipe'], // capture stderr for debugging
       // On Windows, npm-installed CLIs are .cmd shims that require shell.
@@ -72,25 +88,25 @@ export async function invoke(agentName, session) {
     // is signaled properly when the file is fully read.
     // stdin.write() + end() produced 0 bytes on Windows in testing.
     const promptStream = createReadStream(promptPath);
-    promptStream.pipe(child.stdin);
+    promptStream.pipe(child.stdin!);
 
     let stdout = '';
     let stderr = '';
     let timedOut = false;
     let settled = false;
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
       if (stdout.length > MAX_OUTPUT_BYTES) {
         child.kill('SIGTERM');
       }
     });
 
-    child.stderr.on('data', (chunk) => {
+    child.stderr!.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 
-    const timer = setTimeout(() => {
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
       setTimeout(() => {
@@ -98,7 +114,7 @@ export async function invoke(agentName, session) {
       }, 5000);
     }, TIMEOUT_MS);
 
-    function settle(result) {
+    function settle(result: InvokeResult): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -128,7 +144,7 @@ export async function invoke(agentName, session) {
       resolve(result);
     }
 
-    child.on('close', async (exitCode) => {
+    child.on('close', async (exitCode: number | null) => {
       let output = '';
       if (config.captureStdout) {
         output = stdout;
@@ -142,7 +158,7 @@ export async function invoke(agentName, session) {
       settle({ exitCode: exitCode ?? 1, output, timedOut });
     });
 
-    child.on('error', (err) => {
+    child.on('error', (err: Error) => {
       settle({ exitCode: 1, output: '', timedOut: false, error: err.message });
     });
   });

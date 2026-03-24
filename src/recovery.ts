@@ -2,13 +2,22 @@ import { readdir, readFile, access, rm, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run } from './orchestrator.js';
 import { load, releaseLock, acquireLock, installShutdownHandler } from './session.js';
+import type { Session } from './session.js';
 import { isProcessAlive } from './util.js';
+
+interface RecoverableSession {
+  id: string;
+  dir: string;
+  topic: string;
+  current_turn: number;
+  session_status: string;
+}
 
 /**
  * Check for recoverable sessions on startup.
  * Returns true if a session was auto-resumed, false otherwise.
  */
-export async function checkForRecovery(targetRepo) {
+export async function checkForRecovery(targetRepo: string): Promise<boolean | { multiple: true; sessions: RecoverableSession[] }> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
   const lockPath = join(targetRepo, '.def', 'lock');
 
@@ -34,7 +43,7 @@ export async function checkForRecovery(targetRepo) {
     return false; // No sessions directory
   }
 
-  const recoverable = [];
+  const recoverable: RecoverableSession[] = [];
 
   for (const dirName of sessionDirs) {
     const sessionDir = join(sessionsDir, dirName);
@@ -77,7 +86,7 @@ export async function checkForRecovery(targetRepo) {
 /**
  * Resume a specific session by ID.
  */
-export async function resumeSession(targetRepo, sessionId) {
+export async function resumeSession(targetRepo: string, sessionId: string): Promise<void> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
 
   let sessionDirs;
@@ -114,7 +123,7 @@ export async function resumeSession(targetRepo, sessionId) {
   process.exit(1);
 }
 
-async function doResume(targetRepo, sessionDir) {
+async function doResume(targetRepo: string, sessionDir: string): Promise<void> {
   // Acquire lockfile atomically
   const lockPath = join(targetRepo, '.def', 'lock');
   await acquireLock(lockPath);
@@ -141,7 +150,7 @@ async function doResume(targetRepo, sessionDir) {
 
   installShutdownHandler(sessionDir, targetRepo, session);
 
-  let server = null;
+  let server: typeof import('./server.js') | null = null;
   try {
     server = await import('./server.js');
   } catch {
@@ -150,8 +159,8 @@ async function doResume(targetRepo, sessionDir) {
 
   try {
     await run(session, { server });
-  } catch (err) {
-    console.error(`Orchestrator error: ${err.message}`);
+  } catch (err: unknown) {
+    console.error(`Orchestrator error: ${(err as Error).message}`);
   } finally {
     await releaseLock(targetRepo);
     if (server) {

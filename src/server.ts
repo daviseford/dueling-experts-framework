@@ -1,15 +1,26 @@
 import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, dirname, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles } from './session.js';
+import type { Session } from './session.js';
+
+interface Controller {
+  readonly isPaused: boolean;
+  readonly endRequested: boolean;
+  readonly thinking: { agent: string; since: string } | null;
+  readonly phase: string;
+  interject(content: string): void;
+  requestEnd(): void;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_CONTENT_LENGTH = 10_000;
 const UI_DIST = resolve(__dirname, 'ui', 'dist');
 
-const MIME_TYPES = {
+const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -28,14 +39,14 @@ const MIME_TYPES = {
   '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
-let httpServer = null;
-let sessionRef = null;
-let controllerRef = null;
+let httpServer: import('node:http').Server | null = null;
+let sessionRef: Session | null = null;
+let controllerRef: Controller | null = null;
 
 /**
  * Start the HTTP server for the watcher UI.
  */
-export async function start(session, controller) {
+export async function start(session: Session, controller: Controller): Promise<void> {
   if (httpServer) {
     throw new Error('Server is already running');
   }
@@ -45,9 +56,11 @@ export async function start(session, controller) {
 
   httpServer = createServer(handleRequest);
 
-  return new Promise((resolve) => {
-    httpServer.listen(0, '127.0.0.1', async () => {
-      const { port } = httpServer.address();
+  const server = httpServer;
+  return new Promise<void>((resolvePromise) => {
+    server.listen(0, '127.0.0.1', async () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
       await updateSession(session.dir, { port });
       session.port = port;
       const url = `http://localhost:${port}`;
@@ -60,7 +73,7 @@ export async function start(session, controller) {
         exec(`${openCmd} ${url}`);
       }).catch(() => {});
 
-      resolve();
+      resolvePromise();
     });
   });
 }
@@ -68,14 +81,14 @@ export async function start(session, controller) {
 /**
  * Stop the HTTP server.
  */
-export function stop() {
+export function stop(): void {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
   }
 }
 
-function validateOrigin(req) {
+function validateOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true; // No origin header (direct curl, etc.) — allow
   try {
@@ -86,14 +99,14 @@ function validateOrigin(req) {
   }
 }
 
-function validateHost(req) {
+function validateHost(req: IncomingMessage): boolean {
   const host = req.headers.host;
   if (!host) return true;
   const hostname = host.split(':')[0];
   return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
-async function handleRequest(req, res) {
+async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // DNS rebinding protection: validate Host header
   if (!validateHost(req)) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -119,7 +132,7 @@ async function handleRequest(req, res) {
     return;
   }
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url!, `http://${req.headers.host}`);
 
   try {
     // API routes first
@@ -143,7 +156,7 @@ async function handleRequest(req, res) {
   }
 }
 
-async function serveStatic(req, res, url) {
+async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
 
@@ -195,8 +208,8 @@ async function serveStatic(req, res, url) {
   res.end(data);
 }
 
-async function handleGetTurns(res) {
-  const turnsDir = join(sessionRef.dir, 'turns');
+async function handleGetTurns(res: ServerResponse): Promise<void> {
+  const turnsDir = join(sessionRef!.dir, 'turns');
   const turnFiles = await listTurnFiles(turnsDir);
 
   const turns = await Promise.all(
@@ -216,7 +229,7 @@ async function handleGetTurns(res) {
   );
 
   // Read current session status from session.json (authoritative source)
-  const sessionPath = join(sessionRef.dir, 'session.json');
+  const sessionPath = join(sessionRef!.dir, 'session.json');
   let sessionStatus = 'active';
   try {
     const sessionData = JSON.parse(await readFile(sessionPath, 'utf8'));
@@ -229,14 +242,14 @@ async function handleGetTurns(res) {
   res.end(JSON.stringify({
     turns,
     session_status: sessionStatus,
-    phase: controllerRef.phase || 'debate',
-    topic: sessionRef.topic,
+    phase: controllerRef!.phase || 'debate',
+    topic: sessionRef!.topic,
     turn_count: turns.length,
-    thinking: controllerRef.thinking || null,
+    thinking: controllerRef!.thinking || null,
   }));
 }
 
-async function handleInterject(req, res) {
+async function handleInterject(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // Require JSON content type (CSRF defense-in-depth)
   const contentType = req.headers['content-type'];
   if (!contentType || !contentType.includes('application/json')) {
@@ -276,25 +289,25 @@ async function handleInterject(req, res) {
     return;
   }
 
-  controllerRef.interject(content);
+  controllerRef!.interject(content);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 }
 
-async function handleEndSession(req, res) {
+async function handleEndSession(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const contentType = req.headers['content-type'];
   if (contentType && !contentType.includes('application/json')) {
     res.writeHead(415, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
     return;
   }
-  controllerRef.requestEnd();
+  controllerRef!.requestEnd();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 }
 
-function readBody(req) {
+function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => {

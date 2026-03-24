@@ -1,13 +1,51 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ChildProcess } from 'node:child_process';
 import { atomicWrite } from './util.js';
+
+// ── Type definitions ────────────────────────────────────────────────
+
+export type AgentName = 'claude' | 'codex';
+export type SessionStatus = 'active' | 'paused' | 'completed' | 'interrupted';
+export type SessionPhase = 'debate' | 'implement' | 'review';
+
+export interface Session {
+  id: string;
+  topic: string;
+  mode: string;
+  max_turns: number;
+  target_repo: string;
+  created: string;
+  session_status: SessionStatus;
+  current_turn: number;
+  next_agent: AgentName;
+  phase: SessionPhase;
+  impl_model: AgentName;
+  review_turns: number;
+  port: number | null;
+  dir: string;
+  lockPath?: string;
+  _currentChild?: ChildProcess | null;
+}
+
+export interface CreateSessionOptions {
+  topic: string;
+  mode: string;
+  maxTurns: number;
+  firstAgent: AgentName;
+  implModel: AgentName;
+  reviewTurns: number;
+  targetRepo: string;
+}
+
+// ── Session CRUD ────────────────────────────────────────────────────
 
 /**
  * Create a new session directory and session.json.
  * Acquires a lockfile — errors if one already exists.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }) {
+export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
   const lockPath = join(defDir, 'lock');
 
@@ -24,7 +62,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
   await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
   await mkdir(join(sessionDir, 'runtime'), { recursive: true });
 
-  const session = {
+  const session: Omit<Session, 'dir' | 'lockPath'> = {
     id,
     topic,
     mode,
@@ -51,18 +89,18 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
 /**
  * Load an existing session from its directory.
  */
-export async function load(sessionDir) {
+export async function load(sessionDir: string): Promise<Session> {
   const raw = await readFile(join(sessionDir, 'session.json'), 'utf8');
-  return { ...JSON.parse(raw), dir: sessionDir };
+  return { ...JSON.parse(raw), dir: sessionDir } as Session;
 }
 
 /**
  * Atomically update session.json (write temp → rename).
  */
-export async function update(sessionDir, fields) {
+export async function update(sessionDir: string, fields: Partial<Session>): Promise<Session> {
   const sessionPath = join(sessionDir, 'session.json');
   const raw = await readFile(sessionPath, 'utf8');
-  const session = { ...JSON.parse(raw), ...fields };
+  const session: Session = { ...JSON.parse(raw), ...fields };
   await atomicWriteJson(sessionPath, session);
   return session;
 }
@@ -70,14 +108,14 @@ export async function update(sessionDir, fields) {
 /**
  * Write JSON atomically with fsync via shared utility.
  */
-async function atomicWriteJson(filePath, data) {
+async function atomicWriteJson(filePath: string, data: Omit<Session, 'dir' | 'lockPath'> | Session): Promise<void> {
   await atomicWrite(filePath, JSON.stringify(data, null, 2) + '\n');
 }
 
 /**
  * Remove the lockfile.
  */
-export async function releaseLock(targetRepo) {
+export async function releaseLock(targetRepo: string): Promise<void> {
   const lockPath = join(targetRepo, '.def', 'lock');
   try {
     await unlink(lockPath);
@@ -90,7 +128,7 @@ export async function releaseLock(targetRepo) {
  * Install a SIGINT handler for clean shutdown.
  * Sets session to 'interrupted' (recoverable) and kills child processes.
  */
-export function installShutdownHandler(sessionDir, targetRepo, session = null) {
+export function installShutdownHandler(sessionDir: string, targetRepo: string, session: Session | null = null): void {
   let shuttingDown = false;
   process.on('SIGINT', async () => {
     if (shuttingDown) process.exit(1); // Double Ctrl+C — hard exit
@@ -119,11 +157,11 @@ export function installShutdownHandler(sessionDir, targetRepo, session = null) {
 /**
  * Acquire a lockfile atomically. Fails if already exists.
  */
-export async function acquireLock(lockPath) {
+export async function acquireLock(lockPath: string): Promise<void> {
   try {
     await writeFile(lockPath, String(process.pid), { flag: 'wx' });
-  } catch (err) {
-    if (err.code === 'EEXIST') {
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
       throw new Error('A session may already be running. Delete .def/lock to proceed.');
     }
     throw err;
@@ -133,20 +171,20 @@ export async function acquireLock(lockPath) {
 /**
  * List canonical turn files in a session's turns directory, sorted by turn number.
  */
-export async function listTurnFiles(turnsDir) {
+export async function listTurnFiles(turnsDir: string): Promise<string[]> {
   const { readdir } = await import('node:fs/promises');
-  let files = [];
+  let files: string[] = [];
   try {
     files = await readdir(turnsDir);
   } catch {
     return [];
   }
   return files
-    .filter((f) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
+    .filter((f: string) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
     .sort();
 }
 
-async function ensureGitignore(targetRepo) {
+async function ensureGitignore(targetRepo: string): Promise<void> {
   const gitignorePath = join(targetRepo, '.gitignore');
   let content = '';
   try {

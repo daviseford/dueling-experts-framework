@@ -2,14 +2,41 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listTurnFiles } from './session.js';
 import { validate } from './validation.js';
+import type { Session, AgentName, SessionPhase } from './session.js';
 
-const AGENT_NAMES = { claude: 'Claude', codex: 'Codex' };
+// ── Type definitions ────────────────────────────────────────────────
+
+/**
+ * Flat shape of action results as serialized to JSON files in the
+ * artifacts directory. This differs from the nested `ActionResult`
+ * returned by `executeActions` at runtime.
+ */
+interface SerializedActionResult {
+  type: string;
+  path: string | null;
+  cmd: string | null;
+  ok: boolean;
+  error: string | null;
+  output: string | null;
+}
+
+/** A turn's content plus metadata extracted during prompt assembly. */
+interface TurnContent {
+  raw: string;
+  turn: number | undefined;
+  from: string | undefined;
+  decisions: string[];
+}
+
+// ── Constants ───────────────────────────────────────────────────────
+
+const AGENT_NAMES: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex' };
 
 // Budget: ~100K tokens × 4 chars/token = 400K chars.
 // Reserve headroom for the model's response.
 const CHAR_BUDGET = 400_000;
 
-function debatePrompt(agent, topic) {
+function debatePrompt(agent: AgentName, topic: string): string {
   const other = agent === 'claude' ? 'Codex' : 'Claude';
   return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${other}).
 You are collaborating on: ${topic}
@@ -26,7 +53,7 @@ You are collaborating on: ${topic}
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 
-function implementPrompt(agent, topic, decisions) {
+function implementPrompt(agent: AgentName, topic: string, decisions: string[]): string {
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(No decisions recorded — implement based on the debate context above.)';
@@ -80,7 +107,7 @@ path: relative/path/to/dir
 - Do NOT include anything before the opening --- of the frontmatter.`;
 }
 
-function reviewPrompt(agent, topic, decisions, actionResults) {
+function reviewPrompt(agent: AgentName, topic: string, decisions: string[], actionResults: SerializedActionResult[] | null): string {
   const other = agent === 'claude' ? 'Codex' : 'Claude';
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
@@ -127,7 +154,7 @@ Review the implementation against the debate decisions. Check:
  * Uses a character budget to prevent exceeding model context windows.
  * Oldest turns are dropped first; their decisions are preserved in a summary.
  */
-export async function assemble(session) {
+export async function assemble(session: Session): Promise<string> {
   const { topic, mode, next_agent, dir, phase } = session;
 
   if (mode !== 'planning') {
@@ -141,8 +168,8 @@ export async function assemble(session) {
   const turnsDir = join(dir, 'turns');
   const turnFiles = await listTurnFiles(turnsDir);
 
-  const turnContents = await Promise.all(
-    turnFiles.map(async (file) => {
+  const turnContents: TurnContent[] = await Promise.all(
+    turnFiles.map(async (file): Promise<TurnContent> => {
       const raw = await readFile(join(turnsDir, file), 'utf8');
       const parsed = validate(raw);
       return {
@@ -158,14 +185,14 @@ export async function assemble(session) {
   const allDecisions = turnContents.flatMap(t => t.decisions);
 
   // Load action results for review phase
-  let actionResults = null;
+  let actionResults: SerializedActionResult[] | null = null;
   if ((phase || 'debate') === 'review') {
     actionResults = await loadActionResults(dir);
   }
 
   // Build fixed parts based on phase
-  const currentPhase = phase || 'debate';
-  let systemPrompt;
+  const currentPhase: SessionPhase = phase || 'debate';
+  let systemPrompt: string;
   if (currentPhase === 'implement') {
     systemPrompt = implementPrompt(next_agent, topic, allDecisions);
   } else if (currentPhase === 'review') {
@@ -181,8 +208,8 @@ export async function assemble(session) {
   let remaining = CHAR_BUDGET - fixedChars;
 
   // Include turns newest-first until budget is exhausted
-  const included = [];
-  const truncated = [];
+  const included: TurnContent[] = [];
+  const truncated: TurnContent[] = [];
 
   for (let i = turnContents.length - 1; i >= 0; i--) {
     const turnLen = turnContents[i].raw.length + 2; // + newlines
@@ -220,9 +247,9 @@ export async function assemble(session) {
 /**
  * Load action results from the artifacts directory.
  */
-async function loadActionResults(sessionDir) {
+async function loadActionResults(sessionDir: string): Promise<SerializedActionResult[] | null> {
   const artifactsDir = join(sessionDir, 'artifacts');
-  let files;
+  let files: string[];
   try {
     files = await readdir(artifactsDir);
   } catch {
@@ -238,13 +265,13 @@ async function loadActionResults(sessionDir) {
   // Return the most recent action results
   const latest = resultFiles[resultFiles.length - 1];
   const raw = await readFile(join(artifactsDir, latest), 'utf8');
-  return JSON.parse(raw);
+  return JSON.parse(raw) as SerializedActionResult[];
 }
 
 /**
  * Build a summary notice for turns that were truncated due to context budget.
  */
-function buildTruncationNotice(truncated, decisions) {
+function buildTruncationNotice(truncated: TurnContent[], decisions: string[]): string {
   const first = truncated[0].turn ?? '?';
   const last = truncated[truncated.length - 1].turn ?? '?';
   const lines = [

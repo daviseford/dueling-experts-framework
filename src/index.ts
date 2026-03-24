@@ -1,13 +1,24 @@
 import { resolve } from 'node:path';
 import { create, releaseLock, installShutdownHandler } from './session.js';
+import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
+
+interface ParsedArgs {
+  topic?: string;
+  mode?: string;
+  maxTurns?: number;
+  first?: string;
+  implModel?: string;
+  reviewTurns?: number;
+  resume?: string;
+}
 
 const VALID_MODES = ['planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
 // Parse and validate CLI args
-const args = process.argv.slice(2);
-const opts = parseArgs(args);
+const args: string[] = process.argv.slice(2);
+const opts: ParsedArgs = parseArgs(args);
 
 if (!opts.topic && !opts.resume) {
   console.error('Usage: def --topic "Your topic" [--mode planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6]');
@@ -71,19 +82,19 @@ try {
 }
 
 // Create new session
-let session;
+let session: Session;
 try {
   session = await create({
-    topic: opts.topic,
+    topic: opts.topic!,
     mode: opts.mode || 'planning',
     maxTurns: opts.maxTurns || 20,
-    firstAgent: opts.first || 'claude',
-    implModel: opts.implModel || 'claude',
+    firstAgent: (opts.first || 'claude') as AgentName,
+    implModel: (opts.implModel || 'claude') as AgentName,
     reviewTurns: opts.reviewTurns || 6,
     targetRepo,
   });
-} catch (err) {
-  console.error(`Error: ${err.message}`);
+} catch (err: unknown) {
+  console.error(`Error: ${(err as Error).message}`);
   process.exit(1);
 }
 
@@ -100,7 +111,7 @@ console.log('');
 installShutdownHandler(session.dir, targetRepo, session);
 
 // Start server
-let server = null;
+let server: typeof import('./server.js') | null = null;
 try {
   server = await import('./server.js');
 } catch {
@@ -110,8 +121,8 @@ try {
 // Run the turn loop
 try {
   await run(session, { server });
-} catch (err) {
-  console.error(`Orchestrator error: ${err.message}`);
+} catch (err: unknown) {
+  console.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
   await releaseLock(targetRepo);
@@ -123,8 +134,8 @@ try {
   process.exit(process.exitCode || 0);
 }
 
-function parseArgs(argv) {
-  const result = {};
+function parseArgs(argv: string[]): ParsedArgs {
+  const result: ParsedArgs = {};
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--topic':

@@ -4,7 +4,7 @@ import { open, rename } from 'node:fs/promises';
  * Write a file atomically: write to .tmp, fsync, then rename.
  * Ensures data is durable on disk before the final path is visible.
  */
-export async function atomicWrite(finalPath, content) {
+export async function atomicWrite(finalPath: string, content: string): Promise<void> {
   const tmpPath = finalPath + '.tmp';
   const fh = await open(tmpPath, 'w');
   try {
@@ -20,11 +20,11 @@ export async function atomicWrite(finalPath, content) {
  * Check if a process with the given PID is still alive.
  * Cross-platform: works on both Unix and Windows.
  */
-export function isProcessAlive(pid) {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (e) {
-    return e.code === 'EPERM'; // alive but no permission to signal
+  } catch (e: unknown) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'; // alive but no permission to signal
   }
 }

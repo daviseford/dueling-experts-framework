@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, mkdir, realpath } from 'node:fs/promises';
 import { dirname, resolve, relative, isAbsolute } from 'node:path';
 import { atomicWrite } from './util.js';
@@ -7,14 +7,30 @@ const SHELL_TIMEOUT_MS = 60_000;
 const SHELL_MAX_OUTPUT = 5 * 1024 * 1024;
 const MAX_PATH_LENGTH = 500;
 
+export interface Action {
+  type: string;
+  path?: string;
+  cmd?: string;
+  cwd?: string;
+  search?: string;
+  body?: string;
+}
+
+export interface ActionResult {
+  action: Action;
+  ok: boolean;
+  error?: string;
+  output?: string;
+}
+
 /**
  * Parse def-action blocks from agent turn content.
  * Returns array of action objects: { type, path?, cmd?, cwd?, search?, body? }
  */
-export function parseActions(content) {
-  const actions = [];
+export function parseActions(content: string): Action[] {
+  const actions: Action[] = [];
   const regex = /```def-action\n([\s\S]*?)```/g;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = regex.exec(content)) !== null) {
     const block = match[1];
@@ -25,10 +41,11 @@ export function parseActions(content) {
   return actions;
 }
 
-function parseActionBlock(block) {
+function parseActionBlock(block: string): Action | null {
   // Split on first "---\n" to separate header from body
   const dividerIdx = block.indexOf('---\n');
-  let headerStr, body;
+  let headerStr: string;
+  let body: string | null;
 
   if (dividerIdx !== -1) {
     headerStr = block.slice(0, dividerIdx);
@@ -41,7 +58,7 @@ function parseActionBlock(block) {
   }
 
   // Parse YAML-like key: value pairs from header
-  const header = {};
+  const header: Record<string, string> = {};
   for (const line of headerStr.split('\n')) {
     const colonIdx = line.indexOf(':');
     if (colonIdx === -1) continue;
@@ -52,7 +69,7 @@ function parseActionBlock(block) {
 
   if (!header.type) return null;
 
-  const action = { type: header.type };
+  const action: Action = { type: header.type };
   if (header.path) action.path = header.path;
   if (header.cmd) action.cmd = header.cmd;
   if (header.cwd) action.cwd = header.cwd;
@@ -67,7 +84,7 @@ function parseActionBlock(block) {
  * Checks both lexical resolution and realpath (symlink) resolution.
  * Returns the resolved absolute path or throws.
  */
-async function safePath(targetRepo, filePath) {
+async function safePath(targetRepo: string, filePath: string): Promise<string> {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Path is required and must be a non-empty string');
   }
@@ -100,8 +117,8 @@ async function safePath(targetRepo, filePath) {
         throw new Error(`Path traversal via symlink rejected: ${filePath}`);
       }
       break;
-    } catch (err) {
-      if (err.code === 'ENOENT') {
+    } catch (err: unknown) {
+      if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
         // Path doesn't exist yet — check parent
         check = dirname(check);
         continue;
@@ -117,8 +134,8 @@ async function safePath(targetRepo, filePath) {
  * Execute a list of parsed actions against a target repo.
  * Returns array of { action, ok, error?, output? }.
  */
-export async function executeActions(actions, targetRepo) {
-  const results = [];
+export async function executeActions(actions: Action[], targetRepo: string): Promise<ActionResult[]> {
+  const results: ActionResult[] = [];
 
   for (const action of actions) {
     try {
@@ -173,19 +190,25 @@ export async function executeActions(actions, targetRepo) {
         default:
           results.push({ action, ok: false, error: `Unknown action type: ${action.type}` });
       }
-    } catch (err) {
-      results.push({ action, ok: false, error: err.message });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({ action, ok: false, error: message });
     }
   }
 
   return results;
 }
 
-function runShell(cmd, cwd) {
-  return new Promise((resolve, reject) => {
+interface FinishArg {
+  error?: Error;
+  output?: string;
+}
+
+function runShell(cmd: string, cwd: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     let settled = false;
 
-    const child = spawn(cmd, {
+    const child: ChildProcess = spawn(cmd, {
       cwd,
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -195,7 +218,7 @@ function runShell(cmd, cwd) {
     let stderr = '';
     let killedForOutput = false;
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
       if (stdout.length > SHELL_MAX_OUTPUT) {
         killedForOutput = true;
@@ -203,31 +226,31 @@ function runShell(cmd, cwd) {
       }
     });
 
-    child.stderr.on('data', (chunk) => {
+    child.stderr!.on('data', (chunk: Buffer) => {
       if (stderr.length < SHELL_MAX_OUTPUT) {
         stderr += chunk.toString();
       }
     });
 
-    const timer = setTimeout(() => {
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill('SIGTERM');
       reject(new Error(`Shell command timed out after ${SHELL_TIMEOUT_MS}ms: ${cmd}`));
     }, SHELL_TIMEOUT_MS);
 
-    function finish(result) {
+    function finish(result: FinishArg): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (result.error) {
         reject(result.error);
       } else {
-        resolve(result.output);
+        resolve(result.output!);
       }
     }
 
-    child.on('close', (exitCode) => {
+    child.on('close', (exitCode: number | null) => {
       if (killedForOutput) {
         finish({ error: new Error(`Shell command output exceeded ${SHELL_MAX_OUTPUT} bytes: ${cmd}`) });
       } else if (exitCode !== 0) {
@@ -237,7 +260,7 @@ function runShell(cmd, cwd) {
       }
     });
 
-    child.on('error', (err) => {
+    child.on('error', (err: Error) => {
       finish({ error: err });
     });
   });
