@@ -3,3 +3,4 @@ node_modules/
 .def/
 src/ui/dist/
 src/ui/node_modules/
+/dist
