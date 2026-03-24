@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronsUpDown } from "lucide-react"
+import { ChevronRight, ChevronsUpDown, Clock } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 const LABEL_MAP: Record<string, string> = {
@@ -128,18 +128,19 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
                 {turn.phase}
               </Badge>
             )}
+            {turn.duration_ms != null && (
+              <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70">
+                <Clock className="h-3 w-3" />
+                {formatDuration(turn.duration_ms)}
+              </span>
+            )}
             {!open && (
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
                 {truncateContent(turn.content)}
               </span>
             )}
             {open && <span className="flex-1" />}
-            {turn.duration_ms != null && (
-              <span className="shrink-0 font-mono text-[10px] text-muted-foreground/40">
-                {formatDuration(turn.duration_ms)}
-              </span>
-            )}
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground/50">
               {formatTimestamp(turn.timestamp)}
             </span>
           </button>
