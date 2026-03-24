@@ -19,6 +19,12 @@ export default function App() {
     statusText,
     sessionTimer,
     phase,
+    branchName,
+    prUrl,
+    prNumber,
+    turnsPath,
+    artifactsPath,
+    artifactNames,
   } = usePolling()
 
   const isCompleted = sessionStatus === "completed"
@@ -47,6 +53,13 @@ export default function App() {
         thinking={thinking}
         thinkingElapsed={thinkingElapsed}
         phase={phase}
+        sessionStatus={sessionStatus}
+        branchName={branchName}
+        prUrl={prUrl}
+        prNumber={prNumber}
+        turnsPath={turnsPath}
+        artifactsPath={artifactsPath}
+        artifactNames={artifactNames}
       />
       <InterjectionInput disabled={isCompleted} />
       <StatusBar

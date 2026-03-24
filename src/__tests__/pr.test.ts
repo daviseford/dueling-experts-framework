@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { hasBranchDelta } from '../pr.js';
+import { hasBranchDelta, parseDecisionBullets, parseDiffstatSummary, buildPrBody } from '../pr.js';
 import { createWorktree, removeWorktree, commitChanges } from '../worktree.js';
 import { parseArgs } from '../cli.js';
 
@@ -178,5 +178,145 @@ describe('CLI --no-pr parsing', () => {
     const result = parseArgs(['add', 'dark', 'mode', '--no-pr']);
     assert.equal(result.noPr, true);
     assert.equal(result.topic, 'add dark mode');
+  });
+});
+
+describe('parseDecisionBullets', () => {
+  it('extracts decisions from agent-prefixed numbered lines', () => {
+    const raw = [
+      '1. **[claude]** Add session metadata to API',
+      '2. **[codex]** Create SessionSummary component',
+      '3. **[claude]** Rework PR body template',
+    ].join('\n');
+
+    const bullets = parseDecisionBullets(raw);
+    assert.deepEqual(bullets, [
+      'Add session metadata to API',
+      'Create SessionSummary component',
+      'Rework PR body template',
+    ]);
+  });
+
+  it('extracts plain numbered lines without agent prefix', () => {
+    const raw = '1. First decision\n2. Second decision\n';
+    const bullets = parseDecisionBullets(raw);
+    assert.deepEqual(bullets, ['First decision', 'Second decision']);
+  });
+
+  it('extracts dash-prefixed lines', () => {
+    const raw = '- Alpha\n- Beta\n';
+    const bullets = parseDecisionBullets(raw);
+    assert.deepEqual(bullets, ['Alpha', 'Beta']);
+  });
+
+  it('skips header lines and blank lines', () => {
+    const raw = '# Decisions\n\n1. **[claude]** Only real decision\n\n';
+    const bullets = parseDecisionBullets(raw);
+    assert.deepEqual(bullets, ['Only real decision']);
+  });
+
+  it('returns empty array for empty input', () => {
+    assert.deepEqual(parseDecisionBullets(''), []);
+    assert.deepEqual(parseDecisionBullets('  \n  \n'), []);
+  });
+});
+
+describe('parseDiffstatSummary', () => {
+  it('extracts summary line from typical diffstat', () => {
+    const diffstat = [
+      ' src/server.ts  | 20 ++++++++---',
+      ' src/pr.ts      | 45 +++++++++++++++----',
+      ' 2 files changed, 50 insertions(+), 15 deletions(-)',
+    ].join('\n');
+
+    assert.equal(
+      parseDiffstatSummary(diffstat),
+      '2 files changed, 50 insertions(+), 15 deletions(-)'
+    );
+  });
+
+  it('returns empty string for empty input', () => {
+    assert.equal(parseDiffstatSummary(''), '');
+  });
+
+  it('returns empty string when last line is not a summary', () => {
+    assert.equal(parseDiffstatSummary('some random text'), '');
+  });
+});
+
+describe('buildPrBody format', () => {
+  let sessionDir: string;
+
+  before(async () => {
+    sessionDir = join(tmpdir(), `def-pr-body-${randomUUID()}`);
+    await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
+  });
+
+  after(async () => {
+    await rm(sessionDir, { recursive: true, force: true });
+  });
+
+  it('includes Summary section with topic', async () => {
+    const body = await buildPrBody(sessionDir, 'add dark mode', 'abc12345', '/tmp/fake', null);
+    assert.ok(body.includes('## Summary'));
+    assert.ok(body.includes('**Topic:** add dark mode'));
+  });
+
+  it('includes Key Decisions from decisions.md', async () => {
+    await writeFile(
+      join(sessionDir, 'artifacts', 'decisions.md'),
+      '1. **[claude]** Add dark mode toggle\n2. **[codex]** Use CSS variables\n'
+    );
+
+    const body = await buildPrBody(sessionDir, 'dark mode', 'abc12345', '/tmp/fake', null);
+    assert.ok(body.includes('## Key Decisions'));
+    assert.ok(body.includes('- Add dark mode toggle'));
+    assert.ok(body.includes('- Use CSS variables'));
+    // Key Decisions section bullets (before the collapsible details) should not have agent prefixes
+    const keyDecisionsSection = body.split('## Key Decisions')[1]!.split('<details>')[0]!;
+    assert.ok(!keyDecisionsSection.includes('**[claude]**'));
+    assert.ok(!keyDecisionsSection.includes('**[codex]**'));
+  });
+
+  it('includes collapsible full decisions log', async () => {
+    await writeFile(
+      join(sessionDir, 'artifacts', 'decisions.md'),
+      '1. **[claude]** Decision A\n'
+    );
+
+    const body = await buildPrBody(sessionDir, 'test', 'abc12345', '/tmp/fake', null);
+    assert.ok(body.includes('Full decisions log'));
+    assert.ok(body.includes('1. **[claude]** Decision A'));
+  });
+
+  it('handles missing decisions gracefully', async () => {
+    const emptyDir = join(tmpdir(), `def-pr-body-empty-${randomUUID()}`);
+    await mkdir(join(emptyDir, 'artifacts'), { recursive: true });
+
+    const body = await buildPrBody(emptyDir, 'test', 'abc12345', '/tmp/fake', null);
+    assert.ok(!body.includes('## Key Decisions'));
+    assert.ok(body.includes('## Summary'));
+
+    await rm(emptyDir, { recursive: true, force: true });
+  });
+
+  it('preserves raw decisions log even when bullet extraction yields no bullets', async () => {
+    // Write decisions content that won't match the bullet extractor
+    await writeFile(
+      join(sessionDir, 'artifacts', 'decisions.md'),
+      '# Decisions\n\nSome freeform discussion that has no numbered lines or bullets.\nAnother paragraph of context.\n'
+    );
+
+    const body = await buildPrBody(sessionDir, 'test', 'abc12345', '/tmp/fake', null);
+    // Should NOT have Key Decisions section (no bullets extracted)
+    assert.ok(!body.includes('## Key Decisions'));
+    // But SHOULD still include the raw decisions log
+    assert.ok(body.includes('Full decisions log'), 'raw decisions log should be preserved');
+    assert.ok(body.includes('Some freeform discussion'), 'raw content should appear in the log');
+  });
+
+  it('includes session ID in the header', async () => {
+    const body = await buildPrBody(sessionDir, 'test', 'abcdefgh-1234', '/tmp/fake', null);
+    assert.ok(body.includes('`abcdefgh`'));
   });
 });

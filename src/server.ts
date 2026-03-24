@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, dirname, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
@@ -231,25 +231,65 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
     })
   );
 
-  // Read current session status from session.json (authoritative source)
+  // Read session.json — authoritative source for status and completion metadata
   const sessionPath = join(sessionRef!.dir, 'session.json');
-  let sessionStatus = 'active';
-  try {
-    const sessionData = JSON.parse(await readFile(sessionPath, 'utf8'));
-    sessionStatus = sessionData.session_status;
-  } catch {
-    // Fall back to active
-  }
+  const metadata = await getSessionMetadata(sessionPath);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
-    session_status: sessionStatus,
-    phase: controllerRef!.phase || 'plan',
+    session_status: metadata.sessionStatus,
+    phase: metadata.phase ?? controllerRef?.phase ?? 'plan',
     topic: sessionRef!.topic,
     turn_count: turns.length,
-    thinking: controllerRef!.thinking || null,
+    thinking: controllerRef?.thinking ?? null,
+    branch_name: metadata.branchName,
+    pr_url: metadata.prUrl,
+    pr_number: metadata.prNumber,
+    turns_path: join(sessionRef!.dir, 'turns'),
+    artifacts_path: join(sessionRef!.dir, 'artifacts'),
+    artifact_names: metadata.artifactNames,
   }));
+}
+
+interface SessionMetadata {
+  sessionStatus: string;
+  phase: string | null;
+  branchName: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  artifactNames: string[];
+}
+
+export async function getSessionMetadata(sessionPath: string): Promise<SessionMetadata> {
+  let sessionStatus = 'active';
+  let phase: string | null = null;
+  let branchName: string | null = null;
+  let prUrl: string | null = null;
+  let prNumber: number | null = null;
+
+  try {
+    const sessionData = JSON.parse(await readFile(sessionPath, 'utf8'));
+    sessionStatus = sessionData.session_status ?? 'active';
+    phase = sessionData.phase ?? null;
+    branchName = sessionData.branch_name ?? null;
+    prUrl = sessionData.pr_url ?? null;
+    prNumber = sessionData.pr_number ?? null;
+  } catch {
+    // Fall back to defaults
+  }
+
+  // Read artifact filenames from the artifacts directory next to session.json
+  let artifactNames: string[] = [];
+  try {
+    const artifactsPath = join(dirname(sessionPath), 'artifacts');
+    const entries = await readdir(artifactsPath);
+    artifactNames = entries.filter(e => !e.startsWith('.'));
+  } catch {
+    // No artifacts directory — fine
+  }
+
+  return { sessionStatus, phase, branchName, prUrl, prNumber, artifactNames };
 }
 
 async function handleInterject(req: IncomingMessage, res: ServerResponse): Promise<void> {
