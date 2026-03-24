@@ -1,4 +1,4 @@
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
@@ -127,6 +127,7 @@ export async function run(session, { server } = {}) {
     }
 
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
+    await savePromptForTurn(session, canonicalId);
     console.log(`[Turn ${turnCount}] [${phase}] Written: ${canonicalId} (status: ${canonicalData.status})`);
 
     const oppositeAgent = nextAgent === 'claude' ? 'codex' : 'claude';
@@ -407,6 +408,17 @@ async function writeCanonicalTurn(session, id, data, content) {
   // the content body, allowing agents to inject frontmatter via embedded --- blocks.
   const frontmatter = '---\n' + yaml.dump(data, { lineWidth: -1 }).trim() + '\n---\n';
   await atomicWrite(finalPath, frontmatter + content + '\n');
+}
+
+async function savePromptForTurn(session, canonicalId) {
+  const promptPath = join(session.dir, 'runtime', 'prompt.md');
+  const turnsDir = join(session.dir, 'turns');
+  try {
+    const prompt = await readFile(promptPath, 'utf8');
+    await writeFile(join(turnsDir, `prompt-${canonicalId.replace('turn-', '')}.md`), prompt, 'utf8');
+  } catch {
+    // prompt.md may not exist (e.g., error recovery) — skip silently
+  }
 }
 
 async function writeErrorTurn(session, turnCount, agent, reason, rawOutput) {
