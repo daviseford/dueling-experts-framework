@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { slugifyTopic, createWorktree, removeWorktree, captureDiff } from '../worktree.js';
+import { slugifyTopic, createWorktree, removeWorktree, captureDiff, commitChanges } from '../worktree.js';
 
 describe('slugifyTopic', () => {
   it('lowercases and replaces spaces with hyphens', () => {
@@ -128,6 +128,35 @@ describe('createWorktree / removeWorktree', () => {
 
     const diff = await captureDiff(worktreePath);
     assert.equal(diff, '', 'diff should be empty when no changes made');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('commitChanges persists changes on the branch across worktree removal', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, branchName } = await createWorktree(testDir, sessionId, 'commit test');
+
+    // Make a change
+    await writeFile(join(worktreePath, 'committed-file.txt'), 'persisted\n');
+
+    // Commit it
+    const committed = await commitChanges(worktreePath, 'test commit');
+    assert.ok(committed, 'commitChanges should return true when changes exist');
+
+    // Remove worktree
+    await removeWorktree(testDir, worktreePath);
+
+    // Verify the commit exists on the branch
+    const log = execFileSync('git', ['log', '--oneline', branchName], { cwd: testDir, encoding: 'utf8' });
+    assert.ok(log.includes('test commit'), 'branch should have the commit');
+  });
+
+  it('commitChanges returns false when nothing to commit', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'empty commit test');
+
+    const committed = await commitChanges(worktreePath, 'nothing');
+    assert.equal(committed, false, 'commitChanges should return false with no changes');
 
     await removeWorktree(testDir, worktreePath);
   });

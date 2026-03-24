@@ -6,8 +6,8 @@ import type { TurnData, TurnStatus } from './validation.js';
 import { invoke } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
-import { atomicWrite } from './util.js';
-import { createWorktree, removeWorktree, captureDiff } from './worktree.js';
+import { atomicWrite, killChildProcess } from './util.js';
+import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
       // Kill the running agent so the loop unblocks immediately
       const child = session._currentChild;
       if (child && !child.killed) {
-        child.kill('SIGTERM');
+        killChildProcess(child);
       }
     },
   };
@@ -339,6 +339,12 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
         console.log(`[Turn ${turnCount}] Changes detected. Storing diff artifact.`);
         await writeDiffArtifact(session, turnCount, diff);
 
+        // Commit changes to the branch so they survive worktree removal
+        const committed = await commitChanges(session.target_repo, `def: implement turn ${turnCount}`);
+        if (committed) {
+          console.log(`[Turn ${turnCount}] Changes committed to branch.`);
+        }
+
         // Transition to review
         console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
         phase = 'review';
@@ -407,6 +413,11 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
 
   // Generate artifacts
   await generateDecisions(session);
+
+  // Commit any remaining uncommitted changes before worktree removal (safety net).
+  if (session.worktree_path) {
+    await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
+  }
 
   // Clean up worktree (branch persists for push/PR)
   // Also handled in shutdown handler for SIGINT — removeWorktree is idempotent.

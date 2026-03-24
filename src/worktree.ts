@@ -95,6 +95,23 @@ export async function captureDiff(worktreePath: string): Promise<string> {
   }
 }
 
+/**
+ * Commit all staged and unstaged changes in the worktree.
+ * Call after captureDiff to persist changes on the branch before worktree removal.
+ * No-ops if there is nothing to commit.
+ */
+export async function commitChanges(worktreePath: string, message: string): Promise<boolean> {
+  await git(worktreePath, ['add', '-A']);
+  try {
+    const status = await git(worktreePath, ['status', '--porcelain']);
+    if (!status) return false; // nothing to commit
+    await git(worktreePath, ['commit', '-m', message]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Internal helpers ────────────────────────────────────────────────
 
 function git(cwd: string, args: string[]): Promise<string> {
