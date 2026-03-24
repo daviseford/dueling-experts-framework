@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { useSessionData } from "@/hooks/use-session-data"
 import { endSession } from "@/lib/api"
@@ -27,6 +27,35 @@ export default function App() {
   } = useSessionData()
 
   const isCompleted = sessionStatus === "completed"
+
+  // Per-turn open state, keyed by turn id. New turns default to open.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
+  const allCollapsed = turns.length > 0 && turns.every((t) => openMap[t.id] === false)
+
+  useEffect(() => {
+    setOpenMap((prev) => {
+      const next = { ...prev }
+      for (const t of turns) {
+        if (!(t.id in next)) next[t.id] = true
+      }
+      return next
+    })
+  }, [turns])
+
+  const handleTurnOpenChange = useCallback((id: string, open: boolean) => {
+    setOpenMap((prev) => ({ ...prev, [id]: open }))
+  }, [])
+
+  const handleToggleAll = useCallback(() => {
+    setOpenMap((prev) => {
+      const next = { ...prev }
+      const newValue = allCollapsed
+      for (const t of turns) {
+        next[t.id] = newValue
+      }
+      return next
+    })
+  }, [turns, allCollapsed])
 
   useEffect(() => {
     if (topic) {
@@ -58,6 +87,8 @@ export default function App() {
         prNumber={prNumber}
         turnsPath={turnsPath}
         artifactsPath={artifactsPath}
+        openMap={openMap}
+        onTurnOpenChange={handleTurnOpenChange}
       />
       <InterjectionInput disabled={isCompleted} />
       <StatusBar
@@ -65,6 +96,8 @@ export default function App() {
         turnCount={turnCount}
         sessionStatus={sessionStatus}
         sessionTimer={sessionTimer}
+        allCollapsed={allCollapsed}
+        onToggleAll={handleToggleAll}
       />
       <Toaster position="bottom-right" />
     </div>
