@@ -83,9 +83,10 @@ describe('recovery finalization', () => {
   });
 
   afterEach(async () => {
-    await rm(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
-    await rm(originalRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
-    await rm(worktreePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    // Best-effort cleanup — Windows CI may hold file locks after child process exit
+    for (const dir of [tmpDir, originalRepo, worktreePath]) {
+      try { await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch {}
+    }
   });
 
   it('recovery-approve runs shared finalization: decisions, trace, target_repo restoration', async () => {
@@ -298,9 +299,9 @@ describe('recovery finalization', () => {
     assert.equal(attemptsB[0].attempt_index, 0,
       'attempt counter leaked across sessions — first attempt should be index 0');
 
-    // Cleanup
-    await rm(tmpDir2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
-    await rm(originalRepo2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    // Best-effort cleanup — Windows CI may hold file locks
+    try { await rm(tmpDir2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch {}
+    try { await rm(originalRepo2, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch {}
   });
 
   it('recovery-fix-under-limit enters the main loop and finalizes', { timeout: 30_000 }, async () => {
