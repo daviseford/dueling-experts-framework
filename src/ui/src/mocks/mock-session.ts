@@ -222,7 +222,7 @@ Moving to implementation.`,
     timestamp: ts(28),
     duration_ms: 15_000,
     decisions: [],
-    content: `Agent execution failed: claude implementation timed out after 300s.
+    content: `Agent execution failed: claude implementation timed out after 900s.
 
 Error: ETIMEOUT — The Claude agent did not produce output within the allowed window.
 Retry 1/2 exhausted. The orchestrator will retry with a fresh context.
@@ -334,6 +334,7 @@ app.use(
     status: "complete",
     timestamp: ts(45),
     duration_ms: 85_000,
+    verdict: "fix",
     decisions: [],
     content: `## Review — verdict: fix
 
