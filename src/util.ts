@@ -19,10 +19,6 @@ export async function atomicWrite(finalPath: string, content: string): Promise<v
 }
 
 /**
- * Check if a process with the given PID is still alive.
- * Cross-platform: works on both Unix and Windows.
- */
-/**
  * Kill a child process tree cross-platform.
  * On Windows, uses taskkill /T /F to kill the entire process tree
  * (necessary because shell:true spawns a cmd.exe wrapper).
@@ -36,6 +32,10 @@ export function killChildProcess(child: ChildProcess, signal: NodeJS.Signals = '
   }
 }
 
+/**
+ * Check if a process with the given PID is still alive.
+ * Cross-platform: works on both Unix and Windows.
+ */
 export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
