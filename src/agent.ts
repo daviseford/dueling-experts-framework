@@ -20,8 +20,8 @@ export interface InvokeResult {
   error?: string;
 }
 
-const TIMEOUT_MS = 180_000; // 180 seconds for debate/review
-const IMPLEMENT_TIMEOUT_MS = 600_000; // 600 seconds (10 min) for implement — agents produce full file contents
+const TIMEOUT_MS = 300_000; // 5 minutes for debate/review
+const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
 const AGENTS: Record<AgentName, AgentConfig> = {

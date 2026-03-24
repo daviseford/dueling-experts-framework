@@ -116,6 +116,11 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     },
     requestEnd(): void {
       endRequested = true;
+      // Kill the running agent so the loop unblocks immediately
+      const child = session._currentChild;
+      if (child && !child.killed) {
+        child.kill('SIGTERM');
+      }
     },
   };
 
@@ -144,6 +149,11 @@ export async function run(session: Session, { server }: RunOptions = {}): Promis
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
+
+    if (endRequested) {
+      console.log(`[Turn ${turnCount}] End requested. Stopping.`);
+      break;
+    }
 
     if (!result.ok) {
       await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput);
@@ -501,6 +511,7 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     from: agent,
     timestamp: new Date().toISOString(),
     status: 'error',
+    phase: session.phase || 'debate',
   };
   const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${rawOutput || '(empty)'}\n\`\`\``;
   await writeCanonicalTurn(session, id, data, body);
@@ -515,6 +526,7 @@ async function writeHumanTurn(session: Session, turnCount: number, content: stri
     from: 'human',
     timestamp: new Date().toISOString(),
     status: 'complete',
+    phase: session.phase || 'debate',
   };
   await writeCanonicalTurn(session, id, data, content);
 }

@@ -13,7 +13,7 @@ import type { Turn } from "@/lib/types"
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
   codex: "CODEX",
-  human: "DAVIS",
+  human: "USER",
   system: "SYSTEM",
 }
 
@@ -116,15 +116,17 @@ export function TurnCard({ turn, defaultOpen = true }: TurnCardProps) {
             <span className="font-mono text-[11px] text-muted-foreground">
               #{turn.turn}
             </span>
-            <Badge
-              variant="outline"
-              className={cn(
-                "font-mono text-[9px] font-normal tracking-wide",
-                PHASE_STYLES[turn.phase] || "bg-muted text-muted-foreground"
-              )}
-            >
-              {turn.phase}
-            </Badge>
+            {turn.from !== "human" && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "font-mono text-[9px] font-normal tracking-wide",
+                  PHASE_STYLES[turn.phase] || "bg-muted text-muted-foreground"
+                )}
+              >
+                {turn.phase}
+              </Badge>
+            )}
             {!open && (
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/40">
                 {truncateContent(turn.content)}

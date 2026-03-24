@@ -105,7 +105,7 @@ export async function update(sessionDir: string, fields: Partial<Session>): Prom
 /**
  * Write JSON atomically with fsync via shared utility.
  */
-async function atomicWriteJson(filePath: string, data: Record<string, unknown>): Promise<void> {
+async function atomicWriteJson(filePath: string, data: object): Promise<void> {
   await atomicWrite(filePath, JSON.stringify(data, null, 2) + '\n');
 }
 
