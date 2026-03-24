@@ -541,7 +541,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
   }
 
-  // Push branch and create draft PR from worktree (before cleanup).
+  // Push branch and create PR from worktree (before cleanup).
   // Worktree cleanup is in a finally-style path so it always happens.
   try {
     if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
@@ -560,7 +560,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           session.pr_url = prResult.url;
           session.pr_number = prResult.number;
           tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
-          console.log(`Draft PR created: ${prResult.url}`);
+          console.log(`PR created: ${prResult.url}`);
         }
       } else {
         console.log('No changes on branch — skipping PR creation.');
