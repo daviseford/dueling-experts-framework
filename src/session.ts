@@ -3,7 +3,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite } from './util.js';
-import { removeWorktree } from './worktree.js';
+import { removeWorktree, commitChanges } from './worktree.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -137,6 +137,14 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
         } else {
           child.kill('SIGTERM');
         }
+      }
+
+      // Commit any uncommitted changes before worktree removal
+      if (session?.worktree_path) {
+        try {
+          await commitChanges(session.worktree_path, 'def: interrupted changes');
+          console.log('  Uncommitted changes saved to branch.');
+        } catch { /* best effort */ }
       }
 
       // Clean up worktree (branch is preserved)
