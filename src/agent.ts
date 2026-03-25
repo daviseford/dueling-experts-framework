@@ -8,11 +8,13 @@ import type { Session, AgentName } from './session.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
+type Args = string[] | ((outputPath: string) => string[]);
+
 interface AgentConfig {
   cmd: string;
-  args: string[] | ((outputPath: string) => string[]);
-  implementArgs?: string[];
-  reviewArgs?: string[];
+  args: Args;
+  implementArgs?: Args;
+  reviewArgs?: Args;
   captureStdout: boolean;
 }
 
@@ -61,6 +63,15 @@ const AGENTS: Record<AgentName, AgentConfig> = {
     args: (outputPath: string) => [
       'exec',
       '--full-auto',
+      '--ephemeral',
+      '--skip-git-repo-check',
+      '-o', outputPath,
+    ],
+    // In plan/review phases: read-only sandbox, no file modifications.
+    reviewArgs: (outputPath: string) => [
+      'exec',
+      '--sandbox', 'read-only',
+      '--ephemeral',
       '--skip-git-repo-check',
       '-o', outputPath,
     ],
@@ -91,15 +102,14 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
   await writeFile(promptPath, prompt, 'utf8');
 
   // Build args — select phase-specific args when available
+  const resolve = (a: Args): string[] => typeof a === 'function' ? a(outputPath) : a;
   let args: string[];
   if (session.phase === 'implement' && config.implementArgs) {
-    args = config.implementArgs;
+    args = resolve(config.implementArgs);
   } else if ((session.phase === 'plan' || session.phase === 'review') && config.reviewArgs) {
-    args = config.reviewArgs;
-  } else if (typeof config.args === 'function') {
-    args = config.args(outputPath);
+    args = resolve(config.reviewArgs);
   } else {
-    args = config.args;
+    args = resolve(config.args);
   }
 
   // Append --model flag when using the fast tier
