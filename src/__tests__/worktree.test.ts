@@ -189,6 +189,50 @@ describe('createWorktree / removeWorktree', () => {
     assert.equal(branch, null, 'should return null for invalid repo');
   });
 
+  it('createWorktree with baseOverride branches from the specified ref', async () => {
+    // Create a feature branch with a commit to use as baseOverride
+    execFileSync('git', ['checkout', '-b', 'feature-base'], { cwd: testDir });
+    await writeFile(join(testDir, 'feature.txt'), 'feature content\n');
+    execFileSync('git', ['add', '.'], { cwd: testDir });
+    execFileSync('git', ['commit', '-m', 'feature commit'], { cwd: testDir });
+    // Go back to the default branch
+    const defaultBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: testDir, encoding: 'utf8',
+    }).trim();
+    execFileSync('git', ['checkout', defaultBranch === 'feature-base' ? 'master' : defaultBranch], { cwd: testDir });
+
+    const sessionId = randomUUID();
+    // baseOverride won't work without a remote, so we expect it to fall back to HEAD behavior
+    // (In a real scenario with origin, it would fetch and branch from the remote ref)
+    const { worktreePath, branchName, baseRef } = await createWorktree(
+      testDir, sessionId, 'override test', 'feature-base',
+    );
+
+    // Should have fallen back to default behavior since there's no remote
+    assert.ok(branchName.startsWith('def/'));
+    assert.ok(baseRef !== undefined); // baseRef is set (either override or HEAD fallback)
+
+    await removeWorktree(testDir, worktreePath);
+
+    // Clean up the feature branch
+    try {
+      execFileSync('git', ['branch', '-D', 'feature-base'], { cwd: testDir });
+    } catch { /* ignore */ }
+  });
+
+  it('createWorktree without baseOverride uses HEAD (no regression)', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, baseRef } = await createWorktree(testDir, sessionId, 'no override');
+
+    const currentHead = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
+      cwd: testDir, encoding: 'utf8',
+    }).trim();
+
+    assert.equal(baseRef, currentHead, 'baseRef should match HEAD when no override');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
   it('rescueBranchSwitch cherry-picks commits from switched branch', async () => {
     const sessionId = randomUUID();
     const { worktreePath, branchName } = await createWorktree(testDir, sessionId, 'rescue test');

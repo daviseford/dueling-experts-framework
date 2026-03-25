@@ -9,7 +9,7 @@ import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
-import { pushAndCreatePr, hasBranchDelta } from './pr.js';
+import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
@@ -427,8 +427,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           // operate on the user's main checkout.
           if (session.mode === 'edit') {
             try {
+              // Resolve base branch from PR URL in topic (if any)
+              let baseOverride: string | undefined;
+              const prRef = parsePrRef(session.topic);
+              if (prRef) {
+                const headBranch = await lookupPrHeadBranch(prRef);
+                if (headBranch) baseOverride = headBranch;
+              }
+
               const { worktreePath, branchName, baseRef } = await createWorktree(
-                session.target_repo, session.id, session.topic,
+                session.target_repo, session.id, session.topic, baseOverride,
               );
               session.original_repo = session.target_repo;
               session.worktree_path = worktreePath;

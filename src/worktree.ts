@@ -17,23 +17,34 @@ export async function createWorktree(
   targetRepo: string,
   sessionId: string,
   topic: string,
+  baseOverride?: string,
 ): Promise<WorktreeResult> {
   // Resolve the git toplevel (don't assume targetRepo is the root)
   const gitRoot = await git(targetRepo, ['rev-parse', '--show-toplevel']);
 
-  // Capture the current branch before creating the worktree.
-  // This becomes the PR base ref so we target the branch the user started from.
+  const shortId = sessionId.slice(0, 8);
+  const slug = slugifyTopic(topic) || 'session';
+  const branchName = `def/${shortId}-${slug}`;
+  const worktreePath = join(gitRoot, '.def', 'worktrees', sessionId);
+
+  if (baseOverride) {
+    // Fetch the specified branch and branch from it
+    try {
+      await git(gitRoot, ['fetch', 'origin', baseOverride]);
+      await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName, `origin/${baseOverride}`]);
+      return { worktreePath, branchName, baseRef: baseOverride };
+    } catch {
+      // Fetch or worktree creation failed — fall through to default behavior
+    }
+  }
+
+  // Default: capture the current branch as the PR base ref
   let baseRef: string | null = null;
   try {
     baseRef = await git(targetRepo, ['symbolic-ref', '--short', 'HEAD']);
   } catch {
     // Detached HEAD — leave null, gh will use repo default
   }
-
-  const shortId = sessionId.slice(0, 8);
-  const slug = slugifyTopic(topic) || 'session';
-  const branchName = `def/${shortId}-${slug}`;
-  const worktreePath = join(gitRoot, '.def', 'worktrees', sessionId);
 
   await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName]);
 
