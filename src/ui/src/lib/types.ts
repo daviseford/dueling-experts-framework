@@ -41,6 +41,25 @@ export interface PendingInterjection {
   content: string
 }
 
+export interface SessionSummary {
+  id: string
+  topic: string
+  created: string
+  session_status: string
+  phase: string
+  current_turn: number
+  mode: string
+  branch_name: string | null
+  pr_url: string | null
+  dir: string
+  repo: string
+}
+
+export interface SessionsResponse {
+  sessions: SessionSummary[]
+  owning_session_id: string | null
+}
+
 export interface PollingState {
   turns: Turn[]
   sessionId: string
