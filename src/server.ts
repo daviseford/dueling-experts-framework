@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session } from './session.js';
+import { exportMarkdown, exportHtml } from './export.js';
 import { readEvents, listAttempts } from './trace.js';
 import * as ui from './ui.js';
 
@@ -148,6 +149,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
       await handleEndSession(req, res);
+    } else if (url.pathname === '/api/export' && req.method === 'GET') {
+      await handleExport(res, url);
     } else if (req.method === 'GET') {
       // Static file serving from Vite build output
       await serveStatic(req, res, url);
@@ -368,6 +371,36 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
   controllerRef!.requestEnd();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
+}
+
+async function handleExport(res: ServerResponse, url: URL): Promise<void> {
+  if (!sessionRef) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No active session' }));
+    return;
+  }
+
+  const format = url.searchParams.get('format') ?? 'md';
+  try {
+    if (format === 'html') {
+      const content = await exportHtml(sessionRef.dir);
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': `attachment; filename="transcript-${sessionRef.id.slice(0, 8)}.html"`,
+      });
+      res.end(content);
+    } else {
+      const content = await exportMarkdown(sessionRef.dir);
+      res.writeHead(200, {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="transcript-${sessionRef.id.slice(0, 8)}.md"`,
+      });
+      res.end(content);
+    }
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `Export failed: ${(err as Error).message}` }));
+  }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

@@ -7,6 +7,14 @@ import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
 
+// Subcommand routing — check before parseArgs
+const subcmd = process.argv[2];
+if (subcmd === 'export') {
+  const mod = await import('./export-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
