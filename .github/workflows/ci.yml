@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 20
       - run: npm ci --ignore-scripts
-      - run: npm ci --prefix src/ui
+      - run: npm ci --prefix src/ui --ignore-scripts
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:ui
