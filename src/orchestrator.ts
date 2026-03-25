@@ -4,6 +4,7 @@ import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
 import { invoke, resolveModelName } from './agent.js';
+import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
@@ -61,7 +62,7 @@ interface CanonicalTurnData {
   verdict?: 'approve' | 'fix';
   duration_ms?: number;
   decisions?: string[];
-  model_tier?: 'full' | 'fast';
+  model_tier?: ModelTier;
   model_name?: string;
 }
 
@@ -75,15 +76,16 @@ interface DecisionEntry {
 
 /**
  * Select model tier for the current turn based on phase and consensus signals.
- * Returns 'fast' for confirmation/consensus turns in the plan phase, 'full' otherwise.
+ * Returns 'mid' for review, 'fast' for consensus turns in plan, 'full' otherwise.
  */
 export function selectModelTier(
   phase: SessionPhase,
   noFast: boolean,
   pendingPlanDecided: AgentName | null,
   bothEverDecided: boolean,
-): 'full' | 'fast' {
+): ModelTier {
   if (noFast) return 'full';
+  if (phase === 'review') return 'mid';
   if (phase !== 'plan') return 'full';
   if (bothEverDecided) return 'fast';
   if (pendingPlanDecided) return 'fast';
@@ -279,9 +281,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           content: result.output.trim(),
         };
       } else {
-        // Validation retry always uses the full model — if the fast model produced
+        // Validation retry always uses the full model — if a non-full model produced
         // invalid frontmatter, escalating to full is the right fallback.
-        if (currentTier === 'fast') {
+        if (currentTier !== 'full') {
           ui.status('tier.escalation', { turn: turnCount });
         } else {
           ui.status('turn.retry', { turn: turnCount });
@@ -290,7 +292,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
-        if (validation.valid && currentTier === 'fast') {
+        if (validation.valid && currentTier !== 'full') {
           currentTier = 'full';
         }
 
@@ -788,7 +790,7 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: 'full' | 'fast'): Promise<InvokeOnceResult> {
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: ModelTier): Promise<InvokeOnceResult> {
   let attemptIdx = 0;
   if (turnCount !== undefined && attemptCounters) {
     const key = `${turnCount}-${agentName}`;
@@ -842,15 +844,15 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult & { effectiveTier?: 'full' | 'fast' }> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
   let activity = ui.startActivity(turnCount, agentName, undefined, tier);
   let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
   activity.stop();
   let effectiveTier = tier;
   if (!result.ok && !shouldAbort?.()) {
-    // Escalate fast→full on invocation failure (same pattern as validation retry)
-    const retryTier = tier === 'fast' ? 'full' : tier;
-    if (tier === 'fast') {
+    // Escalate non-full→full on invocation failure (same pattern as validation retry)
+    const retryTier: ModelTier = tier !== 'full' ? 'full' : tier;
+    if (tier !== 'full') {
       ui.status('invoke.escalate', { turn: turnCount, reason: result.reason });
     } else {
       ui.status('invoke.retry', { turn: turnCount, agent: agentName, reason: result.reason });
@@ -888,7 +890,7 @@ async function savePromptForTurn(session: Session, canonicalId: string): Promise
   }
 }
 
-async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: 'full' | 'fast'): Promise<void> {
+async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: ModelTier): Promise<void> {
   const id = `turn-${String(turnCount).padStart(4, '0')}-${agent}`;
   const data: CanonicalTurnData = {
     id,
