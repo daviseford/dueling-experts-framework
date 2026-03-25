@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
-import { invoke } from './agent.js';
+import { invoke, resolveModelName } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
@@ -61,6 +61,7 @@ interface CanonicalTurnData {
   duration_ms?: number;
   decisions?: string[];
   model_tier?: 'full' | 'fast';
+  model_name?: string;
 }
 
 interface DecisionEntry {
@@ -326,6 +327,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
       canonicalData.decisions = validData.decisions;
     }
     canonicalData.model_tier = currentTier;
+    canonicalData.model_name = resolveModelName(nextAgent, currentTier);
 
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
@@ -895,7 +897,10 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     status: 'error',
     phase: session.phase,
   };
-  if (modelTier) data.model_tier = modelTier;
+  if (modelTier) {
+    data.model_tier = modelTier;
+    data.model_name = resolveModelName(agent, modelTier);
+  }
   // Sanitize rawOutput to prevent code fence escape
   const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
   const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;

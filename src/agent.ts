@@ -29,10 +29,21 @@ const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
+const DEFAULT_MODELS: Record<AgentName, string> = {
+  claude: 'opus',
+  codex: 'gpt-5.4',
+};
+
 const FAST_MODELS: Partial<Record<AgentName, string>> = {
   claude: 'haiku',
   codex: 'gpt-5.1-codex-mini',
 };
+
+/** Resolve the model name for a given agent and tier. */
+export function resolveModelName(agent: AgentName, tier: 'full' | 'fast'): string {
+  if (tier === 'fast') return FAST_MODELS[agent] ?? DEFAULT_MODELS[agent];
+  return DEFAULT_MODELS[agent];
+}
 
 const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {

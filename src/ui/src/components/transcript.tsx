@@ -69,6 +69,31 @@ export function Transcript({
     return result
   }, [turns])
 
+  // Extract implementation summaries from implement-phase turns
+  const implementations = useMemo(() => {
+    return turns
+      .filter((t) => t.phase === "implement" && t.status !== "error" && t.content)
+      .map((t) => {
+        // Take the first non-empty, non-heading, non-fence line as a summary
+        const lines = t.content.split(/\r?\n/)
+        const bullets: string[] = []
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith("---") || trimmed.startsWith("```") || trimmed.startsWith("#")) continue
+          // Collect bullet points or first paragraph lines
+          if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            bullets.push(trimmed.replace(/^[-*]\s+/, ""))
+          } else if (bullets.length === 0) {
+            bullets.push(trimmed)
+          }
+          if (bullets.length >= 5) break
+        }
+        return bullets
+      })
+      .flat()
+      .slice(0, 8)
+  }, [turns])
+
   // Only auto-scroll on new turns, thinking agent change, or session completion
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
@@ -97,6 +122,7 @@ export function Transcript({
             turnsPath={turnsPath}
             artifactsPath={artifactsPath}
             decisions={decisions}
+            implementations={implementations}
           />
         )}
         <div ref={bottomRef} />
