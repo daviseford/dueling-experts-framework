@@ -8,7 +8,7 @@ import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
-import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
+import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
@@ -591,7 +591,14 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   await generateDecisions(session);
 
   // Commit any remaining uncommitted changes before push/PR (safety net).
-  if (session.worktree_path) {
+  // First, detect if the agent switched branches inside the worktree.
+  // If so, rescue commits onto the DEF branch so the PR captures them.
+  if (session.worktree_path && session.branch_name) {
+    const actual = await currentBranch(session.worktree_path);
+    if (actual && actual !== session.branch_name) {
+      ui.status('branch.switched', { expected: session.branch_name, actual });
+      await rescueBranchSwitch(session.worktree_path, session.branch_name, actual);
+    }
     await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
   }
 
@@ -599,12 +606,15 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   // Worktree cleanup is in a finally-style path so it always happens.
   try {
     if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
-      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+      const deltaOut: { resolvedRef?: string } = {};
+      const delta = await hasBranchDelta(session.worktree_path, session.base_ref, deltaOut);
+      // Use the resolved ref (may differ from session.base_ref if original was deleted)
+      const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,
-          baseRef: session.base_ref,
+          baseRef: effectiveBase,
           title: `def: ${session.topic}`,
           sessionDir: session.dir,
           topic: session.topic,

@@ -27,19 +27,45 @@ export interface PrOptions {
  * Check whether the branch has commits beyond the base ref.
  * Returns true if there is a delta worth pushing.
  * Conservatively returns false when no reliable base can be established.
+ *
+ * If `baseRef` cannot be resolved (e.g. deleted branch), falls back to
+ * `origin/main`, then `origin/master`, then `main`, then `master`.
+ * The resolved fallback is returned via `resolvedRef` when provided.
  */
-export async function hasBranchDelta(repoPath: string, baseRef: string | null): Promise<boolean> {
+export async function hasBranchDelta(
+  repoPath: string,
+  baseRef: string | null,
+  out?: { resolvedRef?: string },
+): Promise<boolean> {
+  const candidates = baseRef
+    ? [baseRef, 'origin/main', 'origin/master', 'main', 'master']
+    : [];
+
   if (!baseRef) {
     // No base ref (detached HEAD or unavailable) — we cannot reliably
     // determine if there's a delta. Skip PR creation rather than guessing.
     return false;
   }
-  try {
-    const log = await exec(repoPath, 'git', ['log', '--oneline', `${baseRef}..HEAD`]);
-    return log.length > 0;
-  } catch {
-    return false;
+
+  for (const ref of candidates) {
+    try {
+      // Verify the ref actually resolves before using it
+      await exec(repoPath, 'git', ['rev-parse', '--verify', ref]);
+      const log = await exec(repoPath, 'git', ['log', '--oneline', `${ref}..HEAD`]);
+      if (out) out.resolvedRef = ref;
+      if (ref !== baseRef) {
+        ui.status('base.fallback', { original: baseRef, resolved: ref });
+      }
+      return log.length > 0;
+    } catch {
+      // This ref didn't resolve — try next candidate
+      continue;
+    }
   }
+
+  // None of the candidates resolved
+  ui.status('base.unresolvable', { original: baseRef });
+  return false;
 }
 
 /**
