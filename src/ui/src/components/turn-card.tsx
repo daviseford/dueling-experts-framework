@@ -129,15 +129,15 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                 {turn.phase}
               </Badge>
             )}
-            {turn.model_tier === "fast" && (
+            {turn.model_name && (
               <Badge
                 variant="outline"
                 className={cn(
                   "font-mono text-[9px] font-normal tracking-wide",
-                  FAST_BADGE_STYLE
+                  turn.model_tier === "fast" ? FAST_BADGE_STYLE : "bg-muted/50 text-muted-foreground border-border/50"
                 )}
               >
-                fast
+                {turn.model_name}
               </Badge>
             )}
             {turn.duration_ms != null && (
