@@ -6,3 +6,5 @@ docs/
 src/ui/dist/
 src/ui/node_modules/
 *.tgz
+/.vscode
+/.cursor/hooks
