@@ -10,6 +10,7 @@ export interface Turn {
   decisions: string[]
   content: string
   model_tier?: "full" | "fast"
+  model_name?: string
 }
 
 export interface ThinkingState {
