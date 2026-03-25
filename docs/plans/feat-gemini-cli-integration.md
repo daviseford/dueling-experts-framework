@@ -15,7 +15,7 @@ This plan is **blocked** until `feat-pluggable-providers` ships. The current cod
 ## Scope Constraints
 
 - **Two-agent system only.** Every DEF session uses exactly two agents. Gemini is a third *provider*, not a third *participant*. Three-agent debates are out of scope for this feature and for DEF's foreseeable roadmap.
-- **Built-in first.** Gemini ships as a built-in provider in `src/provider.ts` alongside Claude and Codex. External plugin loading (`--provider ./gemini.js`) is deferred until the provider API has stabilized through real usage.
+- **Built-in first.** Gemini ships as a built-in provider in `src/providers/gemini.ts` alongside Claude and Codex. External plugin loading (`--provider ./gemini.js`) is deferred until the provider API has stabilized through real usage.
 - **No default sandbox.** Docker/Podman sandbox is opt-in and deferred to Phase 5 (hardening). It will not be required for the MVP path.
 
 ---
@@ -227,7 +227,11 @@ const geminiProvider: Provider = {
 
 ### Phase 1: Plan Debates (Gemini as debater)
 
-- Register Gemini as a built-in provider
+- Extend `AgentName` union type: `'claude' | 'codex' | 'gemini'` (`src/session.ts:11`)
+- Update `VALID_FROM` regex in `src/validation.ts:32` to include `gemini`
+- Update `VALID_AGENTS` in `src/index.ts:11` to include `'gemini'` (gates `--first` and `--impl-model` CLI validation)
+- Add `gemini: 'Gemini'` to `AGENT_NAMES` in `src/context.ts:22`
+- Register Gemini as a built-in provider in `src/providers/gemini.ts`
 - Wire `promptHints('plan')` into `src/context.ts` prompt assembly
 - Wire `parseResponse()` into the validation pipeline (before `validate()` call)
 - Implement `preflightInstall()` and `preflightConfig()` checks
@@ -258,8 +262,6 @@ const geminiProvider: Provider = {
 - Tune `parseResponse()` based on real failure patterns from Phase 1-3
 - Add Gemini-specific validation fixtures to the test suite
 - Measure and document retry/escalation rates for Gemini vs Claude/Codex
-- Add Gemini to the `AgentName` union type: `'claude' | 'codex' | 'gemini'`
-- Update `VALID_FROM` regex in `src/validation.ts` to include `gemini`
 
 **Deliverable:** Gemini integration is reliable enough for regular use.
 
@@ -301,16 +303,17 @@ The existing validation retry path (`src/orchestrator.ts:282-293`) provides a sa
 
 These files will need changes when the integration is implemented:
 
-| File | Change |
-|---|---|
-| `src/session.ts:11` | Extend `AgentName` union: `'claude' \| 'codex' \| 'gemini'` |
-| `src/validation.ts:32` | Update `VALID_FROM` regex to include `gemini` |
-| `src/context.ts:22` | Add `gemini: 'Gemini'` to `AGENT_NAMES` |
-| `src/context.ts:30-44` | Inject `provider.promptHints(phase)` into prompt assembly |
-| `src/agent.ts` | Replace `AGENTS` record with provider registry lookups |
-| `src/orchestrator.ts:129-131` | Replace named booleans with `Map<AgentName, boolean>` |
-| `src/orchestrator.ts:377` | Replace ternary with dynamic other-agent resolution |
-| New: `src/providers/gemini.ts` | Gemini provider implementation |
+| File | Change | Phase |
+|---|---|---|
+| `src/session.ts:11` | Extend `AgentName` union: `'claude' \| 'codex' \| 'gemini'` | 1 |
+| `src/validation.ts:32` | Update `VALID_FROM` regex to include `gemini` | 1 |
+| `src/index.ts:11` | Add `'gemini'` to `VALID_AGENTS` array (gates `--first` and `--impl-model` CLI validation) | 1 |
+| `src/context.ts:22` | Add `gemini: 'Gemini'` to `AGENT_NAMES` | 1 |
+| `src/context.ts:30-44` | Inject `provider.promptHints(phase)` into prompt assembly | 1 |
+| `src/agent.ts` | Replace `AGENTS` record with provider registry lookups | 0 (prereq) |
+| `src/orchestrator.ts:129-131` | Replace named booleans with `Map<AgentName, boolean>` | 0 (prereq) |
+| `src/orchestrator.ts:377` | Replace ternary with dynamic other-agent resolution | 0 (prereq) |
+| New: `src/providers/gemini.ts` | Gemini provider implementation | 1 |
 
 ---
 
