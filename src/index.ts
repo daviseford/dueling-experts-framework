@@ -23,7 +23,7 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast] [--persona-claude <file>] [--persona-codex <file>]');
   process.exit(1);
 }
 
@@ -55,6 +55,26 @@ if (opts.reviewTurns !== undefined) {
 
 const targetRepo = resolve(process.cwd());
 
+// Load persona files (fail-fast on missing files)
+let personaClaude: string | undefined;
+let personaCodex: string | undefined;
+if (opts.personaClaude) {
+  try {
+    personaClaude = readFileSync(resolve(opts.personaClaude), 'utf8');
+  } catch {
+    console.error(`Error: cannot read persona file: ${opts.personaClaude}`);
+    process.exit(1);
+  }
+}
+if (opts.personaCodex) {
+  try {
+    personaCodex = readFileSync(resolve(opts.personaCodex), 'utf8');
+  } catch {
+    console.error(`Error: cannot read persona file: ${opts.personaCodex}`);
+    process.exit(1);
+  }
+}
+
 // Create new session
 let session: Session;
 try {
@@ -66,6 +86,8 @@ try {
     implModel: (opts.implModel || 'claude') as AgentName,
     reviewTurns: opts.reviewTurns || 6,
     targetRepo,
+    personaClaude,
+    personaCodex,
   });
 } catch (err: unknown) {
   ui.error((err as Error).message);
@@ -81,6 +103,8 @@ ui.intro({
   impl_model: session.impl_model,
   review_turns: session.review_turns,
   dir: session.dir,
+  persona_claude: session.persona_claude,
+  persona_codex: session.persona_codex,
 });
 
 installShutdownHandler(session.dir, targetRepo, session);

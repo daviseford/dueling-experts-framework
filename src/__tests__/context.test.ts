@@ -93,4 +93,80 @@ describe('assemble', () => {
     const session = makeSession({ topic: 'T', mode: 'planning', next_agent: 'gpt4' as any, dir: sessionDir });
     await assert.rejects(() => assemble(session), /Unknown agent/);
   });
+
+  it('injects persona for the correct agent', async () => {
+    const session = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      persona_claude: 'You are a security expert.',
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('## Custom Instructions'));
+    assert.ok(prompt.includes('You are a security expert.'));
+  });
+
+  it('does NOT inject persona for the other agent', async () => {
+    const session = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      persona_codex: 'Codex-only persona.',
+    });
+    const prompt = await assemble(session);
+    assert.ok(!prompt.includes('## Custom Instructions'));
+    assert.ok(!prompt.includes('Codex-only persona.'));
+  });
+
+  it('injects both personas independently', async () => {
+    const sessionClaude = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      persona_claude: 'Claude persona here.',
+      persona_codex: 'Codex persona here.',
+    });
+    const promptClaude = await assemble(sessionClaude);
+    assert.ok(promptClaude.includes('Claude persona here.'));
+    assert.ok(!promptClaude.includes('Codex persona here.'));
+
+    const sessionCodex = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'codex',
+      dir: sessionDir,
+      persona_claude: 'Claude persona here.',
+      persona_codex: 'Codex persona here.',
+    });
+    const promptCodex = await assemble(sessionCodex);
+    assert.ok(promptCodex.includes('Codex persona here.'));
+    assert.ok(!promptCodex.includes('Claude persona here.'));
+  });
+
+  it('no persona means no Custom Instructions section', async () => {
+    const session = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+    });
+    const prompt = await assemble(session);
+    assert.ok(!prompt.includes('## Custom Instructions'));
+  });
+
+  it('large persona counts against character budget', async () => {
+    const largePersona = 'x'.repeat(300_000);
+    const session = makeSession({
+      topic: 'Test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      persona_claude: largePersona,
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes(largePersona));
+  });
 });

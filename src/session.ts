@@ -34,6 +34,8 @@ export interface Session {
   base_ref: string | null;
   pr_url: string | null;
   pr_number: number | null;
+  persona_claude?: string | null;
+  persona_codex?: string | null;
   _currentChild?: ChildProcess | null;
 }
 
@@ -45,6 +47,8 @@ export interface CreateSessionOptions {
   implModel: AgentName;
   reviewTurns: number;
   targetRepo: string;
+  personaClaude?: string;
+  personaCodex?: string;
 }
 
 // ── Session CRUD ────────────────────────────────────────────────────
@@ -53,7 +57,7 @@ export interface CreateSessionOptions {
  * Create a new session directory and session.json.
  * Each session is independent — multiple sessions can run concurrently.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
+export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo, personaClaude, personaCodex }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
 
   // Ensure .def/ exists
@@ -87,6 +91,8 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     base_ref: null,
     pr_url: null,
     pr_number: null,
+    persona_claude: personaClaude || null,
+    persona_codex: personaCodex || null,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);

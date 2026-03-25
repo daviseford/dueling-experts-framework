@@ -7,6 +7,8 @@ export interface ParsedArgs {
   reviewTurns?: number;
   noPr?: boolean;
   noFast?: boolean;
+  personaClaude?: string;
+  personaCodex?: string;
   version?: boolean;
 }
 
@@ -38,6 +40,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-fast':
         result.noFast = true;
+        break;
+      case '--persona-claude':
+        result.personaClaude = argv[++i];
+        break;
+      case '--persona-codex':
+        result.personaCodex = argv[++i];
         break;
       case '--version':
       case '-v':

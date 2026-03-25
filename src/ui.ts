@@ -126,6 +126,8 @@ export interface SessionInfo {
   impl_model: string;
   review_turns: number;
   dir: string;
+  persona_claude?: string | null;
+  persona_codex?: string | null;
 }
 
 export function intro(session: SessionInfo): void {
@@ -161,6 +163,14 @@ export function intro(session: SessionInfo): void {
   console.log(kv('First agent', session.next_agent));
   console.log(kv('Impl model', session.impl_model));
   console.log(kv('Review turns', String(session.review_turns)));
+  if (session.persona_claude) {
+    const preview = session.persona_claude.slice(0, 60).replace(/\n/g, ' ');
+    console.log(kv('Persona (C)', c.dim(preview + (session.persona_claude.length > 60 ? '...' : ''))));
+  }
+  if (session.persona_codex) {
+    const preview = session.persona_codex.slice(0, 60).replace(/\n/g, ' ');
+    console.log(kv('Persona (X)', c.dim(preview + (session.persona_codex.length > 60 ? '...' : ''))));
+  }
   console.log(kv('Session dir', c.dim(session.dir)));
   console.log('');
 }

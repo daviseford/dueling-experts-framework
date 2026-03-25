@@ -162,6 +162,14 @@ export async function assemble(session: Session): Promise<string> {
     systemPrompt = planPrompt(next_agent, topic);
   }
 
+  // Inject custom persona if set for this agent
+  const personaContent = next_agent === 'claude'
+    ? session.persona_claude
+    : session.persona_codex;
+  if (personaContent) {
+    systemPrompt += `\n\n## Custom Instructions\n${personaContent}`;
+  }
+
   const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n**Phase:** ${phase}\n`;
   const yourTurn = '## Your Turn\nRespond with YAML frontmatter followed by your markdown response. Required frontmatter fields: id, turn, from, timestamp, status. Optional: decisions (array of strings).';
 
