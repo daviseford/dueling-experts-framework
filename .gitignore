@@ -1,6 +1,7 @@
 autoresearch-results.tsv
 node_modules/
 dist/
+docs/
 .def/
 src/ui/dist/
 src/ui/node_modules/
