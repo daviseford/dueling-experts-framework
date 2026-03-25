@@ -55,6 +55,7 @@ interface StatusPayloads {
   'consensus.reached':  { turn: number };
   'consensus.pending':  { turn: number; agent: string; waiting: string };
   'consensus.contested':{ turn: number; agent: string };
+  'plan.stuck':         { turn: number; agent: string };
   'phase.changed':      { from: string; to: string; turn?: number };
   'phase.planning.done':{ turn: number };
   'worktree.created':   { turn: number; branch: string };
@@ -219,6 +220,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'consensus.contested': {
       const { turn, agent } = d as StatusPayloads['consensus.contested'];
       return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} ${c.bold(agent)} contests consensus. Resuming plan.`;
+    }
+    case 'plan.stuck': {
+      const { turn, agent } = d as StatusPayloads['plan.stuck'];
+      return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Agent ${c.bold(agent)} appears stuck. Injecting nudge.`;
     }
 
     // Phase

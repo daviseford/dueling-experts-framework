@@ -134,6 +134,11 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   let emptyDiffRetries = 0;
   const MAX_EMPTY_DIFF_RETRIES = 2;
 
+  // Stuck-loop detection: track last output per agent for plan phase
+  const lastAgentOutput = new Map<AgentName, { decisions: string[]; status: string }>();
+  const agentRepetitionCount = new Map<AgentName, number>();
+  const MAX_STUCK_REPETITIONS = 2; // Triggers after 3 identical outputs (initial + 2 repeats)
+
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
     const recovered: RecoveredState = await recoverEphemeralState(session);
@@ -383,6 +388,36 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         current_turn: turnCount,
         next_agent: oppositeAgent,
       });
+
+      // Stuck-loop detection: compare this turn's output to previous same-agent output
+      const currentDecisions = canonicalData.decisions ?? [];
+      const currentStatus = canonicalData.status;
+      const lastOutput = lastAgentOutput.get(nextAgent);
+      if (lastOutput
+        && lastOutput.status === currentStatus
+        && lastOutput.decisions.length === currentDecisions.length
+        && lastOutput.decisions.every((d, i) => d === currentDecisions[i])) {
+        const count = (agentRepetitionCount.get(nextAgent) ?? 0) + 1;
+        agentRepetitionCount.set(nextAgent, count);
+        if (count >= MAX_STUCK_REPETITIONS) {
+          tracer.emit('plan.stuck', { turn: turnCount, agent: nextAgent, phase, data: { repetitions: count + 1 } });
+          ui.status('plan.stuck', { turn: turnCount, agent: nextAgent });
+          // Clear pending consensus to prevent false done signaling
+          if (pendingPlanDecided) {
+            pendingPlanDecided = null;
+          }
+          // Write a system nudge turn to break the loop
+          turnCount++;
+          const nudgeContent = `Agent ${nextAgent} appears to be repeating the same output. Please try a different approach, address the underlying issue, or escalate to the other agent.`;
+          await writeHumanTurn(session, turnCount, nudgeContent);
+          await updateSession(session.dir, { current_turn: turnCount });
+          agentRepetitionCount.set(nextAgent, 0);
+          continue;
+        }
+      } else {
+        agentRepetitionCount.set(nextAgent, 0);
+      }
+      lastAgentOutput.set(nextAgent, { decisions: [...currentDecisions], status: currentStatus });
 
       // Check for consensus signaling — treat 'done' as 'decided' in edit mode
       const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided')

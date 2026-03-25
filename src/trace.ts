@@ -25,6 +25,7 @@ export type EventName =
   | 'phase.changed'
   | 'consensus.reached'
   | 'pr.created'
+  | 'plan.stuck'
   | 'session.end';
 
 // ── Attempt metadata ─────────────────────────────────────────────────
