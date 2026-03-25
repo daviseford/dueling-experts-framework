@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
-import { atomicWrite, killChildProcess } from './util.js';
+import { atomicWrite, killChildProcess, isProcessAlive } from './util.js';
 import { removeWorktree, commitChanges } from './worktree.js';
 import * as ui from './ui.js';
 
@@ -34,6 +34,7 @@ export interface Session {
   base_ref: string | null;
   pr_url: string | null;
   pr_number: number | null;
+  heartbeat_at?: string;
   _currentChild?: ChildProcess | null;
 }
 
@@ -195,6 +196,10 @@ export interface SessionSummaryInfo {
   branch_name: string | null;
   pr_url: string | null;
   dir: string;
+  port?: number | null;
+  pid?: number;
+  heartbeat_at?: string;
+  is_active: boolean;
 }
 
 export async function findSessionDir(targetRepo: string, idPrefix: string): Promise<string | null> {
@@ -210,6 +215,9 @@ export async function findSessionDir(targetRepo: string, idPrefix: string): Prom
   return null;
 }
 
+/** Heartbeat staleness threshold (30 seconds). */
+const HEARTBEAT_STALE_MS = 30_000;
+
 export async function listSessions(targetRepo: string): Promise<SessionSummaryInfo[]> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
   let dirs: string[];
@@ -222,20 +230,55 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
   const summaries: SessionSummaryInfo[] = [];
   for (const dir of dirs) {
     try {
-      const sessionPath = join(sessionsDir, dir, 'session.json');
+      const sessionDir = join(sessionsDir, dir);
+      const sessionPath = join(sessionDir, 'session.json');
       const raw = await readFile(sessionPath, 'utf8');
       const data = JSON.parse(raw);
+
+      // Read heartbeat.json (separate file to avoid session.json contention)
+      let heartbeatAt: string | undefined;
+      try {
+        const hbRaw = await readFile(join(sessionDir, 'heartbeat.json'), 'utf8');
+        const hb = JSON.parse(hbRaw);
+        heartbeatAt = hb.heartbeat_at;
+      } catch {
+        // No heartbeat file (pre-existing session or not yet written)
+      }
+
+      const pid: number | undefined = data.pid;
+      let sessionStatus = data.session_status ?? 'unknown';
+      let isActive = false;
+
+      if (sessionStatus === 'active' && pid) {
+        const pidAlive = isProcessAlive(pid);
+        const heartbeatFresh = heartbeatAt
+          ? (Date.now() - new Date(heartbeatAt).getTime()) < HEARTBEAT_STALE_MS
+          : false;
+
+        if (pidAlive && (heartbeatFresh || !heartbeatAt)) {
+          // PID alive and heartbeat fresh (or no heartbeat file = pre-existing session)
+          isActive = true;
+        } else {
+          // PID dead or heartbeat stale — detected crash
+          sessionStatus = 'interrupted';
+        }
+      }
+
       summaries.push({
         id: data.id ?? dir,
         topic: data.topic ?? '(no topic)',
         created: data.created ?? '',
-        session_status: data.session_status ?? 'unknown',
-        phase: data.phase ?? 'plan',
+        session_status: sessionStatus,
+        phase: data.phase === 'debate' ? 'plan' : (data.phase ?? 'plan'),
         current_turn: data.current_turn ?? 0,
         mode: data.mode ?? 'edit',
         branch_name: data.branch_name ?? null,
         pr_url: data.pr_url ?? null,
-        dir: join(sessionsDir, dir),
+        dir: sessionDir,
+        port: data.port ?? null,
+        pid,
+        heartbeat_at: heartbeatAt,
+        is_active: isActive,
       });
     } catch {
       // Skip corrupted session directories

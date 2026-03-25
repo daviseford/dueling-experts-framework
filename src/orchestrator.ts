@@ -210,6 +210,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     await server.start(session, controller);
   }
 
+  // Heartbeat writer — writes heartbeat.json every 10s for liveness detection
+  const heartbeatInterval = setInterval(() => {
+    const payload = JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n';
+    atomicWrite(join(session.dir, 'heartbeat.json'), payload).catch(() => {});
+  }, 10_000);
+  // Write initial heartbeat immediately
+  atomicWrite(join(session.dir, 'heartbeat.json'), JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n').catch(() => {});
+
+  try {
+
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
 
@@ -667,6 +677,10 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
   });
+
+  } finally {
+    clearInterval(heartbeatInterval);
+  }
 
   // --- Helper closures ---
 
