@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.6](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.5...def-v0.0.6) (2026-03-25)
+
+
+### Features
+
+* show model name on turn cards and add Key Implementations to session summary ([#46](https://github.com/daviseford/dueling-experts-framework/issues/46)) ([a44487e](https://github.com/daviseford/dueling-experts-framework/commit/a44487ebdf62b51467f02ca84aeab467e3bdc791))
+
 ## [0.0.5](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.4...def-v0.0.5) (2026-03-25)
 
 
