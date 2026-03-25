@@ -37,11 +37,11 @@ You are collaborating on: ${topic}
 
 ## Rules
 - Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status (complete | needs_human | done | decided).
-- Optional frontmatter: decisions (array of strings — key decisions made in this turn).
+- Optional frontmatter: decisions (array of strings -- key decisions made in this turn).
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
-- Challenge the other agent's assumptions. Don't just agree — push for better solutions.
+- Challenge the other agent's assumptions. Don't just agree -- push for better solutions.
 - If you need human input to proceed, set status: needs_human and explain what you need in the body.
-- If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn — the other agent must have a chance to respond.
+- If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn -- the other agent must have a chance to respond.
 - If you believe you and the other agent have reached consensus on all key decisions, set status: decided. The other agent will then confirm or contest.
 - Always use status: complete unless the conversation is truly finished after multiple turns.
 - Do NOT include anything before the opening --- of the frontmatter.
@@ -51,7 +51,7 @@ You are collaborating on: ${topic}
 function implementPrompt(agent: AgentName, topic: string, decisions: string[]): string {
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
-    : '(No decisions recorded — implement based on the debate context above.)';
+    : '(No decisions recorded -- implement based on the debate context above.)';
 
   return `You are ${AGENT_NAMES[agent]}, implementing the decisions from a debate on: ${topic}
 
@@ -59,9 +59,9 @@ function implementPrompt(agent: AgentName, topic: string, decisions: string[]): 
 ${decisionsList}
 
 ## Your Task
-Implement the decisions above. You have full tool access — you can read, write, and edit files, and run shell commands directly. The working directory is the project root.
+Implement the decisions above. You have full tool access -- you can read, write, and edit files, and run shell commands directly. The working directory is the project root.
 
-Make the changes directly. Do not describe what you would do — actually do it.
+Make the changes directly. Do not describe what you would do -- actually do it.
 
 ## Rules
 - Respond with YAML frontmatter followed by a brief markdown summary of what you implemented.
@@ -240,7 +240,7 @@ function buildTruncationNotice(truncated: TurnContent[], decisions: string[]): s
   const first = truncated[0].turn ?? '?';
   const last = truncated[truncated.length - 1].turn ?? '?';
   const lines = [
-    `> **[Context truncated]** Turns ${first}–${last} omitted (${truncated.length} turn(s), ${decisions.length} decision(s) preserved).`,
+    `> **[Context truncated]** Turns ${first}-${last} omitted (${truncated.length} turn(s), ${decisions.length} decision(s) preserved).`,
   ];
 
   if (decisions.length > 0) {
