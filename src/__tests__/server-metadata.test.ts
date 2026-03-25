@@ -1,3 +1,4 @@
+process.env.DEF_NO_OPEN = '1';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, rm, writeFile, readFile } from 'node:fs/promises';
