@@ -35,6 +35,12 @@ export interface TurnsResponse {
   artifact_names: string[]
 }
 
+export interface PendingInterjection {
+  id: string
+  content: string
+  sentAt: number
+}
+
 export interface PollingState {
   turns: Turn[]
   sessionStatus: "active" | "paused" | "completed" | "interrupted"

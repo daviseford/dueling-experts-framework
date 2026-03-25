@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { TurnCard } from "./turn-card"
+import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
-import type { Turn, ThinkingState, SessionPhase } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
 
 interface TranscriptProps {
   turns: Turn[]
@@ -18,6 +19,7 @@ interface TranscriptProps {
   artifactsPath: string | null
   openMap: Record<string, boolean>
   onTurnOpenChange: (id: string, open: boolean) => void
+  pendingInterjections: PendingInterjection[]
 }
 
 export function Transcript({
@@ -33,6 +35,7 @@ export function Transcript({
   artifactsPath,
   openMap,
   onTurnOpenChange,
+  pendingInterjections,
 }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const turnCount = turns.length
@@ -94,10 +97,12 @@ export function Transcript({
       .slice(0, 8)
   }, [turns])
 
-  // Only auto-scroll on new turns, thinking agent change, or session completion
+  const pendingCount = pendingInterjections.length
+
+  // Only auto-scroll on new turns, thinking agent change, session completion, or new pending
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
-  }, [turnCount, thinkingAgent, sessionStatus])
+  }, [turnCount, thinkingAgent, sessionStatus, pendingCount])
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -109,6 +114,9 @@ export function Transcript({
             open={openMap[turn.id] ?? true}
             onOpenChange={(open) => onTurnOpenChange(turn.id, open)}
           />
+        ))}
+        {pendingInterjections.map((p) => (
+          <PendingTurnCard key={p.id} {...p} />
         ))}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />

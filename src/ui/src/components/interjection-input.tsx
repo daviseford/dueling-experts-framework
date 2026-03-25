@@ -7,9 +7,10 @@ import { sendInterjection } from "@/lib/api"
 
 interface InterjectionInputProps {
   disabled: boolean
+  onSent?: (content: string) => void
 }
 
-export function InterjectionInput({ disabled }: InterjectionInputProps) {
+export function InterjectionInput({ disabled, onSent }: InterjectionInputProps) {
   const [value, setValue] = useState("")
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -22,6 +23,7 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
     setSending(true)
     try {
       await sendInterjection(content)
+      onSent?.(content)
       setValue("")
       textareaRef.current?.focus()
     } catch (err) {
