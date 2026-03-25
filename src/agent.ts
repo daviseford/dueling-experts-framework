@@ -97,13 +97,20 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
   const logPrefix = `${agentName}-${Date.now()}`;
 
   return new Promise<InvokeResult>((resolve) => {
-    const child: ChildProcess = spawn(config.cmd, args, {
-      cwd: session.target_repo,
-      stdio: ['pipe', 'pipe', 'pipe'], // capture stderr for debugging
-      // On Windows, npm-installed CLIs are .cmd shims that require shell.
-      // All args are controlled by us (never user input), so this is safe.
-      shell: process.platform === 'win32',
-    });
+    // On Windows, npm-installed CLIs are .cmd shims that require shell.
+    // All args are controlled by us (never user input), so this is safe.
+    // We join command + args into a single shell string to avoid DEP0190
+    // (Node warns when shell:true + non-empty args array).
+    const useShell = process.platform === 'win32';
+    const child: ChildProcess = useShell
+      ? spawn(
+          [config.cmd, ...args.map(a => a.includes(' ') ? `"${a}"` : a)].join(' '),
+          [],
+          { cwd: session.target_repo, stdio: ['pipe', 'pipe', 'pipe'], shell: true },
+        )
+      : spawn(config.cmd, args, {
+          cwd: session.target_repo, stdio: ['pipe', 'pipe', 'pipe'],
+        });
 
     // Expose child for SIGINT cleanup (stored on session object)
     session._currentChild = child;

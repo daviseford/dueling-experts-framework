@@ -131,28 +131,29 @@ export interface SessionInfo {
 export function intro(session: SessionInfo): void {
   // Gradient banner (TTY + color only)
   if (isTTY && !noColor) {
-    const banner = gradient.vice.multiline([
-      '  +------------------------------------+',
-      '  |     D E F  --  Dueling Experts     |',
-      '  +------------------------------------+',
+    const warmGradient = gradient(['#FEDA75', '#FA7E1E', '#D62976', '#962FBF', '#4F5BD5']);
+    const banner = warmGradient.multiline([
+      '  ╔══════════════════════════════════════╗',
+      '  ║   Dueling  Experts  Framework        ║',
+      '  ╚══════════════════════════════════════╝',
     ].join('\n'));
     console.log('');
     console.log(banner);
   } else {
     console.log('');
-    console.log('  DEF -- Dueling Experts Framework');
+    console.log('  Dueling Experts Framework');
   }
 
   // clack.intro for session title (TTY + color only)
   if (isTTY && !noColor) {
-    clack.intro(c.cyan(c.bold(`Session ${session.id.slice(0, 8)}`)));
+    clack.intro(c.bold(`Session ${session.id.slice(0, 8)}`));
   } else {
     console.log(`  Session ${session.id.slice(0, 8)}`);
   }
 
   // Session info block
   const kv = (key: string, val: string) =>
-    `  ${c.dim(key.padEnd(14))} ${c.bold(val)}`;
+    `  ${c.cyan(key.padEnd(14))} ${c.white(c.bold(val))}`;
 
   console.log(kv('Topic', session.topic));
   console.log(kv('Mode', session.mode));
@@ -160,7 +161,7 @@ export function intro(session: SessionInfo): void {
   console.log(kv('First agent', session.next_agent));
   console.log(kv('Impl model', session.impl_model));
   console.log(kv('Review turns', String(session.review_turns)));
-  console.log(kv('Session dir', session.dir));
+  console.log(kv('Session dir', c.dim(session.dir)));
   console.log('');
 }
 
