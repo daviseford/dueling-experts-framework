@@ -110,9 +110,10 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (debate-only, no implementation).
 
 ## Agent Invocation
-- **Claude debate/review:** `claude --print`, prompt piped via stdin, output captured from stdout.
-- **Claude implement:** `claude -p "instruction" --allowedTools "*" --dangerously-skip-permissions`, prompt piped as stdin context, full tool access.
-- **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Already has native tool access.
+- **Claude debate/review:** `claude --print --bare --append-system-prompt-file CLAUDE.md --append-system-prompt-file AGENTS.md`, prompt piped via stdin, output captured from stdout.
+- **Claude implement:** `claude -p "instruction" --allowedTools "*" --dangerously-skip-permissions --bare --append-system-prompt-file CLAUDE.md --append-system-prompt-file AGENTS.md`, prompt piped as stdin context, full tool access.
+- **Bare mode:** All Claude CLI invocations use `--bare` for faster startup and deterministic execution. Repo instruction files (CLAUDE.md, AGENTS.md) are passed explicitly via `--append-system-prompt-file` when they exist in the target repo.
+- **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Already has native tool access. Not affected by bare mode.
 - Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims. Process kill uses `taskkill /T /F` for proper tree cleanup.
 - **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
