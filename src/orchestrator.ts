@@ -9,7 +9,7 @@ import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
-import { pushAndCreatePr, hasBranchDelta } from './pr.js';
+import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
@@ -209,6 +209,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   if (server) {
     await server.start(session, controller);
   }
+
+  // Heartbeat writer — writes heartbeat.json every 10s for liveness detection
+  const heartbeatInterval = setInterval(() => {
+    const payload = JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n';
+    atomicWrite(join(session.dir, 'heartbeat.json'), payload).catch(() => {});
+  }, 10_000);
+  // Write initial heartbeat immediately
+  atomicWrite(join(session.dir, 'heartbeat.json'), JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n').catch(() => {});
+
+  try {
 
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
@@ -417,8 +427,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           // operate on the user's main checkout.
           if (session.mode === 'edit') {
             try {
+              // Resolve base branch from PR URL in topic (if any)
+              let baseOverride: string | undefined;
+              const prRef = parsePrRef(session.topic);
+              if (prRef) {
+                const headBranch = await lookupPrHeadBranch(prRef);
+                if (headBranch) baseOverride = headBranch;
+              }
+
               const { worktreePath, branchName, baseRef } = await createWorktree(
-                session.target_repo, session.id, session.topic,
+                session.target_repo, session.id, session.topic, baseOverride,
               );
               session.original_repo = session.target_repo;
               session.worktree_path = worktreePath;
@@ -659,6 +677,10 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
   });
+
+  } finally {
+    clearInterval(heartbeatInterval);
+  }
 
   // --- Helper closures ---
 

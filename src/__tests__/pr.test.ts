@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { hasBranchDelta, parseDecisionBullets, parseDiffstatSummary, buildPrBody } from '../pr.js';
+import { hasBranchDelta, parseDecisionBullets, parseDiffstatSummary, buildPrBody, parsePrRef } from '../pr.js';
 import { createWorktree, removeWorktree, commitChanges } from '../worktree.js';
 import { parseArgs } from '../cli.js';
 
@@ -228,6 +228,45 @@ describe('CLI --no-pr parsing', () => {
     const result = parseArgs(['add', 'dark', 'mode', '--no-pr']);
     assert.equal(result.noPr, true);
     assert.equal(result.topic, 'add dark mode');
+  });
+});
+
+describe('parsePrRef', () => {
+  it('extracts PR ref from topic with standard URL', () => {
+    const ref = parsePrRef('fix https://github.com/owner/repo/pull/42');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('extracts PR ref from URL with trailing slash', () => {
+    const ref = parsePrRef('address comments on https://github.com/org/project/pull/99/');
+    assert.deepEqual(ref, { owner: 'org', repo: 'project', number: 99 });
+  });
+
+  it('extracts PR ref from URL with fragment', () => {
+    const ref = parsePrRef('https://github.com/owner/repo/pull/42#discussion_r123');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('extracts PR ref from URL with query string', () => {
+    const ref = parsePrRef('https://github.com/owner/repo/pull/42?diff=split');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('returns null for topic without URL', () => {
+    assert.equal(parsePrRef('add dark mode'), null);
+  });
+
+  it('returns null for issue URL (not PR)', () => {
+    assert.equal(parsePrRef('fix https://github.com/owner/repo/issues/42'), null);
+  });
+
+  it('extracts first PR URL when topic has multiple', () => {
+    const ref = parsePrRef('review https://github.com/a/b/pull/1 and https://github.com/c/d/pull/2');
+    assert.deepEqual(ref, { owner: 'a', repo: 'b', number: 1 });
+  });
+
+  it('returns null for PR number 0', () => {
+    assert.equal(parsePrRef('https://github.com/owner/repo/pull/0'), null);
   });
 });
 

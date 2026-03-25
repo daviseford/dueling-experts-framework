@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
+import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
@@ -16,6 +17,11 @@ if (subcmd === 'history') {
 }
 if (subcmd === 'show') {
   const mod = await import('./show-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+if (subcmd === 'explorer') {
+  const mod = await import('./explorer-cmd.js');
   await mod.run(process.argv.slice(3));
   process.exit(0);
 }
@@ -39,6 +45,7 @@ if (!opts.topic) {
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
+  console.error('       def explorer');
   process.exit(1);
 }
 
@@ -86,6 +93,9 @@ try {
   ui.error((err as Error).message);
   process.exit(1);
 }
+
+// Register repo in global known-repos (fire-and-forget)
+registerRepo(targetRepo).catch(() => {});
 
 ui.intro({
   id: session.id,
