@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Radio } from "lucide-react"
@@ -17,10 +18,11 @@ interface SessionHeaderProps {
   topic: string
   sessionId: string
   disabled: boolean
+  isReadOnly?: boolean
   onEndSession: () => void
 }
 
-export function SessionHeader({ topic, sessionId, disabled, onEndSession }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, disabled, isReadOnly, onEndSession }: SessionHeaderProps) {
   return (
     <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
@@ -44,32 +46,38 @@ export function SessionHeader({ topic, sessionId, disabled, onEndSession }: Sess
         )}
       </div>
       <div className="flex items-center gap-2">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={disabled}
-              className="h-7 px-3 text-xs"
-            >
-              End Session
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>End this session?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will stop the session. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onEndSession}>
+        {isReadOnly ? (
+          <Badge variant="outline" className="h-7 border-muted-foreground/20 px-3 text-[11px] text-muted-foreground">
+            Viewing — read-only
+          </Badge>
+        ) : (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disabled}
+                className="h-7 px-3 text-xs"
+              >
                 End Session
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>End this session?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will stop the session. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={onEndSession}>
+                  End Session
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent" />
     </header>
