@@ -22,6 +22,7 @@ export type SessionPhase = "plan" | "debate" | "implement" | "review"
 
 export interface TurnsResponse {
   turns: Turn[]
+  session_id: string
   session_status: "active" | "paused" | "completed" | "interrupted"
   phase: SessionPhase
   topic: string
@@ -42,6 +43,7 @@ export interface PendingInterjection {
 
 export interface PollingState {
   turns: Turn[]
+  sessionId: string
   sessionStatus: "active" | "paused" | "completed" | "interrupted"
   topic: string
   turnCount: number

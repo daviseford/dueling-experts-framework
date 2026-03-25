@@ -4,6 +4,7 @@ import type { PollingState } from "@/lib/types"
 export function useMockPolling(): PollingState {
   return {
     turns: MOCK_RESPONSE.turns,
+    sessionId: MOCK_RESPONSE.session_id,
     sessionStatus: MOCK_RESPONSE.session_status,
     topic: MOCK_RESPONSE.topic,
     turnCount: MOCK_RESPONSE.turn_count,
