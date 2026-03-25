@@ -44,6 +44,7 @@ const MIME_TYPES: Record<string, string> = {
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
+let readOnlyMode = false;
 
 /**
  * Start the HTTP server for the watcher UI.
@@ -83,12 +84,57 @@ export async function start(session: Session, controller: Controller): Promise<v
 }
 
 /**
+ * Start the server in read-only mode for viewing completed sessions.
+ * POST endpoints return 403. Does not write port to session.json (read-only).
+ */
+export async function startReadOnly(session: Session): Promise<void> {
+  if (httpServer) {
+    throw new Error('Server is already running');
+  }
+
+  readOnlyMode = true;
+  sessionRef = session;
+  controllerRef = null;
+
+  try {
+    httpServer = createServer(handleRequest);
+
+    const server = httpServer;
+    await new Promise<void>((resolvePromise) => {
+      server.listen(0, '127.0.0.1', async () => {
+        const addr = server.address();
+        const port = typeof addr === 'object' && addr ? addr.port : 0;
+        const url = `http://localhost:${port}`;
+        ui.status('server.url', { url });
+
+        // Auto-open browser (skip in CI/test environments)
+        if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+          const openCmd = process.platform === 'win32' ? 'start'
+            : process.platform === 'darwin' ? 'open' : 'xdg-open';
+          import('node:child_process').then(({ exec }) => {
+            exec(`${openCmd} ${url}`);
+          }).catch(() => {});
+        }
+
+        resolvePromise();
+      });
+    });
+  } catch (err) {
+    readOnlyMode = false;
+    httpServer = null;
+    sessionRef = null;
+    throw err;
+  }
+}
+
+/**
  * Stop the HTTP server.
  */
 export function stop(): void {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
+    readOnlyMode = false;
   }
 }
 
@@ -147,8 +193,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     } else if (url.pathname === '/api/attempts' && req.method === 'GET') {
       await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
+      if (readOnlyMode) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Read-only mode' }));
+        return;
+      }
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
+      if (readOnlyMode) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Read-only mode' }));
+        return;
+      }
       await handleEndSession(req, res);
     } else if (req.method === 'GET') {
       // Static file serving from Vite build output

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite, killChildProcess } from './util.js';
@@ -171,7 +171,6 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
  * List canonical turn files in a session's turns directory, sorted by turn number.
  */
 export async function listTurnFiles(turnsDir: string): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises');
   let files: string[] = [];
   try {
     files = await readdir(turnsDir);
@@ -181,6 +180,69 @@ export async function listTurnFiles(turnsDir: string): Promise<string[]> {
   return files
     .filter((f: string) => f.startsWith('turn-') && f.endsWith('.md') && !f.endsWith('.tmp'))
     .sort();
+}
+
+// ── Session finder ─────────────────────────────────────────────────
+
+export interface SessionSummaryInfo {
+  id: string;
+  topic: string;
+  created: string;
+  session_status: string;
+  phase: string;
+  current_turn: number;
+  mode: string;
+  branch_name: string | null;
+  pr_url: string | null;
+  dir: string;
+}
+
+export async function findSessionDir(targetRepo: string, idPrefix: string): Promise<string | null> {
+  const sessionsDir = join(targetRepo, '.def', 'sessions');
+  let dirs: string[];
+  try {
+    dirs = await readdir(sessionsDir);
+  } catch {
+    return null;
+  }
+  const matches = dirs.filter(d => d.startsWith(idPrefix));
+  if (matches.length === 1) return join(sessionsDir, matches[0]);
+  return null;
+}
+
+export async function listSessions(targetRepo: string): Promise<SessionSummaryInfo[]> {
+  const sessionsDir = join(targetRepo, '.def', 'sessions');
+  let dirs: string[];
+  try {
+    dirs = await readdir(sessionsDir);
+  } catch {
+    return [];
+  }
+
+  const summaries: SessionSummaryInfo[] = [];
+  for (const dir of dirs) {
+    try {
+      const sessionPath = join(sessionsDir, dir, 'session.json');
+      const raw = await readFile(sessionPath, 'utf8');
+      const data = JSON.parse(raw);
+      summaries.push({
+        id: data.id ?? dir,
+        topic: data.topic ?? '(no topic)',
+        created: data.created ?? '',
+        session_status: data.session_status ?? 'unknown',
+        phase: data.phase ?? 'plan',
+        current_turn: data.current_turn ?? 0,
+        mode: data.mode ?? 'edit',
+        branch_name: data.branch_name ?? null,
+        pr_url: data.pr_url ?? null,
+        dir: join(sessionsDir, dir),
+      });
+    } catch {
+      // Skip corrupted session directories
+    }
+  }
+
+  return summaries.sort((a, b) => b.created.localeCompare(a.created));
 }
 
 async function ensureGitignore(targetRepo: string): Promise<void> {

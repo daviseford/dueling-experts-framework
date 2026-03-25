@@ -7,6 +7,19 @@ import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
 
+// Subcommand routing — check before parseArgs
+const subcmd = process.argv[2];
+if (subcmd === 'history') {
+  const mod = await import('./history-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+if (subcmd === 'show') {
+  const mod = await import('./show-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
@@ -24,6 +37,8 @@ if (opts.version) {
 if (!opts.topic) {
   console.error('Usage: def <topic>');
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
+  console.error('       def show <session-id-or-prefix>');
   process.exit(1);
 }
 
