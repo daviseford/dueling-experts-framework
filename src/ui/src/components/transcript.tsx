@@ -116,7 +116,7 @@ export function Transcript({
           />
         ))}
         {pendingInterjections.map((p) => (
-          <PendingTurnCard key={p.id} {...p} />
+          <PendingTurnCard key={p.id} content={p.content} />
         ))}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />

@@ -37,40 +37,43 @@ export default function App() {
   const handleInterjectionSent = useCallback((content: string) => {
     setPendingInterjections((prev) => [
       ...prev,
-      { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, content, sentAt: Date.now() },
+      { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, content },
     ])
   }, [])
 
-  // Derive visible pending items: exclude any whose content matches a human turn
+  // Count-based reconciliation: for each content string, keep only unmatched pending items.
+  // This correctly handles duplicate messages (e.g. "yes" sent twice).
   const visiblePending = useMemo(() => {
-    const humanContents = new Set(
-      turns.filter((t) => t.from === "human").map((t) => t.content)
-    )
-    return pendingInterjections.filter((p) => !humanContents.has(p.content))
+    const humanCounts = new Map<string, number>()
+    for (const t of turns) {
+      if (t.from === "human") {
+        humanCounts.set(t.content, (humanCounts.get(t.content) ?? 0) + 1)
+      }
+    }
+    const consumed = new Map<string, number>()
+    return pendingInterjections.filter((p) => {
+      const available = (humanCounts.get(p.content) ?? 0) - (consumed.get(p.content) ?? 0)
+      if (available > 0) {
+        consumed.set(p.content, (consumed.get(p.content) ?? 0) + 1)
+        return false
+      }
+      return true
+    })
   }, [turns, pendingInterjections])
 
   // Garbage-collect reconciled pending items from state
   useEffect(() => {
-    if (pendingInterjections.length === 0) return
-    const humanContents = new Set(
-      turns.filter((t) => t.from === "human").map((t) => t.content)
-    )
-    const remaining = pendingInterjections.filter((p) => !humanContents.has(p.content))
-    if (remaining.length < pendingInterjections.length) {
-      setPendingInterjections(remaining)
+    if (visiblePending.length < pendingInterjections.length) {
+      setPendingInterjections(visiblePending)
     }
-  }, [turns, pendingInterjections])
+  }, [visiblePending, pendingInterjections.length])
 
-  // Detect dropped interjections on phase transitions away from plan
+  // Detect dropped interjections: clear pending items when phase is not plan
   useEffect(() => {
     const prevPhase = prevPhaseRef.current
     prevPhaseRef.current = phase
-    if (
-      prevPhase === "plan" &&
-      phase !== "plan" &&
-      pendingInterjections.length > 0
-    ) {
-      const count = pendingInterjections.length
+    if (prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
+      const count = visiblePending.length
       setPendingInterjections([])
       toast.info(
         count === 1
@@ -78,7 +81,7 @@ export default function App() {
           : `${count} queued messages were not delivered — agents moved past the planning phase.`
       )
     }
-  }, [phase, pendingInterjections])
+  }, [phase, visiblePending])
 
   // Per-turn open state, keyed by turn id. New turns default to open.
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
