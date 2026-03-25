@@ -41,7 +41,9 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
-const DEFAULT_PORT = 18541;
+function getDefaultPort(): number {
+  return process.env.CI || process.env.DEF_NO_OPEN ? 0 : 18541;
+}
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
@@ -106,7 +108,7 @@ export async function start(session: Session, controller: Controller): Promise<v
 
   httpServer = createServer(handleRequest);
 
-  const port = await listenWithFallback(httpServer, DEFAULT_PORT);
+  const port = await listenWithFallback(httpServer, getDefaultPort());
   await updateSession(session.dir, { port });
   session.port = port;
   const url = `http://localhost:${port}`;
@@ -130,7 +132,7 @@ export async function startReadOnly(session: Session): Promise<void> {
   try {
     httpServer = createServer(handleRequest);
 
-    const port = await listenWithFallback(httpServer, DEFAULT_PORT);
+    const port = await listenWithFallback(httpServer, getDefaultPort());
     const url = `http://localhost:${port}`;
     ui.status('server.url', { url });
     openBrowserOnce(url);
@@ -159,7 +161,7 @@ export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: n
 
   httpServer = createServer(handleRequest);
 
-  const preferredPort = opts?.port ?? DEFAULT_PORT;
+  const preferredPort = opts?.port ?? getDefaultPort();
   const port = await listenWithFallback(httpServer, preferredPort);
   const url = `http://localhost:${port}`;
   ui.status('server.url', { url });
