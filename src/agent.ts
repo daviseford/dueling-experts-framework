@@ -44,12 +44,14 @@ const AGENTS: Record<AgentName, AgentConfig> = {
       '--allowedTools', '*',
       '--dangerously-skip-permissions',
     ],
-    // In plan/review phases when tool access is needed (e.g. reading GitHub PRs).
-    // Scoped to gh CLI only — agents cannot modify files.
+    // In plan/review phases: read-only tool access for research and analysis.
+    // No Edit, Write, or general Bash — agents can observe but not modify.
     reviewArgs: [
       '-p',
-      'Respond to the task described in the context provided via stdin. You have access to the gh CLI for reading GitHub data. Output your response as YAML frontmatter followed by markdown.',
-      '--allowedTools', 'Bash(gh:*)',
+      'Respond to the task described in the context provided via stdin. You have read-only tool access for research. Output your response as YAML frontmatter followed by markdown.',
+      '--allowedTools',
+      'Read', 'Glob', 'Grep',
+      'Bash(gh:*)', 'Bash(git log *)', 'Bash(git diff *)', 'Bash(git show *)', 'Bash(ls *)',
       '--dangerously-skip-permissions',
     ],
     captureStdout: true,
