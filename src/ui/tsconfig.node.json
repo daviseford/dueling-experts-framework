@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsBuildInfoFile",
+    "incremental": true,
     "target": "ES2022",
     "lib": ["ES2023"],
     "types": ["node"],
