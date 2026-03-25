@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite, killChildProcess } from './util.js';
@@ -171,7 +171,6 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
  * List canonical turn files in a session's turns directory, sorted by turn number.
  */
 export async function listTurnFiles(turnsDir: string): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises');
   let files: string[] = [];
   try {
     files = await readdir(turnsDir);
@@ -200,7 +199,6 @@ export interface SessionSummaryInfo {
 
 export async function findSessionDir(targetRepo: string, idPrefix: string): Promise<string | null> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
-  const { readdir } = await import('node:fs/promises');
   let dirs: string[];
   try {
     dirs = await readdir(sessionsDir);
@@ -214,7 +212,6 @@ export async function findSessionDir(targetRepo: string, idPrefix: string): Prom
 
 export async function listSessions(targetRepo: string): Promise<SessionSummaryInfo[]> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
-  const { readdir } = await import('node:fs/promises');
   let dirs: string[];
   try {
     dirs = await readdir(sessionsDir);

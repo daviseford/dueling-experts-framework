@@ -181,10 +181,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     } else if (url.pathname === '/api/attempts' && req.method === 'GET') {
       await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
-      if (readOnlyMode) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Read-only mode' })); return; }
+      if (readOnlyMode) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Read-only mode' }));
+        return;
+      }
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
-      if (readOnlyMode) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Read-only mode' })); return; }
+      if (readOnlyMode) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Read-only mode' }));
+        return;
+      }
       await handleEndSession(req, res);
     } else if (req.method === 'GET') {
       // Static file serving from Vite build output

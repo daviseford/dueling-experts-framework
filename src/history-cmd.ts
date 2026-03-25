@@ -42,21 +42,23 @@ function parseHistoryArgs(argv: string[]): HistoryArgs {
 }
 
 function statusColor(status: string): string {
+  const padded = status.padEnd(14);
   switch (status) {
-    case 'completed': return pc.green(status);
-    case 'active': return pc.cyan(status);
-    case 'interrupted': return pc.yellow(status);
-    case 'paused': return pc.yellow(status);
-    default: return status;
+    case 'completed': return pc.green(padded);
+    case 'active': return pc.cyan(padded);
+    case 'interrupted': return pc.yellow(padded);
+    case 'paused': return pc.yellow(padded);
+    default: return padded;
   }
 }
 
 function phaseBadge(phase: string): string {
+  const padded = phase.padEnd(12);
   switch (phase) {
-    case 'plan': return pc.cyan(phase.padEnd(10));
-    case 'implement': return pc.green(phase.padEnd(10));
-    case 'review': return pc.magenta(phase.padEnd(10));
-    default: return phase.padEnd(10);
+    case 'plan': return pc.cyan(padded);
+    case 'implement': return pc.green(padded);
+    case 'review': return pc.magenta(padded);
+    default: return padded;
   }
 }
 
@@ -80,12 +82,20 @@ export async function run(argv: string[]): Promise<void> {
     sessions = sessions.filter(s => s.topic.toLowerCase().includes(needle));
   }
   if (args.since) {
-    const sinceDate = new Date(args.since).toISOString();
-    sessions = sessions.filter(s => s.created >= sinceDate);
+    const d = new Date(args.since);
+    if (isNaN(d.getTime())) {
+      console.error(`Invalid date: ${args.since}`);
+      process.exit(1);
+    }
+    sessions = sessions.filter(s => s.created >= d.toISOString());
   }
   if (args.before) {
-    const beforeDate = new Date(args.before).toISOString();
-    sessions = sessions.filter(s => s.created < beforeDate);
+    const d = new Date(args.before);
+    if (isNaN(d.getTime())) {
+      console.error(`Invalid date: ${args.before}`);
+      process.exit(1);
+    }
+    sessions = sessions.filter(s => s.created < d.toISOString());
   }
 
   // Apply limit
@@ -110,9 +120,9 @@ export async function run(argv: string[]): Promise<void> {
     const id = s.id.slice(0, 8).padEnd(10);
     const topic = s.topic.slice(0, 30).padEnd(32);
     const date = formatDate(s.created).padEnd(14);
-    const phase = phaseBadge(s.phase).padEnd(12);
+    const phase = phaseBadge(s.phase);
     const turns = String(s.current_turn).padEnd(7);
-    const status = statusColor(s.session_status).padEnd(14);
+    const status = statusColor(s.session_status);
     const pr = s.pr_url ? pc.cyan(`#${extractPrNumber(s.pr_url)}`) : pc.dim('-');
     console.log(`${id}${topic}${date}${phase}${turns}${status}${pr}`);
   }
@@ -123,13 +133,10 @@ export async function run(argv: string[]): Promise<void> {
 
 function formatDate(iso: string): string {
   if (!iso) return '(unknown)';
-  try {
-    const d = new Date(iso);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-  } catch {
-    return iso.slice(0, 10);
-  }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 function extractPrNumber(url: string): string {
