@@ -9,6 +9,7 @@ import { PauseBanner } from "@/components/pause-banner"
 import { Transcript } from "@/components/transcript"
 import { InterjectionInput } from "@/components/interjection-input"
 import { StatusBar } from "@/components/status-bar"
+import { EmptyState } from "@/components/empty-state"
 import type { PendingInterjection } from "@/lib/types"
 
 export default function App() {
@@ -157,23 +158,29 @@ export default function App() {
         onSelectSession={setSelectedSessionId}
         owningSessionId={owningSessionId}
       />
-      <PauseBanner visible={sessionStatus === "paused"} isReadOnly={isReadOnly} />
-      <Transcript
-        turns={turns}
-        thinking={thinking}
-        thinkingElapsed={thinkingElapsed}
-        phase={phase}
-        sessionStatus={sessionStatus}
-        branchName={branchName}
-        prUrl={prUrl}
-        prNumber={prNumber}
-        turnsPath={turnsPath}
-        artifactsPath={artifactsPath}
-        openMap={openMap}
-        onTurnOpenChange={handleTurnOpenChange}
-        pendingInterjections={visiblePending}
-      />
-      <InterjectionInput disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
+      {sessions.length === 0 && turns.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          <PauseBanner visible={sessionStatus === "paused"} isReadOnly={isReadOnly} />
+          <Transcript
+            turns={turns}
+            thinking={thinking}
+            thinkingElapsed={thinkingElapsed}
+            phase={phase}
+            sessionStatus={sessionStatus}
+            branchName={branchName}
+            prUrl={prUrl}
+            prNumber={prNumber}
+            turnsPath={turnsPath}
+            artifactsPath={artifactsPath}
+            openMap={openMap}
+            onTurnOpenChange={handleTurnOpenChange}
+            pendingInterjections={visiblePending}
+          />
+          <InterjectionInput disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
+        </>
+      )}
       <StatusBar
         statusText={statusText}
         turnCount={turnCount}
