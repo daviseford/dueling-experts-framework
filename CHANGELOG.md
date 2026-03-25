@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.7](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.6...def-v0.0.7) (2026-03-25)
+
+
+### Features
+
+* add ASCII-safe punctuation rule to prompt templates ([#30](https://github.com/daviseford/dueling-experts-framework/issues/30)) ([b988406](https://github.com/daviseford/dueling-experts-framework/commit/b988406bfa878ea53790b1d42cc8106c77c5496d))
+* add session history browsing (def history, def show) ([8a8612c](https://github.com/daviseford/dueling-experts-framework/commit/8a8612c69b6b181512779071145102d6e3a2951a))
+* pending interjection UI + session ID in nav bar ([cf3877d](https://github.com/daviseford/dueling-experts-framework/commit/cf3877d56ed1b6ec9760884b03dac52054708e09))
+* show pending interjections inline in transcript ([0489979](https://github.com/daviseford/dueling-experts-framework/commit/0489979624433f7bfb640c5ac098364140c699c4))
+* show session ID in the top nav bar ([f9525f3](https://github.com/daviseford/dueling-experts-framework/commit/f9525f36730556cae333e630a7adb100c87a7013))
+* use Sonnet for review-phase turns (three-tier model system) ([#49](https://github.com/daviseford/dueling-experts-framework/issues/49)) ([b71d696](https://github.com/daviseford/dueling-experts-framework/commit/b71d6966c92966ab87b8402336bd01fc88fc778c))
+
+
+### Bug Fixes
+
+* address remaining PR [#28](https://github.com/daviseford/dueling-experts-framework/issues/28) review feedback ([0c4db02](https://github.com/daviseford/dueling-experts-framework/commit/0c4db029d05d9f50fc1c904847ce29a23f51d9ad))
+* address review findings for pending interjection UI ([20ec75b](https://github.com/daviseford/dueling-experts-framework/commit/20ec75bb9cf045fb81e59b3bb54f1bd8d7d3d55a))
+* address session history review feedback ([28b10b2](https://github.com/daviseford/dueling-experts-framework/commit/28b10b278a0378dc793a69dd2d165dd4a2ffeb70))
+* rescue agent branch switches and handle deleted base_ref in PR creation ([#51](https://github.com/daviseford/dueling-experts-framework/issues/51)) ([91db86d](https://github.com/daviseford/dueling-experts-framework/commit/91db86d58f3906dd86827e05450166f5096e5393))
+* restore CI/DEF_NO_OPEN guard in start() and validate dates early ([166e9d6](https://github.com/daviseford/dueling-experts-framework/commit/166e9d6e18d42940c4b3e7b7f029c3f2921de560))
+
 ## [0.0.6](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.5...def-v0.0.6) (2026-03-25)
 
 
