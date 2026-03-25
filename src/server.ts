@@ -375,12 +375,17 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
 
 async function handleExport(res: ServerResponse, url: URL): Promise<void> {
   if (!sessionRef) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'No active session' }));
     return;
   }
 
   const format = url.searchParams.get('format') ?? 'md';
+  if (format !== 'md' && format !== 'html') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'format must be "md" or "html"' }));
+    return;
+  }
   try {
     if (format === 'html') {
       const content = await exportHtml(sessionRef.dir);

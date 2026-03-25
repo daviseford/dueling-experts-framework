@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { findSessionDir, listSessions } from './session.js';
 import { exportMarkdown, exportHtml } from './export.js';
 
@@ -15,9 +15,16 @@ function parseExportArgs(argv: string[]): ExportArgs {
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
-      case '--format':
-        result.format = argv[++i] as 'md' | 'html';
+      case '--format': {
+        const val = argv[++i];
+        if (val === 'md' || val === 'html') {
+          result.format = val;
+        } else {
+          console.error('Error: --format must be "md" or "html"');
+          process.exit(1);
+        }
         break;
+      }
       case '--output':
         result.output = argv[++i];
         break;
@@ -79,12 +86,12 @@ export async function run(argv: string[]): Promise<void> {
     : await exportMarkdown(sessionDir);
 
   if (args.output) {
-    writeFileSync(resolve(args.output), content, 'utf8');
+    await writeFile(resolve(args.output), content, 'utf8');
     console.log(`Exported to ${args.output}`);
   } else if (args.format === 'html') {
     const shortId = args.sessionId.slice(0, 8);
     const filename = `transcript-${shortId}.html`;
-    writeFileSync(resolve(filename), content, 'utf8');
+    await writeFile(resolve(filename), content, 'utf8');
     console.log(`Exported to ${filename}`);
   } else {
     process.stdout.write(content);
