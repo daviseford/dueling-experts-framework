@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchSessions, fetchSessionTurns } from "@/lib/api"
+import { useMockExplorer } from "./use-mock-explorer"
 import type { Turn, ThinkingState, SessionPhase, PollingState, SessionSummary } from "@/lib/types"
 
 const SESSIONS_POLL_INTERVAL = 5000
@@ -29,7 +30,7 @@ export interface ExplorerState extends PollingState {
   owningSessionId: string | null
 }
 
-export function useExplorer(): ExplorerState {
+function useLiveExplorer(enabled = true): ExplorerState {
   // Session list
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [owningSessionId, setOwningSessionId] = useState<string | null>(null)
@@ -171,20 +172,21 @@ export function useExplorer(): ExplorerState {
 
   // Start sessions polling
   useEffect(() => {
+    if (!enabled) return
     pollSessions()
     return () => {
       if (sessionsTimeoutRef.current) clearTimeout(sessionsTimeoutRef.current)
     }
-  }, [pollSessions])
+  }, [pollSessions, enabled])
 
   // Start turns polling when selection changes
   useEffect(() => {
-    if (!selectedSessionId) return
+    if (!enabled || !selectedSessionId) return
     pollTurns()
     return () => {
       if (turnsTimeoutRef.current) clearTimeout(turnsTimeoutRef.current)
     }
-  }, [selectedSessionId, pollTurns])
+  }, [selectedSessionId, pollTurns, enabled])
 
   // Elapsed time ticker
   useEffect(() => {
@@ -225,4 +227,17 @@ export function useExplorer(): ExplorerState {
     artifactsPath,
     artifactNames,
   }
+}
+
+const isMock =
+  import.meta.env.VITE_MOCK === "true" ||
+  new URLSearchParams(window.location.search).has("mock")
+
+export function useExplorer(): ExplorerState {
+  // Both hooks must be called unconditionally (rules of hooks).
+  // useLiveExplorer skips fetches when mock mode is active via the enabled guard below,
+  // so there are no wasted network requests.
+  const live = useLiveExplorer(!isMock)
+  const mock = useMockExplorer()
+  return isMock ? mock : live
 }
