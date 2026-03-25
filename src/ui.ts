@@ -92,6 +92,9 @@ interface StatusPayloads {
   'push.failed':        { branch: string; error: string };
   'pr.failed':          { branch: string; error: string };
   'pr.parse.failed':    { output: string };
+  'gate.dryrun':        { action: string };
+  'gate.confirmed':     { action: string };
+  'gate.declined':      { action: string };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -383,6 +386,20 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       return `  ${c.yellow(SYM.warn)} Could not parse PR URL from gh output: ${output}`;
     }
 
+    // Gates
+    case 'gate.dryrun': {
+      const { action } = d as StatusPayloads['gate.dryrun'];
+      return `  ${c.cyan(SYM.info)} ${c.bold('[dry-run]')} ${action}`;
+    }
+    case 'gate.confirmed': {
+      const { action } = d as StatusPayloads['gate.confirmed'];
+      return `  ${c.green(SYM.check)} ${action}`;
+    }
+    case 'gate.declined': {
+      const { action } = d as StatusPayloads['gate.declined'];
+      return `  ${c.yellow(SYM.warn)} Declined: ${action}`;
+    }
+
     default:
       return '';
   }
@@ -414,6 +431,56 @@ export function startActivity(turn: number, agent: string, label?: string, tier?
       s.stop(message ?? display);
     },
   };
+}
+
+// -- preview() ---------------------------------------------------------------
+
+export interface PreviewOptions {
+  dryRun?: boolean;
+  confirmBeforeCommit?: boolean;
+  noPr?: boolean;
+}
+
+export function preview(opts: PreviewOptions): void {
+  const lines: string[] = [];
+  lines.push(`  ${c.bold('This session will:')}`);
+  lines.push(`    ${SYM.bullet} Create a git branch and worktree`);
+  lines.push(`    ${SYM.bullet} Invoke agents with full tool access`);
+  lines.push(`    ${SYM.bullet} Commit changes to the branch`);
+  if (!opts.noPr) {
+    lines.push(`    ${SYM.bullet} Push and create a draft PR`);
+  }
+
+  if (opts.dryRun || opts.confirmBeforeCommit) {
+    lines.push('');
+    lines.push(`  ${c.bold('Active gates:')}`);
+    if (opts.dryRun) {
+      lines.push(`    ${c.cyan('--dry-run')}               Plan only, no git mutations`);
+    }
+    if (opts.confirmBeforeCommit) {
+      lines.push(`    ${c.cyan('--confirm-before-commit')} Pause before each git operation`);
+    }
+  }
+  lines.push('');
+  for (const line of lines) console.log(line);
+}
+
+// -- confirmGate() -----------------------------------------------------------
+
+export async function confirmGate(action: string): Promise<boolean> {
+  if (!isTTY) {
+    // Non-TTY: auto-approve with log
+    status('gate.confirmed', { action: `${action} (auto-approved, non-TTY)` });
+    return true;
+  }
+
+  const result = await clack.confirm({ message: action });
+  if (clack.isCancel(result) || !result) {
+    status('gate.declined', { action });
+    return false;
+  }
+  status('gate.confirmed', { action });
+  return true;
 }
 
 // -- outro() -----------------------------------------------------------------

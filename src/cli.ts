@@ -7,6 +7,8 @@ export interface ParsedArgs {
   reviewTurns?: number;
   noPr?: boolean;
   noFast?: boolean;
+  dryRun?: boolean;
+  confirmBeforeCommit?: boolean;
   version?: boolean;
 }
 
@@ -38,6 +40,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-fast':
         result.noFast = true;
+        break;
+      case '--dry-run':
+        result.dryRun = true;
+        break;
+      case '--confirm-before-commit':
+        result.confirmBeforeCommit = true;
         break;
       case '--version':
       case '-v':

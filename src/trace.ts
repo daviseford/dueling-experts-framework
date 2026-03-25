@@ -25,6 +25,9 @@ export type EventName =
   | 'phase.changed'
   | 'consensus.reached'
   | 'pr.created'
+  | 'gate.dryrun.skip'
+  | 'gate.confirm.approved'
+  | 'gate.confirm.declined'
   | 'session.end';
 
 // ── Attempt metadata ─────────────────────────────────────────────────

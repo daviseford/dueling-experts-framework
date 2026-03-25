@@ -41,6 +41,8 @@ interface RunOptions {
   server?: ServerModule | null;
   noPr?: boolean;
   noFast?: boolean;
+  dryRun?: boolean;
+  confirmBeforeCommit?: boolean;
 }
 
 export interface RecoveredState {
@@ -94,7 +96,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr, noFast, dryRun, confirmBeforeCommit }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -408,6 +410,22 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
             break;
           }
 
+          // Dry-run mode: plan only, no git mutations
+          if (dryRun) {
+            ui.status('gate.dryrun', { action: 'Skipping implementation (dry-run mode)' });
+            tracer.emit('session.end', { turn: turnCount, phase, data: { reason: 'dry-run' } });
+            break;
+          }
+
+          // Confirmation gate: worktree creation
+          if (confirmBeforeCommit) {
+            const approved = await ui.confirmGate('Create worktree and branch for implementation?');
+            if (!approved) {
+              tracer.emit('session.end', { turn: turnCount, phase, data: { reason: 'gate-declined-worktree' } });
+              break;
+            }
+          }
+
           // Create worktree for isolated implementation.
           // Worktree is required — agents get full tool access and must not
           // operate on the user's main checkout.
@@ -496,9 +514,15 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         await writeDiffArtifact(session, turnCount, diff);
 
         // Commit changes to the branch so they survive worktree removal
-        const committed = await commitChanges(session.target_repo, `def: implement turn ${turnCount}`);
-        if (committed) {
-          ui.status('changes.committed', { turn: turnCount });
+        let shouldCommit = true;
+        if (confirmBeforeCommit) {
+          shouldCommit = await ui.confirmGate('Commit implementation changes?');
+        }
+        if (shouldCommit) {
+          const committed = await commitChanges(session.target_repo, `def: implement turn ${turnCount}`);
+          if (committed) {
+            ui.status('changes.committed', { turn: turnCount });
+          }
         }
 
         // Transition to review
@@ -587,33 +611,47 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   await generateDecisions(session);
 
   // Commit any remaining uncommitted changes before push/PR (safety net).
-  if (session.worktree_path) {
-    await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
+  if (session.worktree_path && !dryRun) {
+    let shouldFinalCommit = true;
+    if (confirmBeforeCommit) {
+      shouldFinalCommit = await ui.confirmGate('Commit remaining changes?');
+    }
+    if (shouldFinalCommit) {
+      await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
+    }
   }
 
   // Push branch and create PR from worktree (before cleanup).
   // Worktree cleanup is in a finally-style path so it always happens.
   try {
-    if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
-      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
-      if (delta) {
-        const prResult = await pushAndCreatePr({
-          repoPath: session.worktree_path,
-          branchName: session.branch_name,
-          baseRef: session.base_ref,
-          title: `def: ${session.topic}`,
-          sessionDir: session.dir,
-          topic: session.topic,
-          sessionId: session.id,
-        });
-        if (prResult) {
-          session.pr_url = prResult.url;
-          session.pr_number = prResult.number;
-          tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
-          ui.status('pr.created', { url: prResult.url });
-        }
-      } else {
+    if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr && !dryRun) {
+      let shouldPush = true;
+      if (confirmBeforeCommit) {
+        shouldPush = await ui.confirmGate('Push branch and create draft PR?');
+      }
+      if (!shouldPush) {
         ui.status('pr.skipped', {});
+      } else {
+        const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+        if (delta) {
+          const prResult = await pushAndCreatePr({
+            repoPath: session.worktree_path,
+            branchName: session.branch_name,
+            baseRef: session.base_ref,
+            title: `def: ${session.topic}`,
+            sessionDir: session.dir,
+            topic: session.topic,
+            sessionId: session.id,
+          });
+          if (prResult) {
+            session.pr_url = prResult.url;
+            session.pr_number = prResult.number;
+            tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
+            ui.status('pr.created', { url: prResult.url });
+          }
+        } else {
+          ui.status('pr.skipped', {});
+        }
       }
     }
   } finally {

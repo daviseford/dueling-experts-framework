@@ -23,7 +23,7 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast] [--dry-run] [--confirm-before-commit]');
   process.exit(1);
 }
 
@@ -83,6 +83,10 @@ ui.intro({
   dir: session.dir,
 });
 
+if (opts.dryRun || opts.confirmBeforeCommit) {
+  ui.preview({ dryRun: opts.dryRun, confirmBeforeCommit: opts.confirmBeforeCommit, noPr: opts.noPr });
+}
+
 installShutdownHandler(session.dir, targetRepo, session);
 
 // Start server
@@ -95,7 +99,7 @@ try {
 
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast, dryRun: opts.dryRun, confirmBeforeCommit: opts.confirmBeforeCommit });
 } catch (err: unknown) {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
