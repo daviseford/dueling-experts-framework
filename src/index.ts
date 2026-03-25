@@ -7,6 +7,19 @@ import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
 
+// Subcommand routing — check before parseArgs
+const subcmd = process.argv[2];
+if (subcmd === 'history') {
+  const mod = await import('./history-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+if (subcmd === 'show') {
+  const mod = await import('./show-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
 
