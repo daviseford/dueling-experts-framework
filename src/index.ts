@@ -37,6 +37,8 @@ if (opts.version) {
 if (!opts.topic) {
   console.error('Usage: def <topic>');
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
+  console.error('       def show <session-id-or-prefix>');
   process.exit(1);
 }
 

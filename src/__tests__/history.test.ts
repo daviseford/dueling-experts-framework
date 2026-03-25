@@ -1,10 +1,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { findSessionDir, listSessions } from '../session.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function makeSessionJson(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -134,5 +138,34 @@ describe('listSessions', () => {
   it('returns empty for nonexistent sessions dir', async () => {
     const sessions = await listSessions(join(tmpdir(), 'nonexistent'));
     assert.equal(sessions.length, 0);
+  });
+});
+
+describe('history --since/--before invalid date', () => {
+  const indexPath = join(__dirname, '..', 'index.ts');
+
+  function runHistory(args: string[]): Promise<{ code: number | null; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = execFile(
+        process.execPath,
+        ['--import', 'tsx', indexPath, 'history', ...args],
+        (err, _stdout, stderr) => {
+          const code = child.exitCode ?? (err ? 1 : 0);
+          resolve({ code, stderr });
+        },
+      );
+    });
+  }
+
+  it('exits 1 with error message for invalid --since', async () => {
+    const { code, stderr } = await runHistory(['--since', 'not-a-date']);
+    assert.equal(code, 1);
+    assert.ok(stderr.includes('Invalid date'), `Expected "Invalid date" in stderr, got: ${stderr}`);
+  });
+
+  it('exits 1 with error message for invalid --before', async () => {
+    const { code, stderr } = await runHistory(['--before', 'garbage']);
+    assert.equal(code, 1);
+    assert.ok(stderr.includes('Invalid date'), `Expected "Invalid date" in stderr, got: ${stderr}`);
   });
 });

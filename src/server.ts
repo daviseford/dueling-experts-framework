@@ -85,7 +85,7 @@ export async function start(session: Session, controller: Controller): Promise<v
 
 /**
  * Start the server in read-only mode for viewing completed sessions.
- * POST endpoints return 403.
+ * POST endpoints return 403. Does not write port to session.json (read-only).
  */
 export async function startReadOnly(session: Session): Promise<void> {
   if (httpServer) {
@@ -96,25 +96,35 @@ export async function startReadOnly(session: Session): Promise<void> {
   sessionRef = session;
   controllerRef = null;
 
-  httpServer = createServer(handleRequest);
+  try {
+    httpServer = createServer(handleRequest);
 
-  const server = httpServer;
-  return new Promise<void>((resolvePromise) => {
-    server.listen(0, '127.0.0.1', async () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const url = `http://localhost:${port}`;
-      ui.status('server.url', { url });
+    const server = httpServer;
+    await new Promise<void>((resolvePromise) => {
+      server.listen(0, '127.0.0.1', async () => {
+        const addr = server.address();
+        const port = typeof addr === 'object' && addr ? addr.port : 0;
+        const url = `http://localhost:${port}`;
+        ui.status('server.url', { url });
 
-      import('node:child_process').then(({ exec }) => {
-        const openCmd = process.platform === 'win32' ? 'start'
-          : process.platform === 'darwin' ? 'open' : 'xdg-open';
-        exec(`${openCmd} ${url}`);
-      }).catch(() => {});
+        // Auto-open browser (skip in CI/test environments)
+        if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+          const openCmd = process.platform === 'win32' ? 'start'
+            : process.platform === 'darwin' ? 'open' : 'xdg-open';
+          import('node:child_process').then(({ exec }) => {
+            exec(`${openCmd} ${url}`);
+          }).catch(() => {});
+        }
 
-      resolvePromise();
+        resolvePromise();
+      });
     });
-  });
+  } catch (err) {
+    readOnlyMode = false;
+    httpServer = null;
+    sessionRef = null;
+    throw err;
+  }
 }
 
 /**
