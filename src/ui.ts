@@ -96,6 +96,7 @@ interface StatusPayloads {
   'push.failed':        { branch: string; error: string };
   'pr.failed':          { branch: string; error: string };
   'pr.parse.failed':    { output: string };
+  'pr.lookup.failed':   { owner: string; repo: string; number: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -403,6 +404,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'pr.parse.failed': {
       const { output } = d as StatusPayloads['pr.parse.failed'];
       return `  ${c.yellow(SYM.warn)} Could not parse PR URL from gh output: ${output}`;
+    }
+    case 'pr.lookup.failed': {
+      const { owner, repo, number: num } = d as StatusPayloads['pr.lookup.failed'];
+      return `  ${c.yellow(SYM.warn)} Could not look up PR ${owner}/${repo}#${num} — falling back to current branch.`;
     }
 
     default:
