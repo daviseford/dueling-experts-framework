@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { slugifyTopic, createWorktree, removeWorktree, captureDiff, commitChanges } from '../worktree.js';
+import { slugifyTopic, createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from '../worktree.js';
 
 describe('slugifyTopic', () => {
   it('lowercases and replaces spaces with hyphens', () => {
@@ -172,5 +172,70 @@ describe('createWorktree / removeWorktree', () => {
     } finally {
       await rm(nonGit, { recursive: true, force: true });
     }
+  });
+
+  it('currentBranch returns the branch name in a worktree', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, branchName } = await createWorktree(testDir, sessionId, 'branch check');
+
+    const branch = await currentBranch(worktreePath);
+    assert.equal(branch, branchName, 'should return the DEF branch name');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('currentBranch returns null for invalid path', async () => {
+    const branch = await currentBranch('/nonexistent/path');
+    assert.equal(branch, null, 'should return null for invalid repo');
+  });
+
+  it('rescueBranchSwitch cherry-picks commits from switched branch', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, branchName } = await createWorktree(testDir, sessionId, 'rescue test');
+
+    // Simulate: agent creates a new branch and commits there
+    execFileSync('git', ['checkout', '-b', 'agent-switched'], { cwd: worktreePath });
+    await writeFile(join(worktreePath, 'rescued.txt'), 'rescued content\n');
+    execFileSync('git', ['add', '.'], { cwd: worktreePath });
+    execFileSync('git', ['commit', '-m', 'agent commit on wrong branch'], { cwd: worktreePath });
+
+    // Verify we're on the wrong branch
+    const beforeBranch = await currentBranch(worktreePath);
+    assert.equal(beforeBranch, 'agent-switched');
+
+    // Rescue should cherry-pick the commit onto the DEF branch
+    await rescueBranchSwitch(worktreePath, branchName, 'agent-switched');
+
+    // Should now be on the DEF branch
+    const afterBranch = await currentBranch(worktreePath);
+    assert.equal(afterBranch, branchName, 'should be back on DEF branch');
+
+    // The commit should be on the DEF branch
+    const log = execFileSync('git', ['log', '--oneline', branchName], {
+      cwd: worktreePath, encoding: 'utf8',
+    });
+    assert.ok(log.includes('agent commit on wrong branch'), 'cherry-picked commit should be on DEF branch');
+
+    // The rescued file should exist
+    const content = await readFile(join(worktreePath, 'rescued.txt'), 'utf8');
+    assert.ok(content.trim() === 'rescued content', 'rescued file should have expected content');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('rescueBranchSwitch handles uncommitted changes on switched branch', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, branchName } = await createWorktree(testDir, sessionId, 'rescue uncommitted');
+
+    // Switch branch and leave uncommitted changes
+    execFileSync('git', ['checkout', '-b', 'agent-uncommitted'], { cwd: worktreePath });
+    await writeFile(join(worktreePath, 'uncommitted.txt'), 'uncommitted\n');
+
+    await rescueBranchSwitch(worktreePath, branchName, 'agent-uncommitted');
+
+    const afterBranch = await currentBranch(worktreePath);
+    assert.equal(afterBranch, branchName, 'should be back on DEF branch');
+
+    await removeWorktree(testDir, worktreePath);
   });
 });
