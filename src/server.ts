@@ -128,6 +128,43 @@ export async function startReadOnly(session: Session): Promise<void> {
 }
 
 /**
+ * Start the server in explorer mode — no owning session, multi-session browsing only.
+ * POST endpoints return 404. Serves the UI for browsing all sessions.
+ */
+export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
+  if (httpServer) {
+    throw new Error('Server is already running');
+  }
+
+  readOnlyMode = true;
+  sessionRef = null;
+  controllerRef = null;
+
+  httpServer = createServer(handleRequest);
+
+  const server = httpServer;
+  const listenPort = opts?.port ?? 0;
+  await new Promise<void>((resolvePromise) => {
+    server.listen(listenPort, '127.0.0.1', async () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const url = `http://localhost:${port}`;
+      ui.status('server.url', { url });
+
+      if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+        const openCmd = process.platform === 'win32' ? 'start'
+          : process.platform === 'darwin' ? 'open' : 'xdg-open';
+        import('node:child_process').then(({ exec }) => {
+          exec(`${openCmd} ${url}`);
+        }).catch(() => {});
+      }
+
+      resolvePromise();
+    });
+  });
+}
+
+/**
  * Stop the HTTP server.
  */
 export function stop(): void {

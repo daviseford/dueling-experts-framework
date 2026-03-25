@@ -19,6 +19,11 @@ if (subcmd === 'show') {
   await mod.run(process.argv.slice(3));
   process.exit(0);
 }
+if (subcmd === 'explorer') {
+  const mod = await import('./explorer-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
 
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
@@ -39,6 +44,7 @@ if (!opts.topic) {
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
+  console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
   process.exit(1);
 }
 
