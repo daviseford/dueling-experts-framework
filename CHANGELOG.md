@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.4](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.3...def-v0.0.4) (2026-03-25)
+
+
+### Features
+
+* grant plan/review agents read-only tool access ([#40](https://github.com/daviseford/dueling-experts-framework/issues/40)) ([7ac9c11](https://github.com/daviseford/dueling-experts-framework/commit/7ac9c117dcb471447ea1b29d8dff1a52b16dbec4))
+* optimize Codex invocation with --ephemeral and read-only reviewArgs ([#41](https://github.com/daviseford/dueling-experts-framework/issues/41)) ([7972b7e](https://github.com/daviseford/dueling-experts-framework/commit/7972b7e217535f756304a6afb7a750fdbc3c4a3f))
+
+
+### Bug Fixes
+
+* add reviewArgs for gh CLI access and fix process tree kill on Windows ([#37](https://github.com/daviseford/dueling-experts-framework/issues/37)) ([7331ead](https://github.com/daviseford/dueling-experts-framework/commit/7331ead94dbdeb92f9c09cc1ef68e82a9e0e9a08))
+
 ## [0.0.3](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.2...def-v0.0.3) (2026-03-25)
 
 
