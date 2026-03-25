@@ -3,14 +3,18 @@ import { createReadStream } from 'node:fs';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemble } from './context.js';
+import { killChildProcess } from './util.js';
 import type { Session, AgentName } from './session.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
+type Args = string[] | ((outputPath: string) => string[]);
+
 interface AgentConfig {
   cmd: string;
-  args: string[] | ((outputPath: string) => string[]);
-  implementArgs?: string[];
+  args: Args;
+  implementArgs?: Args;
+  reviewArgs?: Args;
   captureStdout: boolean;
 }
 
@@ -25,10 +29,28 @@ const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
-const FAST_MODELS = {
+export type ModelTier = 'full' | 'mid' | 'fast';
+
+const DEFAULT_MODELS: Record<AgentName, string> = {
+  claude: 'opus',
+  codex: 'gpt-5.4',
+};
+
+const MID_MODELS: Partial<Record<AgentName, string>> = {
+  claude: 'sonnet',
+};
+
+const FAST_MODELS: Partial<Record<AgentName, string>> = {
   claude: 'haiku',
-  codex: 'o4-mini',
-} as const satisfies Record<AgentName, string>;
+  codex: 'gpt-5.1-codex-mini',
+};
+
+/** Resolve the model name for a given agent and tier. */
+export function resolveModelName(agent: AgentName, tier: ModelTier): string {
+  if (tier === 'fast') return FAST_MODELS[agent] ?? DEFAULT_MODELS[agent];
+  if (tier === 'mid') return MID_MODELS[agent] ?? DEFAULT_MODELS[agent];
+  return DEFAULT_MODELS[agent];
+}
 
 const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
@@ -42,6 +64,16 @@ const AGENTS: Record<AgentName, AgentConfig> = {
       '--allowedTools', '*',
       '--dangerously-skip-permissions',
     ],
+    // In plan/review phases: read-only tool access for research and analysis.
+    // No Edit, Write, or general Bash — agents can observe but not modify.
+    reviewArgs: [
+      '-p',
+      'Respond to the task described in the context provided via stdin. You have read-only tool access for research. Output your response as YAML frontmatter followed by markdown.',
+      '--allowedTools',
+      'Read', 'Glob', 'Grep',
+      'Bash(gh:*)', 'Bash(git log *)', 'Bash(git diff *)', 'Bash(git show *)', 'Bash(ls *)',
+      '--dangerously-skip-permissions',
+    ],
     captureStdout: true,
   },
   codex: {
@@ -49,6 +81,15 @@ const AGENTS: Record<AgentName, AgentConfig> = {
     args: (outputPath: string) => [
       'exec',
       '--full-auto',
+      '--ephemeral',
+      '--skip-git-repo-check',
+      '-o', outputPath,
+    ],
+    // In plan/review phases: read-only sandbox, no file modifications.
+    reviewArgs: (outputPath: string) => [
+      'exec',
+      '--sandbox', 'read-only',
+      '--ephemeral',
       '--skip-git-repo-check',
       '-o', outputPath,
     ],
@@ -61,7 +102,7 @@ const AGENTS: Record<AgentName, AgentConfig> = {
  * Invoke an agent CLI with the assembled prompt.
  * Returns { exitCode, output, timedOut }.
  */
-export async function invoke(agentName: AgentName, session: Session, tier?: 'full' | 'fast'): Promise<InvokeResult> {
+export async function invoke(agentName: AgentName, session: Session, tier?: ModelTier): Promise<InvokeResult> {
   const config = AGENTS[agentName];
   if (!config) {
     throw new Error(`Unknown agent: "${agentName}". Supported: claude, codex`);
@@ -78,19 +119,23 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
   const prompt = await assemble(session);
   await writeFile(promptPath, prompt, 'utf8');
 
-  // Build args — use implementArgs for implement phase if available
+  // Build args — select phase-specific args when available
+  const resolve = (a: Args): string[] => typeof a === 'function' ? a(outputPath) : a;
   let args: string[];
   if (session.phase === 'implement' && config.implementArgs) {
-    args = config.implementArgs;
-  } else if (typeof config.args === 'function') {
-    args = config.args(outputPath);
+    args = resolve(config.implementArgs);
+  } else if ((session.phase === 'plan' || session.phase === 'review') && config.reviewArgs) {
+    args = resolve(config.reviewArgs);
   } else {
-    args = config.args;
+    args = resolve(config.args);
   }
 
-  // Append --model flag when using the fast tier
-  if (tier === 'fast') {
-    args = [...args, '--model', FAST_MODELS[agentName]];
+  // Append --model flag when not using the default (full) tier
+  if (tier && tier !== 'full') {
+    const model = resolveModelName(agentName, tier);
+    if (model !== DEFAULT_MODELS[agentName]) {
+      args = [...args, '--model', model];
+    }
   }
 
   const startTime = Date.now();
@@ -129,7 +174,7 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
     child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
       if (stdout.length > MAX_OUTPUT_BYTES) {
-        child.kill('SIGTERM');
+        killChildProcess(child);
       }
     });
 
@@ -139,9 +184,9 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
 
     const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
+      killChildProcess(child);
       setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        try { killChildProcess(child, 'SIGKILL'); } catch { /* already dead */ }
       }, 5000);
     }, session.phase === 'implement' ? IMPLEMENT_TIMEOUT_MS : TIMEOUT_MS);
 

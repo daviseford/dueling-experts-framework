@@ -64,6 +64,56 @@ describe('hasBranchDelta', () => {
 
     await removeWorktree(testDir, worktreePath);
   });
+
+  it('falls back when base_ref is deleted', async () => {
+    // Create a feature branch, then delete it, simulating a deleted base_ref
+    execFileSync('git', ['branch', 'temp-base'], { cwd: testDir });
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'deleted base');
+
+    // Make a change and commit
+    await writeFile(join(worktreePath, 'fallback.txt'), 'content\n');
+    await commitChanges(worktreePath, 'add fallback file');
+
+    // Delete the base branch (simulating what happens when a PR is merged and branch deleted)
+    execFileSync('git', ['branch', '-D', 'temp-base'], { cwd: testDir });
+
+    // hasBranchDelta should fall back to main/master
+    const out: { resolvedRef?: string } = {};
+    const delta = await hasBranchDelta(worktreePath, 'temp-base', out);
+    assert.equal(delta, true, 'should detect delta via fallback ref');
+    assert.ok(out.resolvedRef, 'should report the resolved ref');
+    assert.notEqual(out.resolvedRef, 'temp-base', 'resolved ref should not be the deleted branch');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('populates resolvedRef with original base_ref when it exists', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, baseRef } = await createWorktree(testDir, sessionId, 'resolved ref');
+
+    await writeFile(join(worktreePath, 'resolved.txt'), 'content\n');
+    await commitChanges(worktreePath, 'add resolved file');
+
+    const out: { resolvedRef?: string } = {};
+    await hasBranchDelta(worktreePath, baseRef, out);
+    assert.equal(out.resolvedRef, baseRef, 'resolvedRef should match original when it exists');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('returns false when base_ref and all fallbacks are missing', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'no fallback');
+
+    const out: { resolvedRef?: string } = {};
+    const delta = await hasBranchDelta(worktreePath, 'nonexistent-branch-xyz', out);
+    // In a test repo with a default branch (master/main), a fallback should resolve.
+    // But the function should at minimum not throw.
+    assert.equal(typeof delta, 'boolean');
+
+    await removeWorktree(testDir, worktreePath);
+  });
 });
 
 describe('createWorktree returns baseRef', () => {

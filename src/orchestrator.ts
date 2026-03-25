@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
-import { invoke } from './agent.js';
+import { invoke, resolveModelName } from './agent.js';
+import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
-import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
+import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
@@ -60,7 +61,8 @@ interface CanonicalTurnData {
   verdict?: 'approve' | 'fix';
   duration_ms?: number;
   decisions?: string[];
-  model_tier?: 'full' | 'fast';
+  model_tier?: ModelTier;
+  model_name?: string;
 }
 
 interface DecisionEntry {
@@ -73,15 +75,16 @@ interface DecisionEntry {
 
 /**
  * Select model tier for the current turn based on phase and consensus signals.
- * Returns 'fast' for confirmation/consensus turns in the plan phase, 'full' otherwise.
+ * Returns 'mid' for review, 'fast' for consensus turns in plan, 'full' otherwise.
  */
 export function selectModelTier(
   phase: SessionPhase,
   noFast: boolean,
   pendingPlanDecided: AgentName | null,
   bothEverDecided: boolean,
-): 'full' | 'fast' {
+): ModelTier {
   if (noFast) return 'full';
+  if (phase === 'review') return 'mid';
   if (phase !== 'plan') return 'full';
   if (bothEverDecided) return 'fast';
   if (pendingPlanDecided) return 'fast';
@@ -277,9 +280,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           content: result.output.trim(),
         };
       } else {
-        // Validation retry always uses the full model — if the fast model produced
+        // Validation retry always uses the full model — if a non-full model produced
         // invalid frontmatter, escalating to full is the right fallback.
-        if (currentTier === 'fast') {
+        if (currentTier !== 'full') {
           ui.status('tier.escalation', { turn: turnCount });
         } else {
           ui.status('turn.retry', { turn: turnCount });
@@ -288,7 +291,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
-        if (validation.valid && currentTier === 'fast') {
+        if (validation.valid && currentTier !== 'full') {
           currentTier = 'full';
         }
 
@@ -326,6 +329,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
       canonicalData.decisions = validData.decisions;
     }
     canonicalData.model_tier = currentTier;
+    canonicalData.model_name = resolveModelName(nextAgent, currentTier);
 
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
@@ -587,7 +591,14 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   await generateDecisions(session);
 
   // Commit any remaining uncommitted changes before push/PR (safety net).
-  if (session.worktree_path) {
+  // First, detect if the agent switched branches inside the worktree.
+  // If so, rescue commits onto the DEF branch so the PR captures them.
+  if (session.worktree_path && session.branch_name) {
+    const actual = await currentBranch(session.worktree_path);
+    if (actual && actual !== session.branch_name) {
+      ui.status('branch.switched', { expected: session.branch_name, actual });
+      await rescueBranchSwitch(session.worktree_path, session.branch_name, actual);
+    }
     await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
   }
 
@@ -595,12 +606,15 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   // Worktree cleanup is in a finally-style path so it always happens.
   try {
     if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
-      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+      const deltaOut: { resolvedRef?: string } = {};
+      const delta = await hasBranchDelta(session.worktree_path, session.base_ref, deltaOut);
+      // Use the resolved ref (may differ from session.base_ref if original was deleted)
+      const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,
-          baseRef: session.base_ref,
+          baseRef: effectiveBase,
           title: `def: ${session.topic}`,
           sessionDir: session.dir,
           topic: session.topic,
@@ -785,7 +799,7 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: 'full' | 'fast'): Promise<InvokeOnceResult> {
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: ModelTier): Promise<InvokeOnceResult> {
   let attemptIdx = 0;
   if (turnCount !== undefined && attemptCounters) {
     const key = `${turnCount}-${agentName}`;
@@ -839,15 +853,15 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult & { effectiveTier?: 'full' | 'fast' }> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
   let activity = ui.startActivity(turnCount, agentName, undefined, tier);
   let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
   activity.stop();
   let effectiveTier = tier;
   if (!result.ok && !shouldAbort?.()) {
-    // Escalate fast→full on invocation failure (same pattern as validation retry)
-    const retryTier = tier === 'fast' ? 'full' : tier;
-    if (tier === 'fast') {
+    // Escalate non-full→full on invocation failure (same pattern as validation retry)
+    const retryTier: ModelTier = tier !== 'full' ? 'full' : tier;
+    if (tier !== 'full') {
       ui.status('invoke.escalate', { turn: turnCount, reason: result.reason });
     } else {
       ui.status('invoke.retry', { turn: turnCount, agent: agentName, reason: result.reason });
@@ -885,7 +899,7 @@ async function savePromptForTurn(session: Session, canonicalId: string): Promise
   }
 }
 
-async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: 'full' | 'fast'): Promise<void> {
+async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: ModelTier): Promise<void> {
   const id = `turn-${String(turnCount).padStart(4, '0')}-${agent}`;
   const data: CanonicalTurnData = {
     id,
@@ -895,7 +909,10 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     status: 'error',
     phase: session.phase,
   };
-  if (modelTier) data.model_tier = modelTier;
+  if (modelTier) {
+    data.model_tier = modelTier;
+    data.model_name = resolveModelName(agent, modelTier);
+  }
   // Sanitize rawOutput to prevent code fence escape
   const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
   const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;

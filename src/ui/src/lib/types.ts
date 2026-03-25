@@ -9,7 +9,8 @@ export interface Turn {
   duration_ms?: number
   decisions: string[]
   content: string
-  model_tier?: "full" | "fast"
+  model_tier?: "full" | "mid" | "fast"
+  model_name?: string
 }
 
 export interface ThinkingState {
