@@ -66,6 +66,7 @@ interface StatusPayloads {
   'review.approved':    { turn: number };
   'review.fixes':       { turn: number; loop: number; max: number };
   'review.limit':       { turn: number; max: number };
+  'plan.turns.limit':   { turn: number; max: number };
   'review.no.verdict':  { turn: number };
   'human.paused':       { turn: number };
   'human.exiting':      { turn: number };
@@ -273,6 +274,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'review.no.verdict': {
       const { turn } = d as StatusPayloads['review.no.verdict'];
       return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Review decided without verdict. Retrying...`;
+    }
+    case 'plan.turns.limit': {
+      const { turn, max } = d as StatusPayloads['plan.turns.limit'];
+      return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Plan-turns limit (${max}) reached. Ending plan phase.`;
     }
 
     // Human interaction

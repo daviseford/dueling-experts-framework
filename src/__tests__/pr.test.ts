@@ -181,6 +181,25 @@ describe('CLI --no-pr parsing', () => {
   });
 });
 
+describe('CLI --plan-turns parsing', () => {
+  it('parseArgs recognizes --plan-turns flag', () => {
+    const result = parseArgs(['--plan-turns', '6', '--topic', 'test']);
+    assert.equal(result.planTurns, 6);
+    assert.equal(result.topic, 'test');
+  });
+
+  it('parseArgs defaults planTurns to undefined when flag absent', () => {
+    const result = parseArgs(['--topic', 'test']);
+    assert.equal(result.planTurns, undefined);
+  });
+
+  it('parseArgs handles --plan-turns with other flags', () => {
+    const result = parseArgs(['--plan-turns', '4', '--max-turns', '20', '--topic', 'test']);
+    assert.equal(result.planTurns, 4);
+    assert.equal(result.maxTurns, 20);
+  });
+});
+
 describe('parseDecisionBullets', () => {
   it('extracts decisions from agent-prefixed numbered lines', () => {
     const raw = [

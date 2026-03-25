@@ -25,6 +25,7 @@ export interface Session {
   phase: SessionPhase;
   impl_model: AgentName;
   review_turns: number;
+  plan_turns: number;
   port: number | null;
   pid: number;
   dir: string;
@@ -41,6 +42,7 @@ export interface CreateSessionOptions {
   topic: string;
   mode: string;
   maxTurns: number;
+  planTurns: number;
   firstAgent: AgentName;
   implModel: AgentName;
   reviewTurns: number;
@@ -53,7 +55,7 @@ export interface CreateSessionOptions {
  * Create a new session directory and session.json.
  * Each session is independent — multiple sessions can run concurrently.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
+export async function create({ topic, mode, maxTurns, planTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
 
   // Ensure .def/ exists
@@ -79,6 +81,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     phase: 'plan',
     impl_model: implModel || 'claude',
     review_turns: reviewTurns || 6,
+    plan_turns: planTurns || maxTurns,
     port: null,
     pid: process.pid,
     worktree_path: null,
@@ -106,6 +109,10 @@ export async function load(sessionDir: string): Promise<Session> {
   // Normalize legacy 'debate' phase to 'plan'
   if (parsed.phase === 'debate') {
     parsed.phase = 'plan';
+  }
+  // Default plan_turns to max_turns for sessions created before this field existed
+  if (parsed.plan_turns === undefined) {
+    parsed.plan_turns = parsed.max_turns ?? 20;
   }
   return { ...parsed, dir: sessionDir } as Session;
 }

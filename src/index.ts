@@ -23,7 +23,7 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--plan-turns N] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   process.exit(1);
 }
 
@@ -52,6 +52,12 @@ if (opts.reviewTurns !== undefined) {
     process.exit(1);
   }
 }
+if (opts.planTurns !== undefined) {
+  if (isNaN(opts.planTurns) || opts.planTurns < 1 || opts.planTurns > 100) {
+    console.error('Error: --plan-turns must be a number between 1 and 100');
+    process.exit(1);
+  }
+}
 
 const targetRepo = resolve(process.cwd());
 
@@ -62,6 +68,7 @@ try {
     topic: opts.topic!,
     mode: opts.mode || 'edit',
     maxTurns: opts.maxTurns || 20,
+    planTurns: opts.planTurns || (opts.maxTurns || 20),
     firstAgent: (opts.first || 'claude') as AgentName,
     implModel: (opts.implModel || 'claude') as AgentName,
     reviewTurns: opts.reviewTurns || 6,

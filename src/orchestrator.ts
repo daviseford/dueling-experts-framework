@@ -48,6 +48,7 @@ export interface RecoveredState {
   pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null;
   reviewLoopCount: number;
   bothEverDecided: boolean;
+  planTurnCount: number;
 }
 
 interface CanonicalTurnData {
@@ -134,6 +135,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   let emptyDiffRetries = 0;
   const MAX_EMPTY_DIFF_RETRIES = 2;
 
+  // Track plan-phase turns for --plan-turns budget
+  let planTurnCount = 0;
+
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
     const recovered: RecoveredState = await recoverEphemeralState(session);
@@ -141,6 +145,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     pendingReviewDecided = recovered.pendingReviewDecided;
     reviewLoopCount = recovered.reviewLoopCount;
     bothEverDecided = recovered.bothEverDecided;
+    planTurnCount = recovered.planTurnCount;
     // Per-agent tracking not needed after recovery — bothEverDecided is sufficient
     if (bothEverDecided) { claudeEverDecided = true; codexEverDecided = true; }
   }
@@ -379,10 +384,18 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     // === Phase-specific post-turn logic ===
 
     if (phase === 'plan') {
+      planTurnCount++;
+
       await updateSession(session.dir, {
         current_turn: turnCount,
         next_agent: oppositeAgent,
       });
+
+      // Check plan-turns budget
+      if (planTurnCount >= session.plan_turns) {
+        ui.status('plan.turns.limit', { turn: turnCount, max: session.plan_turns });
+        break;
+      }
 
       // Check for consensus signaling — treat 'done' as 'decided' in edit mode
       const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided')
@@ -700,6 +713,7 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
   let pendingPlanDecided: AgentName | null = null;
   let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
   let reviewLoopCount = 0;
+  let planTurnCount = 0;
   let claudeDecided = false;
   let codexDecided = false;
 
@@ -713,6 +727,7 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     const verdict = (parsed.data as Record<string, unknown>).verdict as 'approve' | 'fix' | undefined;
 
     if (turnPhase === 'plan' || turnPhase === 'debate') {
+      planTurnCount++;
       // Plan-phase consensus tracking (two-agent model)
       if (status === 'decided' || status === 'done') {
         // Track per-agent decided for fast-model heuristic (monotonically additive)
@@ -751,7 +766,7 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     }
   }
 
-  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided: claudeDecided && codexDecided };
+  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided: claudeDecided && codexDecided, planTurnCount };
 }
 
 // --- Status normalization ---

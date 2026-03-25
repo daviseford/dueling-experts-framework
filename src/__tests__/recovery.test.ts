@@ -37,6 +37,7 @@ function mockSession(dir: string, overrides: Partial<Session> = {}): Session {
     phase: 'plan',
     impl_model: 'claude',
     review_turns: 6,
+    plan_turns: 20,
     port: null,
     pid: process.pid,
     dir,
@@ -407,5 +408,43 @@ describe('recoverEphemeralState', () => {
     const session = mockSession(tmpDir, { current_turn: 2 });
     const result = await recoverEphemeralState(session);
     assert.equal(result.bothEverDecided, true);
+  });
+
+  it('recovers planTurnCount from plan-phase turns', async () => {
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'complete', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'complete', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0003-claude', turn: 3, from: 'claude',
+      timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'plan',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 3 });
+    const result = await recoverEphemeralState(session);
+    assert.equal(result.planTurnCount, 3);
+  });
+
+  it('does not count implement turns in planTurnCount', async () => {
+    await writeTurn(turnsDir, {
+      id: 'turn-0001-claude', turn: 1, from: 'claude',
+      timestamp: '2026-01-01T00:01:00Z', status: 'complete', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0002-codex', turn: 2, from: 'codex',
+      timestamp: '2026-01-01T00:02:00Z', status: 'decided', phase: 'plan',
+    });
+    await writeTurn(turnsDir, {
+      id: 'turn-0003-claude', turn: 3, from: 'claude',
+      timestamp: '2026-01-01T00:03:00Z', status: 'complete', phase: 'implement',
+    });
+
+    const session = mockSession(tmpDir, { current_turn: 3 });
+    const result = await recoverEphemeralState(session);
+    assert.equal(result.planTurnCount, 2);
   });
 });

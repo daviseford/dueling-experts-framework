@@ -51,6 +51,7 @@ function makeSession(dir: string, overrides: Partial<Session> = {}): Session {
     phase: 'plan',
     impl_model: 'claude',
     review_turns: 6,
+    plan_turns: 20,
     port: null,
     pid: process.pid,
     dir,

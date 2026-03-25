@@ -109,6 +109,7 @@ describe('/api/turns response shape', () => {
       phase: 'implement' as const,
       impl_model: 'claude' as const,
       review_turns: 6,
+      plan_turns: 10,
       port: null,
       pid: process.pid,
       dir: sessionDir,

@@ -35,6 +35,7 @@ function makeSession(overrides: Partial<Session> & { topic: string; mode: string
     phase: 'plan',
     impl_model: 'claude',
     review_turns: 6,
+    plan_turns: 20,
     port: null,
     ...overrides,
   } as Session;
