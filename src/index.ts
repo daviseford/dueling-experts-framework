@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
@@ -10,6 +12,13 @@ const VALID_AGENTS = ['claude', 'codex'];
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
 const opts = parseArgs(args);
+
+if (opts.version) {
+  const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  console.log(pkg.version);
+  process.exit(0);
+}
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
