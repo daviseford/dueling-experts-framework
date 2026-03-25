@@ -126,9 +126,13 @@ try {
   process.exitCode = 1;
 } finally {
   if (server) {
-    // Give the UI time to poll the completed status before shutting down
-    await new Promise((r) => setTimeout(r, 5000));
-    server.stop();
+    // Keep server alive for multi-session browsing after session completes.
+    // Server shuts down after idle timeout (default 5 minutes).
+    try {
+      await server.beginIdleShutdown();
+    } catch {
+      server.stop();
+    }
   }
   process.exit(process.exitCode || 0);
 }
