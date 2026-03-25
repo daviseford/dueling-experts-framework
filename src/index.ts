@@ -5,6 +5,7 @@ import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
+import { loadConfig, mergeWithArgs } from './config.js';
 import * as ui from './ui.js';
 
 const VALID_MODES = ['edit', 'planning'];
@@ -12,7 +13,9 @@ const VALID_AGENTS = ['claude', 'codex'];
 
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
-const opts = parseArgs(args);
+const rawOpts = parseArgs(args);
+const config = loadConfig(resolve(process.cwd()));
+const opts = mergeWithArgs(config, rawOpts);
 
 if (opts.version) {
   const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
