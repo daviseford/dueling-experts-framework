@@ -29,10 +29,10 @@ const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
-const FAST_MODELS = {
+const FAST_MODELS: Partial<Record<AgentName, string>> = {
   claude: 'haiku',
-  codex: 'o4-mini',
-} as const satisfies Record<AgentName, string>;
+  codex: 'gpt-5.1-codex-mini',
+};
 
 const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
@@ -112,9 +112,10 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
     args = resolve(config.args);
   }
 
-  // Append --model flag when using the fast tier
-  if (tier === 'fast') {
-    args = [...args, '--model', FAST_MODELS[agentName]];
+  // Append --model flag when using the fast tier (skip if no fast model defined)
+  const fastModel = FAST_MODELS[agentName];
+  if (tier === 'fast' && fastModel) {
+    args = [...args, '--model', fastModel];
   }
 
   const startTime = Date.now();
