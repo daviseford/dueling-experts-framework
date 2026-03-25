@@ -38,4 +38,20 @@ describe('selectModelTier', () => {
     // and no new decided signal is pending. bothEverDecided is still false.
     assert.equal(selectModelTier('plan', false, null, false), 'full');
   });
+
+  it('returns "full" when fastSuppressed is true even with consensus signals', () => {
+    assert.equal(selectModelTier('plan', false, 'claude', true, true), 'full');
+    assert.equal(selectModelTier('plan', false, 'codex', false, true), 'full');
+    assert.equal(selectModelTier('plan', false, null, true, true), 'full');
+  });
+
+  it('returns "fast" when fastSuppressed is false and consensus signals present', () => {
+    assert.equal(selectModelTier('plan', false, 'claude', false, false), 'fast');
+    assert.equal(selectModelTier('plan', false, null, true, false), 'fast');
+  });
+
+  it('fastSuppressed defaults to false for backward compatibility', () => {
+    // Calling without the 5th argument should behave as before
+    assert.equal(selectModelTier('plan', false, 'claude', true), 'fast');
+  });
 });

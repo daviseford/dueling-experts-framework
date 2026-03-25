@@ -80,8 +80,10 @@ export function selectModelTier(
   noFast: boolean,
   pendingPlanDecided: AgentName | null,
   bothEverDecided: boolean,
+  fastSuppressed: boolean = false,
 ): 'full' | 'fast' {
   if (noFast) return 'full';
+  if (fastSuppressed) return 'full';
   if (phase !== 'plan') return 'full';
   if (bothEverDecided) return 'fast';
   if (pendingPlanDecided) return 'fast';
@@ -133,6 +135,10 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   // Track consecutive empty-diff implement attempts to prevent infinite loops
   let emptyDiffRetries = 0;
   const MAX_EMPTY_DIFF_RETRIES = 2;
+
+  // Track consecutive fast-tier failures to suppress fast model after repeated failures
+  let consecutiveFastFailures = 0;
+  const MAX_FAST_FAILURES = 3;
 
   // On recovery, reconstruct ephemeral state from turn history
   if (session.current_turn > 0) {
@@ -221,18 +227,34 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     }
 
     // Select model tier for this turn (may be upgraded to 'full' on validation retry)
-    let currentTier = selectModelTier(phase, !!noFast, pendingPlanDecided, bothEverDecided);
+    const fastSuppressed = consecutiveFastFailures >= MAX_FAST_FAILURES;
+    let currentTier = selectModelTier(phase, !!noFast, pendingPlanDecided, bothEverDecided, fastSuppressed);
 
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
+    const initialTier = currentTier;
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
     let result: InvokeOnceResult = retryResult;
     if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
+
+    // Track fast-tier failures for suppression heuristic
+    if (initialTier === 'fast') {
+      if (result.ok && currentTier === 'fast') {
+        // Fast tier succeeded on first try — reset counter
+        consecutiveFastFailures = 0;
+      } else {
+        // Fast tier failed (escalated to full or failed entirely)
+        consecutiveFastFailures++;
+        if (consecutiveFastFailures >= MAX_FAST_FAILURES) {
+          tracer.emit('fast.suppressed', { turn: turnCount, phase, data: { consecutive_failures: consecutiveFastFailures } });
+        }
+      }
+    }
 
     if (endRequested) {
       ui.status('end.requested', { turn: turnCount });
