@@ -54,14 +54,104 @@ let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
 let idleResolve: (() => void) | null = null;
 let browserOpened = false;
 
+function debugLog(msg: string): void {
+  if (process.env.DEF_DEBUG) console.error(`[server] ${msg}`);
+}
+
 /**
- * Listen on the preferred port, falling back to a random port if taken.
+ * Try to shut down a stale DEF server on the given port.
+ * Returns true if the port should now be free.
+ */
+async function evictStaleServer(port: number): Promise<boolean> {
+  const http = await import('node:http');
+  return new Promise<boolean>((resolve) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/api/sessions',
+      method: 'GET',
+      timeout: 1000,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          // It's a DEF server if it has a sessions array
+          if (Array.isArray(json.sessions)) {
+            debugLog(`Stale DEF server detected on port ${port}, stopping it`);
+            // Send end-session to trigger shutdown
+            const endReq = http.request({
+              hostname: '127.0.0.1',
+              port,
+              path: '/api/end-session',
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              timeout: 1000,
+            }, () => {
+              // Give it a moment to shut down
+              setTimeout(() => resolve(true), 500);
+            });
+            endReq.on('error', () => resolve(true));
+            endReq.end('{}');
+            return;
+          }
+        } catch { /* not a DEF server */ }
+        debugLog(`Port ${port} is in use by a non-DEF service`);
+        resolve(false);
+      });
+    });
+    req.on('error', () => {
+      debugLog(`Port ${port} in use but not responding to HTTP`);
+      resolve(false);
+    });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+/**
+ * Listen on the preferred port. If taken by a stale DEF server, evict it and retry.
+ * Falls back to a random port as a last resort.
  */
 function listenWithFallback(server: import('node:http').Server, preferredPort: number): Promise<number> {
   return new Promise<number>((resolve, reject) => {
-    const onError = (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
-        // Port taken — fall back to random
+    let evicted = false;
+    const onError = async (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && preferredPort !== 0 && !evicted) {
+        evicted = true;
+        debugLog(`Port ${preferredPort} in use, attempting eviction`);
+        server.removeListener('error', onError);
+        const freed = await evictStaleServer(preferredPort);
+        if (freed) {
+          debugLog(`Retrying port ${preferredPort} after eviction`);
+          // Retry preferred port
+          server.on('error', (retryErr: NodeJS.ErrnoException) => {
+            if (retryErr.code === 'EADDRINUSE') {
+              debugLog(`Port ${preferredPort} still taken, falling back to random`);
+              server.listen(0, '127.0.0.1', () => {
+                const addr = server.address();
+                resolve(typeof addr === 'object' && addr ? addr.port : 0);
+              });
+            } else {
+              reject(retryErr);
+            }
+          });
+          server.listen(preferredPort, '127.0.0.1', () => {
+            const addr = server.address();
+            debugLog(`Bound to port ${preferredPort} after eviction`);
+            resolve(typeof addr === 'object' && addr ? addr.port : 0);
+          });
+        } else {
+          debugLog(`Eviction failed, falling back to random port`);
+          server.listen(0, '127.0.0.1', () => {
+            const addr = server.address();
+            resolve(typeof addr === 'object' && addr ? addr.port : 0);
+          });
+        }
+      } else if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
+        // Already tried eviction, fall back to random
+        debugLog(`Falling back to random port`);
         server.removeListener('error', onError);
         server.listen(0, '127.0.0.1', () => {
           const addr = server.address();
@@ -72,9 +162,11 @@ function listenWithFallback(server: import('node:http').Server, preferredPort: n
       }
     };
     server.on('error', onError);
+    debugLog(`Attempting to bind to port ${preferredPort}`);
     server.listen(preferredPort, '127.0.0.1', () => {
       server.removeListener('error', onError);
       const addr = server.address();
+      debugLog(`Bound to port ${preferredPort}`);
       resolve(typeof addr === 'object' && addr ? addr.port : 0);
     });
   });
@@ -97,6 +189,7 @@ function openBrowserOnce(url: string): void {
  * Start the HTTP server for the watcher UI.
  */
 export async function start(session: Session, controller: Controller): Promise<void> {
+  debugLog(`start() called, httpServer=${!!httpServer}, session=${session.id}`);
   if (httpServer) {
     throw new Error('Server is already running');
   }
@@ -108,7 +201,9 @@ export async function start(session: Session, controller: Controller): Promise<v
 
   httpServer = createServer(handleRequest);
 
-  const port = await listenWithFallback(httpServer, getDefaultPort());
+  const defaultPort = getDefaultPort();
+  debugLog(`getDefaultPort()=${defaultPort}, DEF_NO_OPEN=${process.env.DEF_NO_OPEN}, CI=${process.env.CI}`);
+  const port = await listenWithFallback(httpServer, defaultPort);
   await updateSession(session.dir, { port });
   session.port = port;
   const url = `http://localhost:${port}`;
