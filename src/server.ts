@@ -1,10 +1,10 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, dirname, extname, normalize, resolve } from 'node:path';
+import { readFile, readdir, stat, access } from 'node:fs/promises';
+import { join, dirname, basename, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
-import { update as updateSession, listTurnFiles } from './session.js';
+import { update as updateSession, listTurnFiles, listSessions, findSessionDir } from './session.js';
 import type { Session } from './session.js';
 import { readEvents, listAttempts } from './trace.js';
 import * as ui from './ui.js';
@@ -45,6 +45,10 @@ let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
 let readOnlyMode = false;
+let targetRepoRef: string | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
+let idleResolve: (() => void) | null = null;
 
 /**
  * Start the HTTP server for the watcher UI.
@@ -56,6 +60,8 @@ export async function start(session: Session, controller: Controller): Promise<v
 
   sessionRef = session;
   controllerRef = controller;
+  // Derive targetRepo from session dir: <repo>/.def/sessions/<uuid>/
+  targetRepoRef = resolve(session.dir, '..', '..', '..');
 
   httpServer = createServer(handleRequest);
 
@@ -128,13 +134,86 @@ export async function startReadOnly(session: Session): Promise<void> {
 }
 
 /**
+ * Start the server in explorer mode — no owning session, multi-session browsing only.
+ * POST endpoints return 404. Idle timeout starts immediately.
+ */
+export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
+  if (httpServer) {
+    throw new Error('Server is already running');
+  }
+
+  readOnlyMode = true;
+  sessionRef = null;
+  controllerRef = null;
+  targetRepoRef = targetRepo;
+  if (opts?.idleTimeout !== undefined) idleTimeoutMs = opts.idleTimeout * 1000;
+
+  httpServer = createServer(handleRequest);
+
+  const server = httpServer;
+  const listenPort = opts?.port ?? 0;
+  await new Promise<void>((resolvePromise) => {
+    server.listen(listenPort, '127.0.0.1', async () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const url = `http://localhost:${port}`;
+      ui.status('server.url', { url });
+
+      if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+        const openCmd = process.platform === 'win32' ? 'start'
+          : process.platform === 'darwin' ? 'open' : 'xdg-open';
+        import('node:child_process').then(({ exec }) => {
+          exec(`${openCmd} ${url}`);
+        }).catch(() => {});
+      }
+
+      // Start idle timer immediately in explorer mode
+      resetIdleTimer();
+      resolvePromise();
+    });
+  });
+}
+
+/**
+ * Signal that the owning session has completed.
+ * Starts the idle timer so the server stays alive for browsing.
+ * Returns a promise that resolves when the server shuts down due to idle timeout.
+ */
+export function beginIdleShutdown(): Promise<void> {
+  return new Promise<void>((r) => {
+    idleResolve = r;
+    resetIdleTimer();
+  });
+}
+
+function resetIdleTimer(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    stop();
+    if (idleResolve) {
+      idleResolve();
+      idleResolve = null;
+    }
+  }, idleTimeoutMs);
+}
+
+/**
  * Stop the HTTP server.
  */
 export function stop(): void {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
   if (httpServer) {
     httpServer.close();
     httpServer = null;
     readOnlyMode = false;
+    targetRepoRef = null;
+  }
+  if (idleResolve) {
+    idleResolve();
+    idleResolve = null;
   }
 }
 
@@ -184,25 +263,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   const url = new URL(req.url!, `http://${req.headers.host}`);
 
+  // Reset idle timer on any request
+  if (idleTimer) resetIdleTimer();
+
   try {
     // API routes first
-    if (url.pathname === '/api/turns' && req.method === 'GET') {
+    if (url.pathname === '/api/sessions' && req.method === 'GET') {
+      await handleGetSessions(res);
+    } else if (url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/turns') && req.method === 'GET') {
+      await handleGetSessionTurns(res, url.pathname);
+    } else if (url.pathname === '/api/turns' && req.method === 'GET') {
+      if (!sessionRef) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No owning session' }));
+        return;
+      }
       await handleGetTurns(res);
     } else if (url.pathname === '/api/events' && req.method === 'GET') {
+      if (!sessionRef) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No owning session' }));
+        return;
+      }
       await handleGetEvents(res, url);
     } else if (url.pathname === '/api/attempts' && req.method === 'GET') {
+      if (!sessionRef) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No owning session' }));
+        return;
+      }
       await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
-      if (readOnlyMode) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Read-only mode' }));
+      if (!controllerRef) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No active session' }));
         return;
       }
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
-      if (readOnlyMode) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Read-only mode' }));
+      if (!controllerRef) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No active session' }));
         return;
       }
       await handleEndSession(req, res);
@@ -335,6 +436,7 @@ async function handleGetAttempts(res: ServerResponse): Promise<void> {
 interface SessionMetadata {
   sessionStatus: string;
   phase: string | null;
+  topic: string | null;
   branchName: string | null;
   prUrl: string | null;
   prNumber: number | null;
@@ -344,6 +446,7 @@ interface SessionMetadata {
 export async function getSessionMetadata(sessionPath: string): Promise<SessionMetadata> {
   let sessionStatus = 'active';
   let phase: string | null = null;
+  let topic: string | null = null;
   let branchName: string | null = null;
   let prUrl: string | null = null;
   let prNumber: number | null = null;
@@ -352,6 +455,7 @@ export async function getSessionMetadata(sessionPath: string): Promise<SessionMe
     const sessionData = JSON.parse(await readFile(sessionPath, 'utf8'));
     sessionStatus = sessionData.session_status ?? 'active';
     phase = sessionData.phase ?? null;
+    topic = sessionData.topic ?? null;
     branchName = sessionData.branch_name ?? null;
     prUrl = sessionData.pr_url ?? null;
     prNumber = sessionData.pr_number ?? null;
@@ -369,7 +473,94 @@ export async function getSessionMetadata(sessionPath: string): Promise<SessionMe
     // No artifacts directory — fine
   }
 
-  return { sessionStatus, phase, branchName, prUrl, prNumber, artifactNames };
+  return { sessionStatus, phase, topic, branchName, prUrl, prNumber, artifactNames };
+}
+
+async function handleGetSessions(res: ServerResponse): Promise<void> {
+  if (!targetRepoRef) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No target repo configured' }));
+    return;
+  }
+
+  const sessions = await listSessions(targetRepoRef);
+  const repoName = basename(targetRepoRef);
+  const sessionsWithRepo = sessions.map(s => ({ ...s, repo: repoName }));
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    sessions: sessionsWithRepo,
+    owning_session_id: sessionRef?.id ?? null,
+  }));
+}
+
+async function handleGetSessionTurns(res: ServerResponse, pathname: string): Promise<void> {
+  // Extract session ID from /api/sessions/:id/turns
+  const parts = pathname.split('/');
+  // ['', 'api', 'sessions', ':id', 'turns']
+  const sessionId = parts[3];
+
+  if (!sessionId || !targetRepoRef) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  // Find the session directory
+  const sessionDir = await findSessionDir(targetRepoRef, sessionId);
+  if (!sessionDir) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  // Read turns
+  const turnsDir = join(sessionDir, 'turns');
+  const turnFiles = await listTurnFiles(turnsDir);
+  const turns = await Promise.all(
+    turnFiles.map(async (file) => {
+      const raw = await readFile(join(turnsDir, file), 'utf8');
+      const parsed = validate(raw);
+      return {
+        id: parsed.data?.id || file.replace('.md', ''),
+        turn: parsed.data?.turn,
+        from: parsed.data?.from,
+        timestamp: parsed.data?.timestamp,
+        status: parsed.data?.status,
+        phase: parsed.data?.phase || 'plan',
+        verdict: parsed.data?.verdict,
+        duration_ms: parsed.data?.duration_ms,
+        decisions: parsed.data?.decisions || [],
+        content: parsed.content || raw,
+        model_tier: parsed.data?.model_tier,
+        model_name: parsed.data?.model_name,
+      };
+    })
+  );
+
+  // Read session metadata
+  const sessionPath = join(sessionDir, 'session.json');
+  const metadata = await getSessionMetadata(sessionPath);
+
+  // For the owning session, include live thinking state
+  const isOwning = sessionRef?.id === sessionId;
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    turns,
+    session_id: sessionId,
+    session_status: metadata.sessionStatus,
+    phase: metadata.phase ?? (isOwning ? controllerRef?.phase : null) ?? 'plan',
+    topic: metadata.topic ?? '(no topic)',
+    turn_count: turns.length,
+    thinking: isOwning ? (controllerRef?.thinking ?? null) : null,
+    branch_name: metadata.branchName,
+    pr_url: metadata.prUrl,
+    pr_number: metadata.prNumber,
+    turns_path: join(sessionDir, 'turns'),
+    artifacts_path: join(sessionDir, 'artifacts'),
+    artifact_names: metadata.artifactNames,
+  }));
 }
 
 async function handleInterject(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -396,6 +587,13 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
   } catch {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid JSON' }));
+    return;
+  }
+
+  // Defense-in-depth: if session_id is provided, verify it matches the owning session
+  if (parsed.session_id && sessionRef && parsed.session_id !== sessionRef.id) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session ID mismatch' }));
     return;
   }
 
