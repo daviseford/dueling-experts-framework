@@ -11,6 +11,7 @@ import { createWorktree, removeWorktree, captureDiff, commitChanges } from './wo
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
+import { extractFilePaths, verifyDeliverables } from './deliverable.js';
 import * as ui from './ui.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -395,7 +396,21 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         bothEverDecided = claudeEverDecided && codexEverDecided;
 
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
-          // Both agents agreed — consensus reached
+          // Both agents agreed — check deliverable gate before accepting consensus
+          const allTurnDecisions = await collectAllDecisions(session);
+          const mentionedPaths = extractFilePaths(allTurnDecisions);
+          if (mentionedPaths.length > 0) {
+            const { missing } = await verifyDeliverables(mentionedPaths, session.target_repo);
+            if (missing.length > 0) {
+              tracer.emit('deliverable.missing', { turn: turnCount, phase, data: { missing } });
+              ui.status('deliverable.missing', { turn: turnCount, missing });
+              pendingPlanDecided = null;
+              nextAgent = oppositeAgent;
+              continue;
+            }
+          }
+
+          // Consensus reached — all deliverables verified
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           ui.status('consensus.reached', { turn: turnCount });
 
@@ -921,6 +936,20 @@ async function writeDiffArtifact(session: Session, turnCount: number, diff: stri
   await mkdir(artifactsDir, { recursive: true });
   const filename = `diff-${String(turnCount).padStart(4, '0')}.patch`;
   await atomicWrite(join(artifactsDir, filename), diff + '\n');
+}
+
+async function collectAllDecisions(session: Session): Promise<string[]> {
+  const turnsDir = join(session.dir, 'turns');
+  const turnFiles = await listTurnFiles(turnsDir);
+  const decisions: string[] = [];
+  for (const file of turnFiles) {
+    const raw = await readFile(join(turnsDir, file), 'utf8');
+    const parsed = validate(raw);
+    if (parsed.valid && parsed.data?.decisions) {
+      decisions.push(...parsed.data.decisions);
+    }
+  }
+  return decisions;
 }
 
 async function generatePlan(session: Session): Promise<void> {

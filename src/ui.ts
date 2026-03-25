@@ -55,6 +55,7 @@ interface StatusPayloads {
   'consensus.reached':  { turn: number };
   'consensus.pending':  { turn: number; agent: string; waiting: string };
   'consensus.contested':{ turn: number; agent: string };
+  'deliverable.missing': { turn: number; missing: string[] };
   'phase.changed':      { from: string; to: string; turn?: number };
   'phase.planning.done':{ turn: number };
   'worktree.created':   { turn: number; branch: string };
@@ -219,6 +220,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'consensus.contested': {
       const { turn, agent } = d as StatusPayloads['consensus.contested'];
       return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} ${c.bold(agent)} contests consensus. Resuming plan.`;
+    }
+    case 'deliverable.missing': {
+      const { turn, missing } = d as StatusPayloads['deliverable.missing'];
+      return `${turnPrefix(turn)} ${c.yellow(SYM.warn)} Deliverable gate: missing files: ${missing.join(', ')}. Consensus blocked.`;
     }
 
     // Phase
