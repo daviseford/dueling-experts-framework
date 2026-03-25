@@ -12,6 +12,8 @@ import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
+import { eventToMessage } from './notify.js';
+import type { Notifier, NotifyEvent } from './notify.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -41,6 +43,7 @@ interface RunOptions {
   server?: ServerModule | null;
   noPr?: boolean;
   noFast?: boolean;
+  notifier?: import('./notify.js').Notifier;
 }
 
 export interface RecoveredState {
@@ -94,7 +97,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr, noFast, notifier }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -398,6 +401,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           // Both agents agreed — consensus reached
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           ui.status('consensus.reached', { turn: turnCount });
+          notifier?.notify('consensus.reached', eventToMessage('consensus.reached', { topic: session.topic }));
 
           // Generate plan artifact from plan-phase turns
           await generatePlan(session);
@@ -405,6 +409,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           // Planning mode: no implementation, session ends here
           if (session.mode === 'planning') {
             ui.status('phase.planning.done', { turn: turnCount });
+            notifier?.notify('planning.done', eventToMessage('planning.done', { topic: session.topic }));
             break;
           }
 
@@ -467,6 +472,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
             isPaused = true;
             await updateSession(session.dir, { session_status: 'paused' });
             ui.status('human.paused', { turn: turnCount });
+            notifier?.notify('human.needed', eventToMessage('human.needed', { topic: session.topic }));
 
             const humanContent: string = await waitForHuman();
             isPaused = false;
@@ -481,6 +487,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           }
 
           ui.status('human.exiting', { turn: turnCount });
+          notifier?.notify('human.needed', eventToMessage('human.needed', { topic: session.topic }));
           break;
         }
 
@@ -528,6 +535,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         // Review agent emitted a verdict
         if (canonicalData.verdict === 'approve') {
           ui.status('review.approved', { turn: turnCount });
+          notifier?.notify('review.approved', eventToMessage('review.approved', { topic: session.topic }));
           break;
         }
 
@@ -545,6 +553,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
 
         // Switch back to implement for fixes
         ui.status('review.fixes', { turn: turnCount, loop: reviewLoopCount, max: session.review_turns });
+        notifier?.notify('review.fixes', eventToMessage('review.fixes', { topic: session.topic, loop: reviewLoopCount, max: session.review_turns }));
         phase = 'implement';
         session.phase = phase;
         nextAgent = session.impl_model;
@@ -611,6 +620,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           session.pr_number = prResult.number;
           tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
           ui.status('pr.created', { url: prResult.url });
+          notifier?.notify('pr.created', eventToMessage('pr.created', { topic: session.topic, url: prResult.url }));
         }
       } else {
         ui.status('pr.skipped', {});
@@ -645,6 +655,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
   });
+  notifier?.notify('session.complete', eventToMessage('session.complete', { topic: session.topic }));
 
   // --- Helper closures ---
 
@@ -663,6 +674,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     if (srv) {
       isPaused = true;
       ui.status('error.pause', { turn });
+      notifier?.notify('error.pause', eventToMessage('error.pause', { topic: session.topic, turn }));
       const humanContent: string = await waitForHuman();
       isPaused = false;
       turnCount++;
@@ -675,6 +687,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     }
 
     ui.status('error.exit', { turn });
+    notifier?.notify('error.exit', eventToMessage('error.exit', { topic: session.topic, turn }));
     return false;
   }
 }

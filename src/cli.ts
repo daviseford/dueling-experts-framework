@@ -7,6 +7,8 @@ export interface ParsedArgs {
   reviewTurns?: number;
   noPr?: boolean;
   noFast?: boolean;
+  notify?: boolean;
+  notifyWebhook?: string;
   version?: boolean;
 }
 
@@ -38,6 +40,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-fast':
         result.noFast = true;
+        break;
+      case '--notify':
+        result.notify = true;
+        break;
+      case '--notify-webhook':
+        result.notifyWebhook = argv[++i];
         break;
       case '--version':
       case '-v':

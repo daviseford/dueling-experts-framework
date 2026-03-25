@@ -5,6 +5,7 @@ import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
+import { createNotifier } from './notify.js';
 import * as ui from './ui.js';
 
 const VALID_MODES = ['edit', 'planning'];
@@ -93,9 +94,15 @@ try {
   // Headless mode
 }
 
+// Create notifier (enabled by --notify flag or --notify-webhook)
+const notifier = createNotifier({
+  enabled: !!(opts.notify || opts.notifyWebhook),
+  webhookUrl: opts.notifyWebhook,
+});
+
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast, notifier });
 } catch (err: unknown) {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
