@@ -9,7 +9,7 @@ date: 2026-03-24
 
 ## Overview
 
-Features that technical early adopters on Reddit (r/programming, r/ChatGPT, r/LocalLLaMA) will likely expect from DEF based on common sentiment patterns around AI developer tools. These are framed as probable user expectations grounded in the current codebase — not cited Reddit research.
+Features that technical early adopters on Reddit (r/programming, r/ChatGPT, r/LocalLLaMA) will likely expect from DEF based on common sentiment patterns around AI developer tools. These are framed as probable user expectations grounded in the current codebase -- not cited Reddit research.
 
 DEF currently ships with adaptive model tiering, worktree isolation, a live watcher UI, and draft PR creation. The features below represent gaps that power users will surface quickly.
 
@@ -18,13 +18,13 @@ DEF currently ships with adaptive model tiering, worktree isolation, a live watc
 | # | Feature | Why Users Expect It | Repo Evidence | Effort |
 |---|---------|-------------------|---------------|--------|
 | 1 | Config file support | Power users won't retype 8 flags every run | `src/cli.ts` is flag-only, no config file reader | Small |
-| 2 | Token & cost tracking | "How much did that debate cost me?" is universal | `src/trace.ts` tracks timing and exit metadata but not tokens or spend | Small–Med |
-| 3 | Exportable / shareable transcripts | Organic sharing drives adoption; debates are inherently shareable | Turns persist as clean markdown in `.def/sessions/<id>/turns/`, but no export command | Small–Med |
+| 2 | Token & cost tracking | "How much did that debate cost me?" is universal | `src/trace.ts` tracks timing and exit metadata but not tokens or spend | Small-Med |
+| 3 | Exportable / shareable transcripts | Organic sharing drives adoption; debates are inherently shareable | Turns persist as clean markdown in `.def/sessions/<id>/turns/`, but no export command | Small-Med |
 | 4 | Custom personas / role presets | "Make one focus on security, the other on performance" | Prompt assembly centralized in `src/context.ts`, no user-configurable specialization | Small |
 | 5 | Pluggable model / provider support | r/LocalLLaMA wants Ollama; r/programming wants Gemini | Agent invocation hardcoded in `src/agent.ts` to `claude` and `codex` CLIs | Large |
-| 6 | Session history browser / search | "Where did my past debates go?" | Sessions persist in `.def/sessions/` with full turn history, but no listing or search UX | Small–Med |
-| 7 | Approval gates / safer automation controls | "Will this commit to my repo without asking?" | Worktree creation (`src/worktree.ts`), commits, and draft PRs (`src/pr.ts`) happen automatically | Small–Med |
-| 8 | Background completion notifications | Long-running sessions need visibility without requiring the terminal to stay focused | Watcher UI in `src/server.ts` serves live data, session state in `src/session.ts`, but no push notifications or completion signals | Small–Med |
+| 6 | Session history browser / search | "Where did my past debates go?" | Sessions persist in `.def/sessions/` with full turn history, but no listing or search UX | Small-Med |
+| 7 | Approval gates / safer automation controls | "Will this commit to my repo without asking?" | Worktree creation (`src/worktree.ts`), commits, and draft PRs (`src/pr.ts`) happen automatically | Small-Med |
+| 8 | Background completion notifications | Long-running sessions need visibility without requiring the terminal to stay focused | Watcher UI in `src/server.ts` serves live data, session state in `src/session.ts`, but no push notifications or completion signals | Small-Med |
 | *Horizon* | Multi-agent debates (3+) | Viral "Claude vs Codex vs Gemini" demos | Orchestrator (`src/orchestrator.ts`) is strictly 2-agent; agent spawn in `src/agent.ts` is pairwise | Large |
 
 ## Feature Details
@@ -33,7 +33,7 @@ DEF currently ships with adaptive model tiering, worktree isolation, a live watc
 
 **Problem:** `src/cli.ts` accepts `--topic`, `--mode`, `--max-turns`, `--first`, `--impl-model`, `--no-fast`, `--no-pr`, `--review-turns`, and more. Typing these repeatedly is friction.
 
-**Expected behavior:** A `.defrc` or `def.config.json` in the project root (with global fallback at `~/.config/def/config.json`) sets defaults. CLI flags override file values. No new dependencies needed — a simple JSON reader suffices given the 5-dependency constraint.
+**Expected behavior:** A `.defrc` or `def.config.json` in the project root (with global fallback at `~/.config/def/config.json`) sets defaults. CLI flags override file values. No new dependencies needed -- a simple JSON reader suffices given the 5-dependency constraint.
 
 ### 2. Token & Cost Tracking
 
@@ -63,7 +63,7 @@ DEF currently ships with adaptive model tiering, worktree isolation, a live watc
 
 **Problem:** Sessions are stored in `.def/sessions/<uuid>/` with full turn history and `session.json` metadata. But there's no way to list, search, or browse past sessions.
 
-**Expected behavior:** A `def history` command that lists sessions (topic, date, phase reached, turn count, outcome). A `def show <session-id>` that opens the watcher UI against a completed session's data. The data layer already exists — it just needs a read path.
+**Expected behavior:** A `def history` command that lists sessions (topic, date, phase reached, turn count, outcome). A `def show <session-id>` that opens the watcher UI against a completed session's data. The data layer already exists -- it just needs a read path.
 
 ### 7. Approval Gates / Safer Automation Controls
 
@@ -73,9 +73,9 @@ DEF currently ships with adaptive model tiering, worktree isolation, a live watc
 
 ### 8. Background Completion Notifications
 
-**Problem:** DEF sessions can run for many minutes across 10–20+ turns. If the user switches to another terminal tab or window, they have no signal when the session completes or stalls. The watcher UI (`src/server.ts`) serves live data but only if the user is actively watching.
+**Problem:** DEF sessions can run for many minutes across 10-20+ turns. If the user switches to another terminal tab or window, they have no signal when the session completes or stalls. The watcher UI (`src/server.ts`) serves live data but only if the user is actively watching.
 
-**Expected behavior:** Desktop notifications (via `node-notifier` or native OS APIs) when a session completes, an agent stalls, or a review verdict is reached. Optionally, webhook/Slack integration for CI-like workflows. This addresses the same user anxiety as session resume — long-running sessions — without requiring recovery infrastructure.
+**Expected behavior:** Desktop notifications (via `node-notifier` or native OS APIs) when a session completes, an agent stalls, or a review verdict is reached. Optionally, webhook/Slack integration for CI-like workflows. This gives users confidence that long-running sessions are progressing without requiring them to watch the terminal.
 
 ### Horizon: Multi-Agent Debates (3+)
 
@@ -86,18 +86,18 @@ DEF currently ships with adaptive model tiering, worktree isolation, a live watc
 ## Prioritized Rollout
 
 ### Quick Wins (ship first)
-- **Config file support (#1)** — small scope, eliminates daily friction
-- **Custom personas (#4)** — small scope, unlocks creative use cases
+- **Config file support (#1)** -- small scope, eliminates daily friction
+- **Custom personas (#4)** -- small scope, unlocks creative use cases
 
 ### Core Polish (ship next)
-- **Token & cost tracking (#2)** — highest-value single feature for trust
-- **Approval gates (#7)** — required for users to trust DEF on real repos
-- **Background notifications (#8)** — addresses long-run visibility
+- **Token & cost tracking (#2)** -- highest-value single feature for trust
+- **Approval gates (#7)** -- required for users to trust DEF on real repos
+- **Background notifications (#8)** -- addresses long-run visibility
 
 ### Growth Features (ship for virality)
-- **Exportable transcripts (#3)** — enables organic sharing
-- **Session history (#6)** — makes DEF feel like a tool you keep using
+- **Exportable transcripts (#3)** -- enables organic sharing
+- **Session history (#6)** -- makes DEF feel like a tool you keep using
 
 ### Horizon
-- **Pluggable model / provider support (#5)** — large effort, community-driven
-- **Multi-agent debates** — architectural prerequisite is #5
+- **Pluggable model / provider support (#5)** -- large effort, community-driven
+- **Multi-agent debates** -- architectural prerequisite is #5
