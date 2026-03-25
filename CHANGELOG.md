@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.0.6](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.5...def-v0.0.6) (2026-03-25)
+
+
+### Features
+
+* show model name on turn cards and add Key Implementations to session summary ([#46](https://github.com/daviseford/dueling-experts-framework/issues/46)) ([a44487e](https://github.com/daviseford/dueling-experts-framework/commit/a44487ebdf62b51467f02ca84aeab467e3bdc791))
+
+## [0.0.5](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.4...def-v0.0.5) (2026-03-25)
+
+
+### Bug Fixes
+
+* replace unsupported o4-mini with gpt-5.1-codex-mini for Codex fast tier ([#42](https://github.com/daviseford/dueling-experts-framework/issues/42)) ([1318b62](https://github.com/daviseford/dueling-experts-framework/commit/1318b629956ec5b40abe20b802f5e6fc2e30a52d))
+
+## [0.0.4](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.3...def-v0.0.4) (2026-03-25)
+
+
+### Features
+
+* grant plan/review agents read-only tool access ([#40](https://github.com/daviseford/dueling-experts-framework/issues/40)) ([7ac9c11](https://github.com/daviseford/dueling-experts-framework/commit/7ac9c117dcb471447ea1b29d8dff1a52b16dbec4))
+* optimize Codex invocation with --ephemeral and read-only reviewArgs ([#41](https://github.com/daviseford/dueling-experts-framework/issues/41)) ([7972b7e](https://github.com/daviseford/dueling-experts-framework/commit/7972b7e217535f756304a6afb7a750fdbc3c4a3f))
+
+
+### Bug Fixes
+
+* add reviewArgs for gh CLI access and fix process tree kill on Windows ([#37](https://github.com/daviseford/dueling-experts-framework/issues/37)) ([7331ead](https://github.com/daviseford/dueling-experts-framework/commit/7331ead94dbdeb92f9c09cc1ef68e82a9e0e9a08))
+
 ## [0.0.3](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.2...def-v0.0.3) (2026-03-25)
 
 

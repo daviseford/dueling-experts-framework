@@ -110,9 +110,10 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (debate-only, no implementation).
 
 ## Agent Invocation
-- **Claude debate/review:** `claude --print`, prompt piped via stdin, output captured from stdout.
+- **Claude plan/review:** `claude -p "instruction" --allowedTools Read Glob Grep "Bash(gh:*)" "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)" "Bash(ls *)" --dangerously-skip-permissions`, prompt piped as stdin context. Read-only tool access — agents can observe files, search code, browse git history, and query GitHub, but cannot modify anything.
 - **Claude implement:** `claude -p "instruction" --allowedTools "*" --dangerously-skip-permissions`, prompt piped as stdin context, full tool access.
-- **Codex:** `codex exec --full-auto --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Already has native tool access.
+- **Codex plan/review:** `codex exec --sandbox read-only --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Read-only sandbox — no file modifications.
+- **Codex implement:** `codex exec --full-auto --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Full workspace-write tool access.
 - Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims. Process kill uses `taskkill /T /F` for proper tree cleanup.
 - **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
