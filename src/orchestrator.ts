@@ -11,6 +11,7 @@ import { createWorktree, removeWorktree, captureDiff, commitChanges } from './wo
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
+import * as ui from './ui.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -36,19 +37,17 @@ export interface ServerModule {
   stop(): void;
 }
 
-interface Ticker {
-  interval: ReturnType<typeof setInterval>;
-}
-
 interface RunOptions {
   server?: ServerModule | null;
   noPr?: boolean;
+  noFast?: boolean;
 }
 
 export interface RecoveredState {
   pendingPlanDecided: AgentName | null;
   pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null;
   reviewLoopCount: number;
+  bothEverDecided: boolean;
 }
 
 interface CanonicalTurnData {
@@ -61,6 +60,7 @@ interface CanonicalTurnData {
   verdict?: 'approve' | 'fix';
   duration_ms?: number;
   decisions?: string[];
+  model_tier?: 'full' | 'fast';
 }
 
 interface DecisionEntry {
@@ -69,13 +69,32 @@ interface DecisionEntry {
   decision: string;
 }
 
+// ── Model tier selection ────────────────────────────────────────────
+
+/**
+ * Select model tier for the current turn based on phase and consensus signals.
+ * Returns 'fast' for confirmation/consensus turns in the plan phase, 'full' otherwise.
+ */
+export function selectModelTier(
+  phase: SessionPhase,
+  noFast: boolean,
+  pendingPlanDecided: AgentName | null,
+  bothEverDecided: boolean,
+): 'full' | 'fast' {
+  if (noFast) return 'full';
+  if (phase !== 'plan') return 'full';
+  if (bothEverDecided) return 'fast';
+  if (pendingPlanDecided) return 'fast';
+  return 'full';
+}
+
 // ── Main orchestrator ───────────────────────────────────────────────
 
 /**
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr, noFast }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -105,6 +124,12 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
   // Review loop counter — increments only on review consensus fix transitions
   let reviewLoopCount = 0;
 
+  // Track whether both agents have ever emitted decided/done in the plan phase.
+  // Monotonically additive — once true, never cleared (even on contested consensus).
+  let claudeEverDecided = false;
+  let codexEverDecided = false;
+  let bothEverDecided = false;
+
   // Track consecutive empty-diff implement attempts to prevent infinite loops
   let emptyDiffRetries = 0;
   const MAX_EMPTY_DIFF_RETRIES = 2;
@@ -115,6 +140,9 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     pendingPlanDecided = recovered.pendingPlanDecided;
     pendingReviewDecided = recovered.pendingReviewDecided;
     reviewLoopCount = recovered.reviewLoopCount;
+    bothEverDecided = recovered.bothEverDecided;
+    // Per-agent tracking not needed after recovery — bothEverDecided is sufficient
+    if (bothEverDecided) { claudeEverDecided = true; codexEverDecided = true; }
   }
 
   // Apply pending review decision from recovery before entering the loop.
@@ -124,11 +152,11 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     if (pendingReviewDecided.verdict === 'approve') {
       // Skip the main loop and fall through to the shared finalization path
       // (generateDecisions, PR creation, worktree cleanup, session update).
-      console.log('[Recovery] Reviewer approved before interruption. Finalizing session.');
+      ui.status('recovery.approve', {});
       endRequested = true;
     } else if (reviewLoopCount >= session.review_turns) {
       // Review loop exhausted — skip to finalization like approve.
-      console.log(`[Recovery] Review loop limit (${session.review_turns}) reached. Finalizing session.`);
+      ui.status('recovery.limit', { max: session.review_turns });
       endRequested = true;
     } else {
       // verdict === 'fix', under limit — continue to main loop
@@ -139,7 +167,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       nextAgent = session.impl_model;
       tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'review', to_phase: 'implement', review_loop: reviewLoopCount, recovery: true } });
       await updateSession(session.dir, { phase: 'implement', next_agent: nextAgent });
-      console.log(`[Recovery] Applying pending fix verdict. Review loop ${reviewLoopCount}/${session.review_turns}`);
+      ui.status('recovery.fix', { loop: reviewLoopCount, max: session.review_turns });
     }
     pendingReviewDecided = null;
   }
@@ -192,23 +220,28 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       nextAgent = implModel === 'claude' ? 'codex' : 'claude';
     }
 
+    // Select model tier for this turn (may be upgraded to 'full' on validation retry)
+    let currentTier = selectModelTier(phase, !!noFast, pendingPlanDecided, bothEverDecided);
+
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
     const invokeStart: number = Date.now();
-    let result: InvokeOnceResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested);
+    const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
+    let result: InvokeOnceResult = retryResult;
+    if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
 
     if (endRequested) {
-      console.log(`[Turn ${turnCount}] End requested. Stopping.`);
+      ui.status('end.requested', { turn: turnCount });
       break;
     }
 
     if (!result.ok) {
       tracer.emit('turn.error', { turn: turnCount, agent: nextAgent, phase, data: { reason: result.reason } });
-      await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput);
+      await writeErrorTurn(session, turnCount, nextAgent, result.reason, result.rawOutput, currentTier);
       const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
       if (resumed) continue;
       break;
@@ -218,7 +251,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     let validation = validate(result.output, nextAgent);
     if (!validation.valid) {
       const preview = result.output.slice(0, 200).replace(/\n/g, '\\n');
-      console.log(`[Turn ${turnCount}] Invalid output: ${validation.errors.join(', ')}. Output preview: ${preview}`);
+      ui.status('turn.invalid', { turn: turnCount, preview, errors: validation.errors });
       tracer.emit('attempt.validation_failed', { turn: turnCount, agent: nextAgent, phase, data: { errors: validation.errors } });
 
       // Persist validation errors into the attempt's meta.json
@@ -230,7 +263,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       // assigns canonical values and the real output is the git diff.
       // Synthesize frontmatter instead of crashing.
       if (phase === 'implement') {
-        console.log(`[Turn ${turnCount}] Synthesizing frontmatter for implement turn.`);
+        ui.status('turn.synthesize', { turn: turnCount });
         validation = {
           valid: true,
           errors: [],
@@ -244,9 +277,20 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           content: result.output.trim(),
         };
       } else {
-        console.log(`[Turn ${turnCount}] Retrying...`);
-        result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry');
+        // Validation retry always uses the full model — if the fast model produced
+        // invalid frontmatter, escalating to full is the right fallback.
+        if (currentTier === 'fast') {
+          ui.status('tier.escalation', { turn: turnCount });
+        } else {
+          ui.status('turn.retry', { turn: turnCount });
+        }
+        result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry', 'full');
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+
+        // If retry succeeded with full model, update the tier for this turn's metadata
+        if (validation.valid && currentTier === 'fast') {
+          currentTier = 'full';
+        }
 
         if (!validation.valid) {
           // Persist validation errors into the retry attempt's meta.json
@@ -255,7 +299,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           }
           tracer.emit('turn.error', { turn: turnCount, agent: nextAgent, phase, data: { reason: 'invalid frontmatter after retry', errors: validation.errors } });
           await writeErrorTurn(session, turnCount, nextAgent,
-            `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output);
+            `invalid frontmatter: ${validation.errors.join(', ')}`, result.rawOutput || result.output, currentTier);
           const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
           if (resumed) continue;
           break;
@@ -281,6 +325,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     if (validData.decisions) {
       canonicalData.decisions = validData.decisions;
     }
+    canonicalData.model_tier = currentTier;
 
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
@@ -294,7 +339,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         canonicalData.verdict = validData.verdict;
       } else {
         // decided without verdict — retry once
-        console.log(`[Turn ${turnCount}] Review decided without verdict. Retrying...`);
+        ui.status('review.no.verdict', { turn: turnCount });
         const retryResult = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
         const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
@@ -312,7 +357,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         } else {
           // Still no verdict after retry — write error turn and pause/exit
           const reason = 'review decided without verdict after retry';
-          await writeErrorTurn(session, turnCount, nextAgent, reason, retryResult.ok ? retryResult.output : retryResult.reason);
+          await writeErrorTurn(session, turnCount, nextAgent, reason, retryResult.ok ? retryResult.output : retryResult.reason, currentTier);
           const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
           if (resumed) continue;
           break;
@@ -321,13 +366,13 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     }
 
     if (normalizedStatus !== validData.status) {
-      console.log(`[Turn ${turnCount}] Agent signaled ${validData.status} too early — downgrading to complete.`);
+      ui.status('turn.downgrade', { turn: turnCount, claimed: validData.status });
     }
 
     await writeCanonicalTurn(session, canonicalId, canonicalData, validation.content);
     await savePromptForTurn(session, canonicalId);
     tracer.emit('turn.written', { turn: turnCount, agent: nextAgent, phase, data: { id: canonicalId, status: canonicalData.status, duration_ms: durationMs } });
-    console.log(`[Turn ${turnCount}] [${phase}] Written: ${canonicalId} (status: ${canonicalData.status})`);
+    ui.status('turn.written', { turn: turnCount, phase, tier: currentTier, id: canonicalId, status: canonicalData.status });
 
     const oppositeAgent: AgentName = nextAgent === 'claude' ? 'codex' : 'claude';
 
@@ -344,17 +389,22 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         ? 'decided' : canonicalData.status;
 
       if (effectiveStatus === 'decided') {
+        // Track per-agent decided for fast-model heuristic
+        if (nextAgent === 'claude') claudeEverDecided = true;
+        else codexEverDecided = true;
+        bothEverDecided = claudeEverDecided && codexEverDecided;
+
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
           // Both agents agreed — consensus reached
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
-          console.log(`[Turn ${turnCount}] Consensus reached.`);
+          ui.status('consensus.reached', { turn: turnCount });
 
           // Generate plan artifact from plan-phase turns
           await generatePlan(session);
 
           // Planning mode: no implementation, session ends here
           if (session.mode === 'planning') {
-            console.log(`[Turn ${turnCount}] Planning mode — session complete.`);
+            ui.status('phase.planning.done', { turn: turnCount });
             break;
           }
 
@@ -378,11 +428,11 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
                 original_repo: session.original_repo,
                 target_repo: worktreePath,
               });
-              console.log(`[Turn ${turnCount}] Worktree created: ${branchName}`);
+              ui.status('worktree.created', { turn: turnCount, branch: branchName });
             } catch (err: unknown) {
               // Hard error: never allow implement phase in main checkout
               const reason = `worktree creation failed: ${(err as Error).message}`;
-              await writeErrorTurn(session, turnCount, nextAgent, reason, '');
+              await writeErrorTurn(session, turnCount, nextAgent, reason, '', currentTier);
               const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
               if (resumed) continue;
               break;
@@ -402,13 +452,13 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         } else {
           // First decided — record and let the other agent respond
           pendingPlanDecided = nextAgent;
-          console.log(`[Turn ${turnCount}] ${nextAgent} signals decided. Waiting for ${oppositeAgent} to confirm.`);
+          ui.status('consensus.pending', { turn: turnCount, agent: nextAgent, waiting: oppositeAgent });
           nextAgent = oppositeAgent;
         }
       } else {
         // If there was a pending decided and this agent didn't confirm, clear it
         if (pendingPlanDecided && effectiveStatus === 'complete') {
-          console.log(`[Turn ${turnCount}] ${nextAgent} contests consensus. Resuming plan.`);
+          ui.status('consensus.contested', { turn: turnCount, agent: nextAgent });
           pendingPlanDecided = null;
         }
 
@@ -416,7 +466,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           if (server) {
             isPaused = true;
             await updateSession(session.dir, { session_status: 'paused' });
-            console.log(`[Turn ${turnCount}] Agent needs human input. Paused.`);
+            ui.status('human.paused', { turn: turnCount });
 
             const humanContent: string = await waitForHuman();
             isPaused = false;
@@ -430,7 +480,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
             continue;
           }
 
-          console.log(`[Turn ${turnCount}] Agent needs human input. Exiting (no UI).`);
+          ui.status('human.exiting', { turn: turnCount });
           break;
         }
 
@@ -442,17 +492,17 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       const diff = await captureDiff(session.target_repo);
       if (diff) {
         emptyDiffRetries = 0;
-        console.log(`[Turn ${turnCount}] Changes detected. Storing diff artifact.`);
+        ui.status('diff.captured', { turn: turnCount });
         await writeDiffArtifact(session, turnCount, diff);
 
         // Commit changes to the branch so they survive worktree removal
         const committed = await commitChanges(session.target_repo, `def: implement turn ${turnCount}`);
         if (committed) {
-          console.log(`[Turn ${turnCount}] Changes committed to branch.`);
+          ui.status('changes.committed', { turn: turnCount });
         }
 
         // Transition to review
-        console.log(`[Turn ${turnCount}] Implementation turn complete. Transitioning to review phase.`);
+        ui.status('impl.to.review', { turn: turnCount });
         phase = 'review';
         session.phase = phase;
         pendingReviewDecided = null;
@@ -467,23 +517,23 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       } else {
         emptyDiffRetries++;
         if (emptyDiffRetries >= MAX_EMPTY_DIFF_RETRIES) {
-          console.log(`[Turn ${turnCount}] No changes after ${MAX_EMPTY_DIFF_RETRIES} attempts. Ending session.`);
+          ui.status('no.changes.limit', { turn: turnCount, max: MAX_EMPTY_DIFF_RETRIES });
           break;
         }
-        console.log(`[Turn ${turnCount}] No changes detected in worktree. Retrying implementation (${emptyDiffRetries}/${MAX_EMPTY_DIFF_RETRIES})...`);
+        ui.status('no.changes', { turn: turnCount, attempt: emptyDiffRetries, max: MAX_EMPTY_DIFF_RETRIES });
         await updateSession(session.dir, { current_turn: turnCount });
       }
     } else if (phase === 'review') {
       if (canonicalData.status === 'decided' && canonicalData.verdict) {
         // Review agent emitted a verdict
         if (canonicalData.verdict === 'approve') {
-          console.log(`[Turn ${turnCount}] Reviewer approved. Session complete.`);
+          ui.status('review.approved', { turn: turnCount });
           break;
         }
 
         // verdict === 'fix' — check review loop budget
         if (reviewLoopCount >= session.review_turns) {
-          console.log(`[Turn ${turnCount}] Review loop limit (${session.review_turns}) reached. Ending session.`);
+          ui.status('review.limit', { turn: turnCount, max: session.review_turns });
           break;
         }
 
@@ -494,7 +544,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         emptyDiffRetries = 0;
 
         // Switch back to implement for fixes
-        console.log(`[Turn ${turnCount}] Reviewer requested fixes. Back to implement phase. (${reviewLoopCount}/${session.review_turns})`);
+        ui.status('review.fixes', { turn: turnCount, loop: reviewLoopCount, max: session.review_turns });
         phase = 'implement';
         session.phase = phase;
         nextAgent = session.impl_model;
@@ -523,12 +573,12 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
         current_turn: turnCount,
         next_agent: oppositeAgent,
       });
-      console.log(`[Turn ${turnCount}] Injected human interjection.`);
+      ui.status('interjection', { turn: turnCount });
     }
 
     // Warn about dropped interjections on phase transitions
     if (phase !== 'plan' && interjectionQueue.length > 0) {
-      console.log(`[Turn ${turnCount}] Warning: ${interjectionQueue.length} queued interjection(s) dropped (not in plan phase).`);
+      ui.status('interjection.dropped', { turn: turnCount, count: interjectionQueue.length });
       interjectionQueue.length = 0;
     }
   }
@@ -560,10 +610,10 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
           session.pr_url = prResult.url;
           session.pr_number = prResult.number;
           tracer.emit('pr.created', { phase, data: { url: prResult.url, number: prResult.number } });
-          console.log(`PR created: ${prResult.url}`);
+          ui.status('pr.created', { url: prResult.url });
         }
       } else {
-        console.log('No changes on branch — skipping PR creation.');
+        ui.status('pr.skipped', {});
       }
     }
   } finally {
@@ -588,17 +638,13 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
     pr_url: session.pr_url ?? null,
     pr_number: session.pr_number ?? null,
   });
-  console.log('');
-  console.log('Session completed.');
-  console.log(`  Phase:     ${phase}`);
-  if (session.branch_name) {
-    console.log(`  Branch:    ${session.branch_name}`);
-  }
-  if (session.pr_url) {
-    console.log(`  PR:        ${session.pr_url}`);
-  }
-  console.log(`  Turns:     ${join(session.dir, 'turns')}`);
-  console.log(`  Artifacts: ${join(session.dir, 'artifacts')}`);
+  ui.outro({
+    phase,
+    branch: session.branch_name,
+    pr: session.pr_url,
+    turnsDir: join(session.dir, 'turns'),
+    artifactsDir: join(session.dir, 'artifacts'),
+  });
 
   // --- Helper closures ---
 
@@ -616,7 +662,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
 
     if (srv) {
       isPaused = true;
-      console.log(`[Turn ${turn}] Paused after error. Waiting for human...`);
+      ui.status('error.pause', { turn });
       const humanContent: string = await waitForHuman();
       isPaused = false;
       turnCount++;
@@ -628,7 +674,7 @@ export async function run(session: Session, { server, noPr }: RunOptions = {}): 
       return true; // resumed
     }
 
-    console.log(`[Turn ${turn}] Exiting after error.`);
+    ui.status('error.exit', { turn });
     return false;
   }
 }
@@ -654,6 +700,8 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
   let pendingPlanDecided: AgentName | null = null;
   let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
   let reviewLoopCount = 0;
+  let claudeDecided = false;
+  let codexDecided = false;
 
   for (const file of turnFiles) {
     const raw: string = await readFile(join(turnsDir, file), 'utf8');
@@ -667,6 +715,10 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     if (turnPhase === 'plan' || turnPhase === 'debate') {
       // Plan-phase consensus tracking (two-agent model)
       if (status === 'decided' || status === 'done') {
+        // Track per-agent decided for fast-model heuristic (monotonically additive)
+        if (from === 'claude') claudeDecided = true;
+        else if (from === 'codex') codexDecided = true;
+
         if (pendingPlanDecided && pendingPlanDecided !== from) {
           // Both agents agreed — plan consensus reached
           pendingPlanDecided = null;
@@ -699,7 +751,7 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     }
   }
 
-  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount };
+  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided: claudeDecided && codexDecided };
 }
 
 // --- Status normalization ---
@@ -733,7 +785,7 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string): Promise<InvokeOnceResult> {
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: 'full' | 'fast'): Promise<InvokeOnceResult> {
   let attemptIdx = 0;
   if (turnCount !== undefined && attemptCounters) {
     const key = `${turnCount}-${agentName}`;
@@ -746,7 +798,7 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
     tracer.emit('attempt.start', { turn: turnCount, agent: agentName, phase: session.phase, data: { attempt_index: attemptIdx, label } });
   }
 
-  const result = await invoke(agentName, { ...session, next_agent: agentName });
+  const result = await invoke(agentName, { ...session, next_agent: agentName }, tier);
   const elapsedMs = Date.now() - startMs;
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
@@ -787,17 +839,25 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean): Promise<InvokeOnceResult> {
-  let ticker: Ticker | null = startTicker(turnCount, agentName);
-  let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters);
-  stopTicker(ticker);
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult & { effectiveTier?: 'full' | 'fast' }> {
+  let activity = ui.startActivity(turnCount, agentName, undefined, tier);
+  let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
+  activity.stop();
+  let effectiveTier = tier;
   if (!result.ok && !shouldAbort?.()) {
-    console.log(`[Turn ${turnCount}] ${agentName} failed: ${result.reason}. Retrying...`);
-    ticker = startTicker(turnCount, agentName, 'retry');
-    result = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, 'retry');
-    stopTicker(ticker);
+    // Escalate fast→full on invocation failure (same pattern as validation retry)
+    const retryTier = tier === 'fast' ? 'full' : tier;
+    if (tier === 'fast') {
+      ui.status('invoke.escalate', { turn: turnCount, reason: result.reason });
+    } else {
+      ui.status('invoke.retry', { turn: turnCount, agent: agentName, reason: result.reason });
+    }
+    activity = ui.startActivity(turnCount, agentName, 'retry', retryTier);
+    result = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, 'retry', retryTier);
+    activity.stop();
+    if (result.ok) effectiveTier = retryTier;
   }
-  return result;
+  return { ...result, effectiveTier };
 }
 
 // --- Turn file helpers ---
@@ -825,7 +885,7 @@ async function savePromptForTurn(session: Session, canonicalId: string): Promise
   }
 }
 
-async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string): Promise<void> {
+async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: 'full' | 'fast'): Promise<void> {
   const id = `turn-${String(turnCount).padStart(4, '0')}-${agent}`;
   const data: CanonicalTurnData = {
     id,
@@ -835,11 +895,12 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     status: 'error',
     phase: session.phase,
   };
+  if (modelTier) data.model_tier = modelTier;
   // Sanitize rawOutput to prevent code fence escape
   const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
   const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;
   await writeCanonicalTurn(session, id, data, body);
-  console.log(`[Turn ${turnCount}] Error turn written: ${id}`);
+  ui.status('turn.error', { turn: turnCount, id });
 }
 
 async function writeHumanTurn(session: Session, turnCount: number, content: string): Promise<void> {
@@ -909,7 +970,7 @@ async function generatePlan(session: Session): Promise<void> {
   await mkdir(artifactsDir, { recursive: true });
   const planPath: string = join(artifactsDir, 'plan.md');
   await atomicWrite(planPath, lines.join('\n'));
-  console.log(`Plan artifact written: ${planPath} (${planTurns.length} turn(s), ${allDecisions.length} decision(s))`);
+  ui.status('artifact.plan', { path: planPath, turns: planTurns.length, decisions: allDecisions.length });
 }
 
 async function generateDecisions(session: Session): Promise<void> {
@@ -929,7 +990,7 @@ async function generateDecisions(session: Session): Promise<void> {
   }
 
   if (decisions.length === 0) {
-    console.log('No decisions found in turn frontmatter. Skipping decisions.md.');
+    ui.status('artifact.none', {});
     return;
   }
 
@@ -943,39 +1004,6 @@ async function generateDecisions(session: Session): Promise<void> {
   await mkdir(artifactsDir, { recursive: true });
   const decisionsPath: string = join(artifactsDir, 'decisions.md');
   await atomicWrite(decisionsPath, lines.join('\n'));
-  console.log(`Decisions log written: ${decisionsPath} (${decisions.length} decision(s))`);
+  ui.status('artifact.decisions', { path: decisionsPath, count: decisions.length });
 }
 
-// --- CLI progress ticker ---
-
-function startTicker(turnCount: number, agent: string, label?: string): Ticker | null {
-  const start: number = Date.now();
-  const isTTY: boolean | undefined = process.stderr.isTTY;
-  const prefix: string = label
-    ? `[Turn ${turnCount}] ${label}: ${agent}`
-    : `[Turn ${turnCount}] Invoking ${agent}`;
-
-  if (!isTTY) {
-    console.log(`${prefix}...`);
-    return null;
-  }
-
-  process.stderr.write(`${prefix}... (0s)`);
-  const interval: ReturnType<typeof setInterval> = setInterval(() => {
-    const elapsed: number = Math.round((Date.now() - start) / 1000);
-    process.stderr.clearLine(0);
-    process.stderr.cursorTo(0);
-    process.stderr.write(`${prefix}... (${elapsed}s)`);
-  }, 1000);
-
-  return { interval };
-}
-
-function stopTicker(ticker: Ticker | null): void {
-  if (!ticker) return;
-  clearInterval(ticker.interval);
-  if (process.stderr.isTTY) {
-    process.stderr.clearLine(0);
-    process.stderr.cursorTo(0);
-  }
-}

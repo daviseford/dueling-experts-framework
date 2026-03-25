@@ -6,6 +6,7 @@ export interface ParsedArgs {
   implModel?: string;
   reviewTurns?: number;
   noPr?: boolean;
+  noFast?: boolean;
   version?: boolean;
 }
 
@@ -34,6 +35,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-pr':
         result.noPr = true;
+        break;
+      case '--no-fast':
+        result.noFast = true;
         break;
       case '--version':
       case '-v':

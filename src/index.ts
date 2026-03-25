@@ -5,6 +5,7 @@ import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
+import * as ui from './ui.js';
 
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
@@ -22,7 +23,7 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   process.exit(1);
 }
 
@@ -67,19 +68,20 @@ try {
     targetRepo,
   });
 } catch (err: unknown) {
-  console.error(`Error: ${(err as Error).message}`);
+  ui.error((err as Error).message);
   process.exit(1);
 }
 
-console.log(`Session created: ${session.id}`);
-console.log(`Topic: ${session.topic}`);
-console.log(`Mode: ${session.mode}`);
-console.log(`Max turns: ${session.max_turns}`);
-console.log(`First agent: ${session.next_agent}`);
-console.log(`Impl model: ${session.impl_model}`);
-console.log(`Review turns: ${session.review_turns}`);
-console.log(`Session dir: ${session.dir}`);
-console.log('');
+ui.intro({
+  id: session.id,
+  topic: session.topic,
+  mode: session.mode,
+  max_turns: session.max_turns,
+  next_agent: session.next_agent,
+  impl_model: session.impl_model,
+  review_turns: session.review_turns,
+  dir: session.dir,
+});
 
 installShutdownHandler(session.dir, targetRepo, session);
 
@@ -93,9 +95,9 @@ try {
 
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
 } catch (err: unknown) {
-  console.error(`Orchestrator error: ${(err as Error).message}`);
+  ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
   if (server) {

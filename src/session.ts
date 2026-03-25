@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { atomicWrite, killChildProcess } from './util.js';
 import { removeWorktree, commitChanges } from './worktree.js';
+import * as ui from './ui.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -136,7 +137,7 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
   process.on('SIGINT', async () => {
     if (shuttingDown) process.exit(1); // Double Ctrl+C — hard exit
     shuttingDown = true;
-    console.log('\nShutting down gracefully...');
+    ui.status('shutdown.start', {});
     try {
       // Kill the running agent child process
       const child = session?._currentChild;
@@ -148,7 +149,7 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
       if (session?.worktree_path) {
         try {
           await commitChanges(session.worktree_path, 'def: interrupted changes');
-          console.log('  Uncommitted changes saved to branch.');
+          ui.status('shutdown.saved', {});
         } catch { /* best effort */ }
       }
 
@@ -156,7 +157,7 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
       if (session?.worktree_path && session?.original_repo) {
         try {
           await removeWorktree(session.original_repo, session.worktree_path);
-          console.log(`  Worktree cleaned up. Branch preserved: ${session.branch_name}`);
+          ui.status('shutdown.worktree', { branch: session.branch_name! });
         } catch { /* best effort */ }
       }
 

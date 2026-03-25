@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/recovery-finalize.test.ts src/__tests__/server-metadata.test.ts src/__tests__/trace.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
+    "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/recovery-finalize.test.ts src/__tests__/server-metadata.test.ts src/__tests__/tier.test.ts src/__tests__/trace.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "dev:ui": "cd src/ui && npm run dev",
@@ -37,10 +37,14 @@
     "access": "public"
   },
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "gradient-string": "^3.0.0",
     "gray-matter": "^4.0.3",
-    "js-yaml": "^3.14.1"
+    "js-yaml": "^3.14.1",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@types/gradient-string": "^1.1.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "tsx": "^4.21.0",

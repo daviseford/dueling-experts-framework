@@ -25,6 +25,11 @@ const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
+const FAST_MODELS = {
+  claude: 'haiku',
+  codex: 'o4-mini',
+} as const satisfies Record<AgentName, string>;
+
 const AGENTS: Record<AgentName, AgentConfig> = {
   claude: {
     cmd: 'claude',
@@ -56,7 +61,7 @@ const AGENTS: Record<AgentName, AgentConfig> = {
  * Invoke an agent CLI with the assembled prompt.
  * Returns { exitCode, output, timedOut }.
  */
-export async function invoke(agentName: AgentName, session: Session): Promise<InvokeResult> {
+export async function invoke(agentName: AgentName, session: Session, tier?: 'full' | 'fast'): Promise<InvokeResult> {
   const config = AGENTS[agentName];
   if (!config) {
     throw new Error(`Unknown agent: "${agentName}". Supported: claude, codex`);
@@ -83,17 +88,29 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
     args = config.args;
   }
 
+  // Append --model flag when using the fast tier
+  if (tier === 'fast') {
+    args = [...args, '--model', FAST_MODELS[agentName]];
+  }
+
   const startTime = Date.now();
   const logPrefix = `${agentName}-${Date.now()}`;
 
   return new Promise<InvokeResult>((resolve) => {
-    const child: ChildProcess = spawn(config.cmd, args, {
-      cwd: session.target_repo,
-      stdio: ['pipe', 'pipe', 'pipe'], // capture stderr for debugging
-      // On Windows, npm-installed CLIs are .cmd shims that require shell.
-      // All args are controlled by us (never user input), so this is safe.
-      shell: process.platform === 'win32',
-    });
+    // On Windows, npm-installed CLIs are .cmd shims that require shell.
+    // All args are controlled by us (never user input), so this is safe.
+    // We join command + args into a single shell string to avoid DEP0190
+    // (Node warns when shell:true + non-empty args array).
+    const useShell = process.platform === 'win32';
+    const child: ChildProcess = useShell
+      ? spawn(
+          [config.cmd, ...args.map(a => a.includes(' ') ? `"${a}"` : a)].join(' '),
+          [],
+          { cwd: session.target_repo, stdio: ['pipe', 'pipe', 'pipe'], shell: true },
+        )
+      : spawn(config.cmd, args, {
+          cwd: session.target_repo, stdio: ['pipe', 'pipe', 'pipe'],
+        });
 
     // Expose child for SIGINT cleanup (stored on session object)
     session._currentChild = child;
@@ -149,8 +166,11 @@ export async function invoke(agentName: AgentName, session: Session): Promise<In
         '=== STDOUT (first 2000 chars) ===',
         stdout.slice(0, 2000) || '(empty)',
         '',
-        '=== STDERR (first 2000 chars) ===',
-        stderr.slice(0, 2000) || '(empty)',
+        '=== STDERR (first 8000 chars) ===',
+        stderr.slice(0, 8000) || '(empty)',
+        '',
+        stderr.length > 8000 ? '=== STDERR (last 2000 chars) ===' : null,
+        stderr.length > 8000 ? stderr.slice(-2000) : null,
       ].filter(Boolean).join('\n');
 
       writeFile(join(logsDir, `${logPrefix}.log`), log, 'utf8').catch(() => {});
