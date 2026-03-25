@@ -38,7 +38,6 @@ export interface TurnsResponse {
 export interface PendingInterjection {
   id: string
   content: string
-  sentAt: number
 }
 
 export interface PollingState {

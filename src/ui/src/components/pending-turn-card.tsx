@@ -1,8 +1,11 @@
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import type { PendingInterjection } from "@/lib/types"
 
-export function PendingTurnCard({ content }: PendingInterjection) {
+interface PendingTurnCardProps {
+  content: string
+}
+
+export function PendingTurnCard({ content }: PendingTurnCardProps) {
   return (
     <div className="animate-fade-in overflow-hidden rounded-lg border-l-[3px] border-l-violet-400 bg-card/60 opacity-60 ring-1 ring-border/10">
       <div className="flex items-center gap-2 px-3 py-2">

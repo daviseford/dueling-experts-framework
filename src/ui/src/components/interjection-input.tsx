@@ -31,7 +31,7 @@ export function InterjectionInput({ disabled, onSent }: InterjectionInputProps) 
     } finally {
       setSending(false)
     }
-  }, [value, sending])
+  }, [value, sending, onSent])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
