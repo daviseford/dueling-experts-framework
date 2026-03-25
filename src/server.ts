@@ -7,6 +7,7 @@ import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session } from './session.js';
 import { readEvents, listAttempts } from './trace.js';
+import * as ui from './ui.js';
 
 interface Controller {
   readonly isPaused: boolean;
@@ -65,7 +66,7 @@ export async function start(session: Session, controller: Controller): Promise<v
       await updateSession(session.dir, { port });
       session.port = port;
       const url = `http://localhost:${port}`;
-      console.log(`Watcher UI: ${url}`);
+      ui.status('server.url', { url });
 
       // Auto-open browser
       const openCmd = process.platform === 'win32' ? 'start'
