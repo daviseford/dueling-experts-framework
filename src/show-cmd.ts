@@ -27,10 +27,10 @@ export async function run(argv: string[]): Promise<void> {
   console.log('Press Ctrl+C to stop.');
 
   // Keep process alive until SIGINT
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((done) => {
     process.on('SIGINT', () => {
       server.stop();
-      resolve();
+      done();
     });
   });
 }
