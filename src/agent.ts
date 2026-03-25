@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemble } from './context.js';
+import { killChildProcess } from './util.js';
 import type { Session, AgentName } from './session.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -11,6 +12,7 @@ interface AgentConfig {
   cmd: string;
   args: string[] | ((outputPath: string) => string[]);
   implementArgs?: string[];
+  reviewArgs?: string[];
   captureStdout: boolean;
 }
 
@@ -40,6 +42,14 @@ const AGENTS: Record<AgentName, AgentConfig> = {
       '-p',
       'Execute the implementation task described in the context provided via stdin. You have full tool access. When you are done, output a brief markdown summary of what you changed.',
       '--allowedTools', '*',
+      '--dangerously-skip-permissions',
+    ],
+    // In plan/review phases when tool access is needed (e.g. reading GitHub PRs).
+    // Scoped to gh CLI only — agents cannot modify files.
+    reviewArgs: [
+      '-p',
+      'Respond to the task described in the context provided via stdin. You have access to the gh CLI for reading GitHub data. Output your response as YAML frontmatter followed by markdown.',
+      '--allowedTools', 'Bash(gh:*)',
       '--dangerously-skip-permissions',
     ],
     captureStdout: true,
@@ -78,10 +88,12 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
   const prompt = await assemble(session);
   await writeFile(promptPath, prompt, 'utf8');
 
-  // Build args — use implementArgs for implement phase if available
+  // Build args — select phase-specific args when available
   let args: string[];
   if (session.phase === 'implement' && config.implementArgs) {
     args = config.implementArgs;
+  } else if ((session.phase === 'plan' || session.phase === 'review') && config.reviewArgs) {
+    args = config.reviewArgs;
   } else if (typeof config.args === 'function') {
     args = config.args(outputPath);
   } else {
@@ -129,7 +141,7 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
     child.stdout!.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
       if (stdout.length > MAX_OUTPUT_BYTES) {
-        child.kill('SIGTERM');
+        killChildProcess(child);
       }
     });
 
@@ -139,9 +151,9 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
 
     const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
+      killChildProcess(child);
       setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        try { killChildProcess(child, 'SIGKILL'); } catch { /* already dead */ }
       }, 5000);
     }, session.phase === 'implement' ? IMPLEMENT_TIMEOUT_MS : TIMEOUT_MS);
 
