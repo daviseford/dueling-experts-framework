@@ -23,6 +23,7 @@ function formatDuration(ms: number): string {
 
 const DISABLED_STATE: PollingState = {
   turns: [],
+  sessionId: "",
   sessionStatus: "active",
   topic: "",
   turnCount: 0,
@@ -41,6 +42,7 @@ const DISABLED_STATE: PollingState = {
 
 export function usePolling({ enabled = true }: { enabled?: boolean } = {}): PollingState {
   const [turns, setTurns] = useState<Turn[]>([])
+  const [sessionId, setSessionId] = useState("")
   const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed" | "interrupted">("active")
   const [topic, setTopic] = useState("")
   const [turnCount, setTurnCount] = useState(0)
@@ -80,7 +82,8 @@ export function usePolling({ enabled = true }: { enabled?: boolean } = {}): Poll
         return
       }
 
-      // Always update status/topic
+      // Always update status/topic/session ID
+      if (data.session_id) setSessionId(data.session_id)
       if (data.topic) setTopic(data.topic)
       setTurnCount(data.turn_count)
       if (data.phase) setPhase(data.phase)
@@ -180,5 +183,5 @@ export function usePolling({ enabled = true }: { enabled?: boolean } = {}): Poll
 
   if (!enabled) return DISABLED_STATE
 
-  return { turns, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase, branchName, prUrl, prNumber, turnsPath, artifactsPath, artifactNames }
+  return { turns, sessionId, sessionStatus, topic, turnCount, thinking, thinkingElapsed, statusText, sessionTimer, phase, branchName, prUrl, prNumber, turnsPath, artifactsPath, artifactNames }
 }

@@ -248,6 +248,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
+    session_id: sessionRef!.id,
     session_status: metadata.sessionStatus,
     phase: metadata.phase ?? controllerRef?.phase ?? 'plan',
     topic: sessionRef!.topic,
