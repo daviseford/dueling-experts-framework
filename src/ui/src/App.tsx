@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
-import { useSessionData } from "@/hooks/use-session-data"
+import { useExplorer } from "@/hooks/use-explorer"
 import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
+import { SessionTabBar } from "@/components/session-tab-bar"
 import { PauseBanner } from "@/components/pause-banner"
 import { Transcript } from "@/components/transcript"
 import { InterjectionInput } from "@/components/interjection-input"
@@ -12,6 +13,10 @@ import type { PendingInterjection } from "@/lib/types"
 
 export default function App() {
   const {
+    sessions,
+    selectedSessionId,
+    setSelectedSessionId,
+    owningSessionId,
     turns,
     sessionId,
     sessionStatus,
@@ -27,13 +32,26 @@ export default function App() {
     prNumber,
     turnsPath,
     artifactsPath,
-  } = useSessionData()
+  } = useExplorer()
 
+  const isOwningSession = selectedSessionId === owningSessionId
+  const isReadOnly = !isOwningSession || sessionStatus !== "active"
   const isCompleted = sessionStatus === "completed"
 
   // Pending interjections: messages sent but not yet processed into turns
   const [pendingInterjections, setPendingInterjections] = useState<PendingInterjection[]>([])
   const prevPhaseRef = useRef(phase)
+  const prevSelectedRef = useRef(selectedSessionId)
+
+  // Reset state when switching sessions
+  useEffect(() => {
+    if (prevSelectedRef.current !== selectedSessionId) {
+      prevSelectedRef.current = selectedSessionId
+      setPendingInterjections([])
+      setOpenMap({})
+      prevPhaseRef.current = phase
+    }
+  }, [selectedSessionId, phase])
 
   const handleInterjectionSent = useCallback((content: string) => {
     setPendingInterjections((prev) => [
@@ -43,7 +61,6 @@ export default function App() {
   }, [])
 
   // Count-based reconciliation: for each content string, keep only unmatched pending items.
-  // This correctly handles duplicate messages (e.g. "yes" sent twice).
   const visiblePending = useMemo(() => {
     const humanCounts = new Map<string, number>()
     for (const t of turns) {
@@ -70,10 +87,11 @@ export default function App() {
   }, [visiblePending, pendingInterjections.length])
 
   // Detect dropped interjections: clear pending items when phase is not plan
+  // Only fire toasts for the owning session
   useEffect(() => {
     const prevPhase = prevPhaseRef.current
     prevPhaseRef.current = phase
-    if (prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
+    if (isOwningSession && prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
       const count = visiblePending.length
       setPendingInterjections([])
       toast.info(
@@ -82,7 +100,7 @@ export default function App() {
           : `${count} queued messages were not delivered — agents moved past the planning phase.`
       )
     }
-  }, [phase, visiblePending])
+  }, [phase, visiblePending, isOwningSession])
 
   // Per-turn open state, keyed by turn id. New turns default to open.
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
@@ -115,7 +133,7 @@ export default function App() {
 
   useEffect(() => {
     if (topic) {
-      const short = topic.length > 30 ? topic.slice(0, 30) + "…" : topic
+      const short = topic.length > 30 ? topic.slice(0, 30) + "\u2026" : topic
       document.title = `DEF - ${short}`
     }
   }, [topic])
@@ -130,9 +148,16 @@ export default function App() {
         topic={topic}
         sessionId={sessionId}
         disabled={isCompleted}
+        isReadOnly={isReadOnly}
         onEndSession={handleEndSession}
       />
-      <PauseBanner visible={sessionStatus === "paused"} />
+      <SessionTabBar
+        sessions={sessions}
+        selectedSessionId={selectedSessionId}
+        onSelectSession={setSelectedSessionId}
+        owningSessionId={owningSessionId}
+      />
+      <PauseBanner visible={sessionStatus === "paused"} isReadOnly={isReadOnly} />
       <Transcript
         turns={turns}
         thinking={thinking}
@@ -148,7 +173,7 @@ export default function App() {
         onTurnOpenChange={handleTurnOpenChange}
         pendingInterjections={visiblePending}
       />
-      <InterjectionInput disabled={isCompleted} onSent={handleInterjectionSent} />
+      <InterjectionInput disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
       <StatusBar
         statusText={statusText}
         turnCount={turnCount}
