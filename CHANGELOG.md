@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.4...def-v0.0.5) (2026-03-25)
+
+
+### Bug Fixes
+
+* replace unsupported o4-mini with gpt-5.1-codex-mini for Codex fast tier ([#42](https://github.com/daviseford/dueling-experts-framework/issues/42)) ([1318b62](https://github.com/daviseford/dueling-experts-framework/commit/1318b629956ec5b40abe20b802f5e6fc2e30a52d))
+
 ## [0.0.4](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.3...def-v0.0.4) (2026-03-25)
 
 
