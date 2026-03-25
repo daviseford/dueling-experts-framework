@@ -15,11 +15,12 @@ import { Radio } from "lucide-react"
 
 interface SessionHeaderProps {
   topic: string
+  sessionId: string
   disabled: boolean
   onEndSession: () => void
 }
 
-export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, disabled, onEndSession }: SessionHeaderProps) {
   return (
     <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
@@ -33,6 +34,12 @@ export function SessionHeader({ topic, disabled, onEndSession }: SessionHeaderPr
           <>
             <Separator orientation="vertical" className="h-4" />
             <span className="text-[13px] text-muted-foreground">{topic}</span>
+          </>
+        )}
+        {sessionId && (
+          <>
+            <Separator orientation="vertical" className="h-4" />
+            <span className="font-mono text-[11px] text-muted-foreground/50">{sessionId}</span>
           </>
         )}
       </div>

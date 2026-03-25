@@ -13,6 +13,7 @@ import type { PendingInterjection } from "@/lib/types"
 export default function App() {
   const {
     turns,
+    sessionId,
     sessionStatus,
     topic,
     turnCount,
@@ -127,6 +128,7 @@ export default function App() {
     <div className="flex h-screen flex-col overflow-hidden">
       <SessionHeader
         topic={topic}
+        sessionId={sessionId}
         disabled={isCompleted}
         onEndSession={handleEndSession}
       />
