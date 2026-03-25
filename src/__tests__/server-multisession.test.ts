@@ -54,7 +54,7 @@ describe('GET /api/sessions', () => {
 
     // Create two sessions on disk
     for (const [id, topic, status] of [
-      [sessionId1, 'First session', 'completed'],
+      [sessionId1, 'First session', 'active'],
       [sessionId2, 'Second session', 'active'],
     ] as const) {
       const dir = join(sessionsDir, id);
