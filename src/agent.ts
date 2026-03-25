@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { writeFile, readFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, writeFile, readFile, mkdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { assemble } from './context.js';
 import type { Session, AgentName } from './session.js';
 
@@ -58,6 +58,26 @@ const AGENTS: Record<AgentName, AgentConfig> = {
 };
 
 /**
+ * Build bare-mode args for Claude CLI invocations.
+ * Returns ['--bare', ...systemPromptFileArgs] with any existing
+ * CLAUDE.md / AGENTS.md from the target repo appended via
+ * --append-system-prompt-file.
+ */
+export async function buildBareArgs(targetRepo: string): Promise<string[]> {
+  const args = ['--bare'];
+  for (const file of ['CLAUDE.md', 'AGENTS.md']) {
+    const filePath = resolve(targetRepo, file);
+    try {
+      await access(filePath);
+      args.push('--append-system-prompt-file', filePath);
+    } catch {
+      // File doesn't exist — skip silently
+    }
+  }
+  return args;
+}
+
+/**
  * Invoke an agent CLI with the assembled prompt.
  * Returns { exitCode, output, timedOut }.
  */
@@ -86,6 +106,11 @@ export async function invoke(agentName: AgentName, session: Session, tier?: 'ful
     args = config.args(outputPath);
   } else {
     args = config.args;
+  }
+
+  // Append --bare and repo instruction files for Claude CLI
+  if (agentName === 'claude') {
+    args = [...args, ...await buildBareArgs(session.target_repo)];
   }
 
   // Append --model flag when using the fast tier
