@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { atomicWrite } from './util.js';
-import type { AgentName, SessionPhase } from './session.js';
+import type { AgentName, SessionPhase, TokenUsage } from './session.js';
 
 // ── Event types ──────────────────────────────────────────────────────
 
@@ -38,6 +38,7 @@ export interface AttemptMeta {
   exit_code: number;
   timed_out: boolean;
   validation_errors?: string[];
+  token_usage?: TokenUsage;
   cmd: string;
   cwd: string;
 }

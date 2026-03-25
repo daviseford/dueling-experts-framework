@@ -6,6 +6,33 @@ import { atomicWrite, killChildProcess } from './util.js';
 import { removeWorktree, commitChanges } from './worktree.js';
 import * as ui from './ui.js';
 
+// ── Token usage types ──────────────────────────────────────────────
+
+export type ModelTier = 'full' | 'mid' | 'fast';
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+export interface TurnTokenEntry {
+  turn: number;
+  agent: string;
+  model_tier: ModelTier;
+  model_name: string;
+  tokens: TokenUsage;
+}
+
+export interface CumulativeUsage {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_creation_tokens: number;
+  total_cache_read_tokens: number;
+  per_turn: TurnTokenEntry[];
+}
+
 // ── Type definitions ────────────────────────────────────────────────
 
 export type AgentName = 'claude' | 'codex';
@@ -34,6 +61,7 @@ export interface Session {
   base_ref: string | null;
   pr_url: string | null;
   pr_number: number | null;
+  usage?: CumulativeUsage | null;
   _currentChild?: ChildProcess | null;
 }
 
@@ -87,6 +115,7 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     base_ref: null,
     pr_url: null,
     pr_number: null,
+    usage: null,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);

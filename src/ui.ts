@@ -95,6 +95,7 @@ interface StatusPayloads {
   'push.failed':        { branch: string; error: string };
   'pr.failed':          { branch: string; error: string };
   'pr.parse.failed':    { output: string };
+  'tokens.update':      { turn: number; inputTokens: number; outputTokens: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -400,6 +401,12 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       return `  ${c.yellow(SYM.warn)} Could not parse PR URL from gh output: ${output}`;
     }
 
+    // Token tracking
+    case 'tokens.update': {
+      const { turn, inputTokens, outputTokens } = d as StatusPayloads['tokens.update'];
+      return `${turnPrefix(turn)} ${c.dim(SYM.info)} Tokens: ${inputTokens.toLocaleString()} in / ${outputTokens.toLocaleString()} out`;
+    }
+
     default:
       return '';
   }
@@ -441,6 +448,8 @@ export interface SessionSummary {
   pr?: string | null;
   turnsDir: string;
   artifactsDir: string;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
 }
 
 export function outro(summary: SessionSummary): void {
@@ -454,6 +463,9 @@ export function outro(summary: SessionSummary): void {
   }
   if (summary.pr) {
     lines.push(`  ${c.dim('PR')}        ${c.cyan(c.bold(summary.pr))}`);
+  }
+  if (summary.totalInputTokens || summary.totalOutputTokens) {
+    lines.push(`  ${c.dim('Tokens')}    ${(summary.totalInputTokens ?? 0).toLocaleString()} in / ${(summary.totalOutputTokens ?? 0).toLocaleString()} out`);
   }
   lines.push(`  ${c.dim('Turns')}     ${summary.turnsDir}`);
   lines.push(`  ${c.dim('Artifacts')} ${summary.artifactsDir}`);

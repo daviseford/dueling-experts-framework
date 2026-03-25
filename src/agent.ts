@@ -4,7 +4,7 @@ import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemble } from './context.js';
 import { killChildProcess } from './util.js';
-import type { Session, AgentName } from './session.js';
+import type { Session, AgentName, TokenUsage, ModelTier } from './session.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -23,13 +23,43 @@ export interface InvokeResult {
   output: string;
   timedOut: boolean;
   error?: string;
+  tokenUsage?: TokenUsage;
+}
+
+export function parseTokenUsage(stderr: string): TokenUsage | undefined {
+  // Claude CLI: JSON object with input_tokens
+  const jsonMatch = stderr.match(/\{[^}]*"input_tokens"\s*:\s*\d+[^}]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (typeof parsed.input_tokens === 'number') {
+        return {
+          input_tokens: parsed.input_tokens,
+          output_tokens: parsed.output_tokens ?? 0,
+          cache_creation_input_tokens: parsed.cache_creation_input_tokens,
+          cache_read_input_tokens: parsed.cache_read_input_tokens,
+        };
+      }
+    } catch { /* malformed JSON */ }
+  }
+
+  // Codex CLI: "1,234 input ... 567 output"
+  const codexMatch = stderr.match(/(\d[\d,]*)\s*input.*?(\d[\d,]*)\s*output/i);
+  if (codexMatch) {
+    return {
+      input_tokens: parseInt(codexMatch[1].replace(/,/g, ''), 10),
+      output_tokens: parseInt(codexMatch[2].replace(/,/g, ''), 10),
+    };
+  }
+
+  return undefined;
 }
 
 const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
 const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement — agents produce full file contents
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB — prevent OOM from runaway agent output
 
-export type ModelTier = 'full' | 'mid' | 'fast';
+export type { ModelTier } from './session.js';
 
 const DEFAULT_MODELS: Record<AgentName, string> = {
   claude: 'opus',
@@ -234,7 +264,8 @@ export async function invoke(agentName: AgentName, session: Session, tier?: Mode
           output = '';
         }
       }
-      settle({ exitCode: exitCode ?? 1, output, timedOut });
+      const tokenUsage = parseTokenUsage(stderr);
+      settle({ exitCode: exitCode ?? 1, output, timedOut, tokenUsage });
     });
 
     child.on('error', (err: Error) => {

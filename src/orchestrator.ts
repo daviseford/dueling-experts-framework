@@ -5,6 +5,7 @@ import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
 import { invoke, resolveModelName } from './agent.js';
 import type { ModelTier } from './agent.js';
+import type { TokenUsage, CumulativeUsage, TurnTokenEntry } from './session.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
@@ -22,6 +23,7 @@ interface InvokeOnceResult {
   rawOutput: string;
   reason: string;
   attemptDir?: string;
+  tokenUsage?: TokenUsage;
 }
 
 export interface Controller {
@@ -378,6 +380,33 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     tracer.emit('turn.written', { turn: turnCount, agent: nextAgent, phase, data: { id: canonicalId, status: canonicalData.status, duration_ms: durationMs } });
     ui.status('turn.written', { turn: turnCount, phase, tier: currentTier, id: canonicalId, status: canonicalData.status });
 
+    // Track token usage
+    if (result.tokenUsage) {
+      const entry: TurnTokenEntry = {
+        turn: turnCount,
+        agent: nextAgent,
+        model_tier: currentTier || 'full',
+        model_name: resolveModelName(nextAgent, currentTier || 'full'),
+        tokens: result.tokenUsage,
+      };
+
+      const prev = session.usage ?? {
+        total_input_tokens: 0, total_output_tokens: 0,
+        total_cache_creation_tokens: 0, total_cache_read_tokens: 0,
+        per_turn: [],
+      };
+      const updated: CumulativeUsage = {
+        total_input_tokens: prev.total_input_tokens + result.tokenUsage.input_tokens,
+        total_output_tokens: prev.total_output_tokens + result.tokenUsage.output_tokens,
+        total_cache_creation_tokens: prev.total_cache_creation_tokens + (result.tokenUsage.cache_creation_input_tokens ?? 0),
+        total_cache_read_tokens: prev.total_cache_read_tokens + (result.tokenUsage.cache_read_input_tokens ?? 0),
+        per_turn: [...prev.per_turn, entry],
+      };
+      session.usage = updated;
+      await updateSession(session.dir, { usage: updated });
+      ui.status('tokens.update', { turn: turnCount, inputTokens: result.tokenUsage.input_tokens, outputTokens: result.tokenUsage.output_tokens });
+    }
+
     const oppositeAgent: AgentName = nextAgent === 'claude' ? 'codex' : 'claude';
 
     // === Phase-specific post-turn logic ===
@@ -658,6 +687,8 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     pr: session.pr_url,
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
+    totalInputTokens: session.usage?.total_input_tokens,
+    totalOutputTokens: session.usage?.total_output_tokens,
   });
 
   // --- Helper closures ---
@@ -836,6 +867,7 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
       elapsed_ms: elapsedMs,
       exit_code: result.exitCode,
       timed_out: result.timedOut,
+      token_usage: result.tokenUsage,
       cmd: agentName,
       cwd: session.target_repo,
     };
@@ -847,10 +879,10 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
       phase: session.phase,
       data: { attempt_dir: attemptDir, exit_code: result.exitCode, elapsed_ms: elapsedMs, timed_out: result.timedOut, ok: !failed },
     });
-    return { ok: !failed, output: result.output, rawOutput: result.output, reason, attemptDir };
+    return { ok: !failed, output: result.output, rawOutput: result.output, reason, attemptDir, tokenUsage: result.tokenUsage };
   }
 
-  return { ok: !failed, output: result.output, rawOutput: result.output, reason };
+  return { ok: !failed, output: result.output, rawOutput: result.output, reason, tokenUsage: result.tokenUsage };
 }
 
 async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
