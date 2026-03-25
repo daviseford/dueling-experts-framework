@@ -90,6 +90,9 @@ interface StatusPayloads {
   'shutdown.start':     {};
   'shutdown.saved':     {};
   'shutdown.worktree':  { branch: string };
+  'base.fallback':      { original: string; resolved: string };
+  'base.unresolvable':  { original: string };
+  'branch.switched':    { expected: string; actual: string };
   'push.failed':        { branch: string; error: string };
   'pr.failed':          { branch: string; error: string };
   'pr.parse.failed':    { output: string };
@@ -372,6 +375,20 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'shutdown.worktree': {
       const { branch } = d as StatusPayloads['shutdown.worktree'];
       return `  ${c.dim(SYM.check)} Worktree cleaned up. Branch preserved: ${c.cyan(branch)}`;
+    }
+
+    // Base ref resolution
+    case 'base.fallback': {
+      const { original, resolved } = d as StatusPayloads['base.fallback'];
+      return `  ${c.yellow(SYM.warn)} Base ref ${c.cyan(original)} not found -- falling back to ${c.cyan(resolved)}`;
+    }
+    case 'base.unresolvable': {
+      const { original } = d as StatusPayloads['base.unresolvable'];
+      return `  ${c.yellow(SYM.warn)} Base ref ${c.cyan(original)} not found and no fallback resolved -- skipping PR.`;
+    }
+    case 'branch.switched': {
+      const { expected, actual } = d as StatusPayloads['branch.switched'];
+      return `  ${c.yellow(SYM.warn)} Agent switched from branch ${c.cyan(expected)} to ${c.cyan(actual)} -- changes may not be on the DEF branch.`;
     }
 
     // PR sub-events (from pr.ts)
