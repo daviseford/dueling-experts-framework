@@ -1,6 +1,6 @@
 {
   "name": "@daviseford/def",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "CLI that orchestrates turn-based debates between Claude Code and Codex, then implements and reviews changes",
   "type": "module",
   "bin": {
@@ -17,7 +17,14 @@
     "prepare": "node scripts/dev-setup.js",
     "prepublishOnly": "npm run build && npm run build:ui && node scripts/copy-ui-dist.js"
   },
-  "keywords": ["cli", "ai", "claude", "codex", "debate", "code-review"],
+  "keywords": [
+    "cli",
+    "ai",
+    "claude",
+    "codex",
+    "debate",
+    "code-review"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/daviseford/dueling-experts-framework.git"
