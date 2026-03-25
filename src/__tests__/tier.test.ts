@@ -12,8 +12,13 @@ describe('selectModelTier', () => {
     assert.equal(selectModelTier('implement', false, 'claude', true), 'full');
   });
 
-  it('returns "full" for review phase', () => {
-    assert.equal(selectModelTier('review', false, 'claude', true), 'full');
+  it('returns "mid" for review phase', () => {
+    assert.equal(selectModelTier('review', false, 'claude', true), 'mid');
+    assert.equal(selectModelTier('review', false, null, false), 'mid');
+  });
+
+  it('returns "full" for review phase when noFast is true', () => {
+    assert.equal(selectModelTier('review', true, 'claude', true), 'full');
   });
 
   it('returns "full" for plan phase with no signals', () => {
