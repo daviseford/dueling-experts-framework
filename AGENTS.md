@@ -115,6 +115,7 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - **Codex plan/review:** `codex exec --sandbox read-only --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Read-only sandbox — no file modifications.
 - **Codex implement:** `codex exec --full-auto --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Full workspace-write tool access.
 - Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims. Process kill uses `taskkill /T /F` for proper tree cleanup.
+- **Three model tiers:** full (opus/gpt-5.4), mid (sonnet), fast (haiku/gpt-5.1-codex-mini). Review phase uses mid by default; consensus confirmation uses fast. `--no-fast` forces all turns to full tier.
 - **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
 
