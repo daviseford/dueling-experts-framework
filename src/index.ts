@@ -45,7 +45,7 @@ if (!opts.topic) {
   console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
-  console.error('       def explorer');
+  console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
   process.exit(1);
 }
 

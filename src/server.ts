@@ -135,7 +135,7 @@ export async function startReadOnly(session: Session): Promise<void> {
 
 /**
  * Start the server in explorer mode — no owning session, multi-session browsing only.
- * POST endpoints return 404. Idle timeout starts immediately.
+ * POST endpoints return 404. Serves the UI for browsing all sessions. Idle timeout starts immediately.
  */
 export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
   if (httpServer) {
