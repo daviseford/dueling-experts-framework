@@ -41,6 +41,7 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
+const DEFAULT_PORT = 18541;
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
@@ -49,6 +50,46 @@ let targetRepoRef: string | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
 let idleResolve: (() => void) | null = null;
+let browserOpened = false;
+
+/**
+ * Listen on the preferred port, falling back to a random port if taken.
+ */
+function listenWithFallback(server: import('node:http').Server, preferredPort: number): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const onError = (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
+        // Port taken — fall back to random
+        server.removeListener('error', onError);
+        server.listen(0, '127.0.0.1', () => {
+          const addr = server.address();
+          resolve(typeof addr === 'object' && addr ? addr.port : 0);
+        });
+      } else {
+        reject(err);
+      }
+    };
+    server.on('error', onError);
+    server.listen(preferredPort, '127.0.0.1', () => {
+      server.removeListener('error', onError);
+      const addr = server.address();
+      resolve(typeof addr === 'object' && addr ? addr.port : 0);
+    });
+  });
+}
+
+/**
+ * Open the browser once per process. Subsequent calls are no-ops.
+ */
+function openBrowserOnce(url: string): void {
+  if (browserOpened || process.env.CI || process.env.DEF_NO_OPEN) return;
+  browserOpened = true;
+  const openCmd = process.platform === 'win32' ? 'start'
+    : process.platform === 'darwin' ? 'open' : 'xdg-open';
+  import('node:child_process').then(({ exec }) => {
+    exec(`${openCmd} ${url}`);
+  }).catch(() => {});
+}
 
 /**
  * Start the HTTP server for the watcher UI.
@@ -65,28 +106,12 @@ export async function start(session: Session, controller: Controller): Promise<v
 
   httpServer = createServer(handleRequest);
 
-  const server = httpServer;
-  return new Promise<void>((resolvePromise) => {
-    server.listen(0, '127.0.0.1', async () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      await updateSession(session.dir, { port });
-      session.port = port;
-      const url = `http://localhost:${port}`;
-      ui.status('server.url', { url });
-
-      // Auto-open browser (skip in CI/test environments)
-      if (!process.env.CI && !process.env.DEF_NO_OPEN) {
-        const openCmd = process.platform === 'win32' ? 'start'
-          : process.platform === 'darwin' ? 'open' : 'xdg-open';
-        import('node:child_process').then(({ exec }) => {
-          exec(`${openCmd} ${url}`);
-        }).catch(() => {});
-      }
-
-      resolvePromise();
-    });
-  });
+  const port = await listenWithFallback(httpServer, DEFAULT_PORT);
+  await updateSession(session.dir, { port });
+  session.port = port;
+  const url = `http://localhost:${port}`;
+  ui.status('server.url', { url });
+  openBrowserOnce(url);
 }
 
 /**
@@ -105,26 +130,10 @@ export async function startReadOnly(session: Session): Promise<void> {
   try {
     httpServer = createServer(handleRequest);
 
-    const server = httpServer;
-    await new Promise<void>((resolvePromise) => {
-      server.listen(0, '127.0.0.1', async () => {
-        const addr = server.address();
-        const port = typeof addr === 'object' && addr ? addr.port : 0;
-        const url = `http://localhost:${port}`;
-        ui.status('server.url', { url });
-
-        // Auto-open browser (skip in CI/test environments)
-        if (!process.env.CI && !process.env.DEF_NO_OPEN) {
-          const openCmd = process.platform === 'win32' ? 'start'
-            : process.platform === 'darwin' ? 'open' : 'xdg-open';
-          import('node:child_process').then(({ exec }) => {
-            exec(`${openCmd} ${url}`);
-          }).catch(() => {});
-        }
-
-        resolvePromise();
-      });
-    });
+    const port = await listenWithFallback(httpServer, DEFAULT_PORT);
+    const url = `http://localhost:${port}`;
+    ui.status('server.url', { url });
+    openBrowserOnce(url);
   } catch (err) {
     readOnlyMode = false;
     httpServer = null;
@@ -150,28 +159,14 @@ export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: n
 
   httpServer = createServer(handleRequest);
 
-  const server = httpServer;
-  const listenPort = opts?.port ?? 0;
-  await new Promise<void>((resolvePromise) => {
-    server.listen(listenPort, '127.0.0.1', async () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const url = `http://localhost:${port}`;
-      ui.status('server.url', { url });
+  const preferredPort = opts?.port ?? DEFAULT_PORT;
+  const port = await listenWithFallback(httpServer, preferredPort);
+  const url = `http://localhost:${port}`;
+  ui.status('server.url', { url });
+  openBrowserOnce(url);
 
-      if (!process.env.CI && !process.env.DEF_NO_OPEN) {
-        const openCmd = process.platform === 'win32' ? 'start'
-          : process.platform === 'darwin' ? 'open' : 'xdg-open';
-        import('node:child_process').then(({ exec }) => {
-          exec(`${openCmd} ${url}`);
-        }).catch(() => {});
-      }
-
-      // Start idle timer immediately in explorer mode
-      resetIdleTimer();
-      resolvePromise();
-    });
-  });
+  // Start idle timer immediately in explorer mode
+  resetIdleTimer();
 }
 
 /**
@@ -210,6 +205,7 @@ export function stop(): void {
     httpServer = null;
     readOnlyMode = false;
     targetRepoRef = null;
+    browserOpened = false;
   }
   if (idleResolve) {
     idleResolve();
@@ -483,9 +479,18 @@ async function handleGetSessions(res: ServerResponse): Promise<void> {
     return;
   }
 
-  const sessions = await listSessions(targetRepoRef);
+  const allSessions = await listSessions(targetRepoRef);
   const repoName = basename(targetRepoRef);
-  const sessionsWithRepo = sessions.map(s => ({ ...s, repo: repoName }));
+
+  // In normal mode, only show active/paused sessions (plus the owning session).
+  // In explorer mode (no owning session), show all sessions.
+  const isExplorerMode = sessionRef === null;
+  const filtered = isExplorerMode
+    ? allSessions
+    : allSessions.filter(s =>
+        s.session_status === 'active' || s.session_status === 'paused' || s.id === sessionRef?.id
+      );
+  const sessionsWithRepo = filtered.map(s => ({ ...s, repo: repoName }));
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({

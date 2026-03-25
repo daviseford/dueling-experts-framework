@@ -36,7 +36,7 @@ export default function App() {
   } = useExplorer()
 
   const isOwningSession = selectedSessionId === owningSessionId
-  const isReadOnly = !isOwningSession || sessionStatus !== "active"
+  const isReadOnly = sessionStatus !== "active"
   const isCompleted = sessionStatus === "completed"
 
   // Pending interjections: messages sent but not yet processed into turns
