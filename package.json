@@ -1,6 +1,7 @@
 {
-  "name": "dueling-experts-framework",
-  "version": "0.1.0",
+  "name": "@daviseford/def",
+  "version": "0.0.2",
+  "description": "CLI that orchestrates turn-based debates between Claude Code and Codex, then implements and reviews changes",
   "type": "module",
   "bin": {
     "def": "./bin/def"
@@ -9,10 +10,31 @@
     "start": "tsx src/index.ts",
     "test": "tsx --test src/__tests__/context.test.ts src/__tests__/normalizeStatus.test.ts src/__tests__/pr.test.ts src/__tests__/recovery.test.ts src/__tests__/recovery-finalize.test.ts src/__tests__/server-metadata.test.ts src/__tests__/tier.test.ts src/__tests__/trace.test.ts src/__tests__/util.test.ts src/__tests__/validate.test.ts src/__tests__/worktree.test.ts",
     "typecheck": "tsc --noEmit",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "dev:ui": "cd src/ui && npm run dev",
     "dev:ui:mock": "cd src/ui && npm run dev:mock",
     "build:ui": "cd src/ui && npm run build",
-    "prepare": "cd src/ui && npm install && npm run build"
+    "prepare": "node scripts/dev-setup.js",
+    "prepublishOnly": "npm run build && npm run build:ui && node scripts/copy-ui-dist.js"
+  },
+  "keywords": ["cli", "ai", "claude", "codex", "debate", "code-review"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daviseford/dueling-experts-framework.git"
+  },
+  "author": "daviseford",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

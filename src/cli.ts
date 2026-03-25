@@ -7,6 +7,7 @@ export interface ParsedArgs {
   reviewTurns?: number;
   noPr?: boolean;
   noFast?: boolean;
+  version?: boolean;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -37,6 +38,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-fast':
         result.noFast = true;
+        break;
+      case '--version':
+      case '-v':
+        result.version = true;
         break;
       default:
         if (!argv[i].startsWith('--')) {
