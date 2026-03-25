@@ -448,6 +448,7 @@ Approved for merge. The PR is ready.`,
 
 export const MOCK_RESPONSE: TurnsResponse = {
   turns: MOCK_TURNS,
+  session_id: "mock-session-id",
   session_status: "completed",
   phase: "review",
   topic: "Add rate limiting middleware to the API gateway",
