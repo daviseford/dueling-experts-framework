@@ -68,12 +68,14 @@ export async function start(session: Session, controller: Controller): Promise<v
       const url = `http://localhost:${port}`;
       ui.status('server.url', { url });
 
-      // Auto-open browser
-      const openCmd = process.platform === 'win32' ? 'start'
-        : process.platform === 'darwin' ? 'open' : 'xdg-open';
-      import('node:child_process').then(({ exec }) => {
-        exec(`${openCmd} ${url}`);
-      }).catch(() => {});
+      // Auto-open browser (skip in CI/test environments)
+      if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+        const openCmd = process.platform === 'win32' ? 'start'
+          : process.platform === 'darwin' ? 'open' : 'xdg-open';
+        import('node:child_process').then(({ exec }) => {
+          exec(`${openCmd} ${url}`);
+        }).catch(() => {});
+      }
 
       resolvePromise();
     });
