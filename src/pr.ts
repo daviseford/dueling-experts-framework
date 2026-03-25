@@ -21,6 +21,50 @@ export interface PrOptions {
   sessionId: string;
 }
 
+// ── PR URL parsing ──────────────────────────────────────────────────
+
+export interface PrRef {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+/**
+ * Extract a GitHub PR reference (owner, repo, number) from a topic string.
+ * Returns null if the topic doesn't contain a valid PR URL.
+ */
+export function parsePrRef(topic: string): PrRef | null {
+  const match = topic.match(/https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) return null;
+  const num = parseInt(match[3], 10);
+  if (num <= 0 || !isFinite(num)) return null;
+  return { owner: match[1], repo: match[2], number: num };
+}
+
+/**
+ * Look up a PR's head branch name using `gh pr view`.
+ * Returns the branch name on success, null on any failure.
+ * Best-effort: never throws.
+ */
+export async function lookupPrHeadBranch(ref: PrRef): Promise<string | null> {
+  try {
+    const branch = await exec('.', 'gh', [
+      'pr', 'view', String(ref.number),
+      '--repo', `${ref.owner}/${ref.repo}`,
+      '--json', 'headRefName',
+      '--jq', '.headRefName',
+    ]);
+    return branch || null;
+  } catch {
+    ui.status('pr.lookup.failed', {
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+    });
+    return null;
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /**

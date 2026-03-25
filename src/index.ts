@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
+import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
@@ -93,6 +94,9 @@ try {
   process.exit(1);
 }
 
+// Register repo in global known-repos (fire-and-forget)
+registerRepo(targetRepo).catch(() => {});
+
 ui.intro({
   id: session.id,
   topic: session.topic,
@@ -122,9 +126,13 @@ try {
   process.exitCode = 1;
 } finally {
   if (server) {
-    // Give the UI time to poll the completed status before shutting down
-    await new Promise((r) => setTimeout(r, 5000));
-    server.stop();
+    // Keep server alive for multi-session browsing after session completes.
+    // Server shuts down after idle timeout (default 5 minutes).
+    try {
+      await server.beginIdleShutdown();
+    } catch {
+      server.stop();
+    }
   }
   process.exit(process.exitCode || 0);
 }
