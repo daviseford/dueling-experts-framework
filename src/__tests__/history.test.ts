@@ -141,6 +141,105 @@ describe('listSessions', () => {
   });
 });
 
+describe('listSessions liveness detection', () => {
+  let testRepo: string;
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-liveness-${randomUUID()}`);
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+
+    const idActive = 'live1111-0000-0000-0000-000000000000';
+    const idDead = 'dead2222-0000-0000-0000-000000000000';
+    const idStale = 'stale333-0000-0000-0000-000000000000';
+    const idCompleted = 'done4444-0000-0000-0000-000000000000';
+
+    for (const id of [idActive, idDead, idStale, idCompleted]) {
+      await mkdir(join(sessionsDir, id), { recursive: true });
+    }
+
+    // Active session with live PID (current process) + fresh heartbeat
+    await writeFile(join(sessionsDir, idActive, 'session.json'), makeSessionJson({
+      id: idActive,
+      topic: 'Active session',
+      created: '2026-03-25T10:00:00.000Z',
+      session_status: 'active',
+      pid: process.pid,
+    }));
+    await writeFile(join(sessionsDir, idActive, 'heartbeat.json'), JSON.stringify({
+      heartbeat_at: new Date().toISOString(),
+    }));
+
+    // Active session with dead PID (99999999)
+    await writeFile(join(sessionsDir, idDead, 'session.json'), makeSessionJson({
+      id: idDead,
+      topic: 'Dead PID session',
+      created: '2026-03-25T09:00:00.000Z',
+      session_status: 'active',
+      pid: 99999999,
+    }));
+    await writeFile(join(sessionsDir, idDead, 'heartbeat.json'), JSON.stringify({
+      heartbeat_at: new Date().toISOString(),
+    }));
+
+    // Active session with stale heartbeat (>30s ago)
+    await writeFile(join(sessionsDir, idStale, 'session.json'), makeSessionJson({
+      id: idStale,
+      topic: 'Stale heartbeat session',
+      created: '2026-03-25T08:00:00.000Z',
+      session_status: 'active',
+      pid: process.pid,
+    }));
+    await writeFile(join(sessionsDir, idStale, 'heartbeat.json'), JSON.stringify({
+      heartbeat_at: new Date(Date.now() - 60_000).toISOString(), // 60s ago
+    }));
+
+    // Completed session — is_active should be false regardless
+    await writeFile(join(sessionsDir, idCompleted, 'session.json'), makeSessionJson({
+      id: idCompleted,
+      topic: 'Completed session',
+      created: '2026-03-25T07:00:00.000Z',
+      session_status: 'completed',
+      pid: process.pid,
+    }));
+  });
+
+  after(async () => {
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('active session with live PID + fresh heartbeat: is_active true', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Active session');
+    assert.ok(s);
+    assert.equal(s!.is_active, true);
+    assert.equal(s!.session_status, 'active');
+  });
+
+  it('active session with dead PID: reported as interrupted', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Dead PID session');
+    assert.ok(s);
+    assert.equal(s!.is_active, false);
+    assert.equal(s!.session_status, 'interrupted');
+  });
+
+  it('active session with stale heartbeat: reported as interrupted', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Stale heartbeat session');
+    assert.ok(s);
+    assert.equal(s!.is_active, false);
+    assert.equal(s!.session_status, 'interrupted');
+  });
+
+  it('completed session: is_active false regardless', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Completed session');
+    assert.ok(s);
+    assert.equal(s!.is_active, false);
+    assert.equal(s!.session_status, 'completed');
+  });
+});
+
 describe('history --since/--before invalid date', () => {
   const indexPath = join(__dirname, '..', 'index.ts');
 
