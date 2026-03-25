@@ -1,44 +1,17 @@
 # Dueling Experts Framework
 
-A local CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents debate a topic, implement changes in an isolated git worktree, review each other's work, and open a draft PR — all while you watch in a browser UI.
-
-## Usage
-
-Run `def` from anywhere:
-
-```sh
-cd ~/Projects/my-app
-def "plan a REST API for user management"
-```
-
-This creates a `.def/` session directory in the target repo, starts the agent loop, and opens a watcher UI in your browser.
+A CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents debate a topic, implement changes in an isolated git worktree, review each other's work, and open a PR — all while you watch in a browser UI.
 
 ## Installation
 
-Clone the repo and install dependencies:
-
 ```sh
-git clone https://github.com/daviseford/claude-codex-chat.git ~/tools/def
-cd ~/tools/def
-npm install
+npm install -g @daviseford/def
 ```
 
-Add the `def` command to your PATH:
+Or run without installing:
 
 ```sh
-# bash/zsh
-echo 'export PATH="$HOME/tools/def/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-
-# or symlink
-ln -s ~/tools/def/bin/def /usr/local/bin/def
-```
-
-On Windows (PowerShell):
-
-```powershell
-# Add to your PowerShell profile
-Add-Content $PROFILE "`n`$env:PATH = `"$HOME\tools\def\bin;`$env:PATH`""
+npx @daviseford/def "your topic"
 ```
 
 ## Prerequisites
@@ -46,8 +19,19 @@ Add-Content $PROFILE "`n`$env:PATH = `"$HOME\tools\def\bin;`$env:PATH`""
 - **Node.js 20+**
 - **Claude Code CLI** (`claude`) — installed and authenticated
 - **Codex CLI** (`codex`) — installed and authenticated (requires ChatGPT Pro)
-- **GitHub CLI** (`gh`) — installed and authenticated (for automatic draft PR creation)
+- **GitHub CLI** (`gh`) — installed and authenticated (for automatic PR creation)
 - Both agent CLIs available on PATH
+
+## Usage
+
+Run `def` from any git repo:
+
+```sh
+cd ~/Projects/my-app
+def "plan a REST API for user management"
+```
+
+This creates a `.def/` session directory in the target repo, starts the agent loop, and opens a watcher UI in your browser.
 
 ### Options
 
@@ -58,7 +42,9 @@ Add-Content $PROFILE "`n`$env:PATH = `"$HOME\tools\def\bin;`$env:PATH`""
 --first <agent>               Which agent goes first: claude or codex (default: claude)
 --impl-model <agent>          Which agent implements: claude or codex (default: claude)
 --review-turns <number>       Max review/fix cycles, 1-50 (default: 6)
---no-pr                       Skip automatic draft PR creation
+--no-pr                       Skip automatic PR creation
+--no-fast                     Disable fast-mode agent tiering
+--version, -v                 Print version and exit
 ```
 
 ### Examples
@@ -81,7 +67,7 @@ def --topic "Fix error handling in src/api/" --no-pr
 
 Sessions progress through three phases:
 
-### 1. Debate
+### 1. Plan
 
 Agents alternate turns debating the topic. When both agents signal `status: decided`, consensus is reached and the session advances. In `planning` mode, the session ends here.
 
@@ -91,11 +77,11 @@ In `edit` mode, a git worktree is created on a new branch (`def/<id>-<topic-slug
 
 ### 3. Review
 
-The non-implementing agent reviews the changes. It can approve (`status: done`) or request fixes, cycling back to implement. This repeats until approval or the `--review-turns` limit is reached.
+The non-implementing agent reviews the changes. It can approve (`verdict: approve`) or request fixes (`verdict: fix`), cycling back to implement. This repeats until approval or the `--review-turns` limit is reached.
 
 ### Automatic PR Creation
 
-When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **draft PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
+When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
 
 ### Watcher UI
 
@@ -143,7 +129,7 @@ turn: 1
 from: claude
 timestamp: 2026-03-23T14:30:00.000Z
 status: complete
-phase: debate
+phase: plan
 decisions:
   - Use polling over fs.watch
 ---
@@ -151,6 +137,27 @@ The markdown response body goes here.
 ```
 
 **Status values:** `complete`, `needs_human`, `done`, `decided`, `error` (orchestrator-only)
+
+## Development
+
+Clone the repo and install dependencies:
+
+```sh
+git clone https://github.com/daviseford/dueling-experts-framework.git
+cd dueling-experts-framework
+npm install
+```
+
+The `prepare` script automatically installs UI dependencies and builds the watcher UI.
+
+```sh
+npm start -- --topic "Your topic"    # Run via tsx (dev mode)
+npm test                              # Run tests
+npm run typecheck                     # Type-check with tsc --noEmit
+npm run build                         # Compile TS to dist/
+npm run build:ui                      # Build watcher UI
+npm run dev:ui                        # Dev UI with hot reload
+```
 
 ## License
 
