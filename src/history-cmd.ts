@@ -66,6 +66,22 @@ export async function run(argv: string[]): Promise<void> {
   const args = parseHistoryArgs(argv);
   const targetRepo = resolve(process.cwd());
 
+  // Validate date arguments early (before listing sessions)
+  if (args.since) {
+    const d = new Date(args.since);
+    if (isNaN(d.getTime())) {
+      console.error(`Invalid date: ${args.since}`);
+      process.exit(1);
+    }
+  }
+  if (args.before) {
+    const d = new Date(args.before);
+    if (isNaN(d.getTime())) {
+      console.error(`Invalid date: ${args.before}`);
+      process.exit(1);
+    }
+  }
+
   let sessions = await listSessions(targetRepo);
 
   if (sessions.length === 0) {
@@ -82,20 +98,10 @@ export async function run(argv: string[]): Promise<void> {
     sessions = sessions.filter(s => s.topic.toLowerCase().includes(needle));
   }
   if (args.since) {
-    const d = new Date(args.since);
-    if (isNaN(d.getTime())) {
-      console.error(`Invalid date: ${args.since}`);
-      process.exit(1);
-    }
-    sessions = sessions.filter(s => s.created >= d.toISOString());
+    sessions = sessions.filter(s => s.created >= new Date(args.since!).toISOString());
   }
   if (args.before) {
-    const d = new Date(args.before);
-    if (isNaN(d.getTime())) {
-      console.error(`Invalid date: ${args.before}`);
-      process.exit(1);
-    }
-    sessions = sessions.filter(s => s.created < d.toISOString());
+    sessions = sessions.filter(s => s.created < new Date(args.before!).toISOString());
   }
 
   // Apply limit
