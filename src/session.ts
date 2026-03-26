@@ -138,6 +138,12 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
   process.on('SIGINT', async () => {
     if (shuttingDown) process.exit(1); // Double Ctrl+C — hard exit
     shuttingDown = true;
+
+    // Hard timeout — force exit if async cleanup hangs (e.g., git operations,
+    // file I/O, or the orchestrator is blocked on waitForHuman)
+    const forceTimer = setTimeout(() => process.exit(1), 5000);
+    forceTimer.unref(); // Don't keep event loop alive
+
     ui.status('shutdown.start', {});
     try {
       // Kill the running agent child process

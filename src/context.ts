@@ -40,7 +40,7 @@ You are collaborating on: ${topic}
 - Optional frontmatter: decisions (array of strings -- key decisions made in this turn).
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
 - Challenge the other agent's assumptions. Don't just agree -- push for better solutions.
-- If you need human input to proceed, set status: needs_human and explain what you need in the body.
+- You have read-only tool access (Read, Glob, Grep, git). You CANNOT modify files -- that happens in the implementation phase. Do not request human help because of this limitation. When the plan is ready to implement, set status: decided.
 - If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn -- the other agent must have a chance to respond.
 - If you believe you and the other agent have reached consensus on all key decisions, set status: decided. The other agent will then confirm or contest.
 - Always use status: complete unless the conversation is truly finished after multiple turns.
