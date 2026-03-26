@@ -42,7 +42,7 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]');
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
   console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
@@ -120,7 +120,7 @@ try {
 
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast, noWorktree: opts.noWorktree });
 } catch (err: unknown) {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;

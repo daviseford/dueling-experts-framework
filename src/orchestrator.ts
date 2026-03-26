@@ -42,6 +42,7 @@ interface RunOptions {
   server?: ServerModule | null;
   noPr?: boolean;
   noFast?: boolean;
+  noWorktree?: boolean;
 }
 
 export interface RecoveredState {
@@ -97,7 +98,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -422,10 +423,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
             break;
           }
 
-          // Create worktree for isolated implementation.
-          // Worktree is required — agents get full tool access and must not
-          // operate on the user's main checkout.
-          if (session.mode === 'edit') {
+          // Create worktree for isolated implementation (unless --no-worktree).
+          // Without a worktree, agents operate directly on the user's checkout.
+          if (session.mode === 'edit' && !noWorktree) {
             try {
               // Resolve base branch from PR URL in topic (if any)
               let baseOverride: string | undefined;

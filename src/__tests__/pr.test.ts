@@ -231,6 +231,26 @@ describe('CLI --no-pr parsing', () => {
   });
 });
 
+describe('CLI --no-worktree parsing', () => {
+  it('parseArgs recognizes --no-worktree flag', () => {
+    const result = parseArgs(['--topic', 'test topic', '--no-worktree']);
+    assert.equal(result.noWorktree, true);
+    assert.equal(result.topic, 'test topic');
+  });
+
+  it('parseArgs defaults noWorktree to undefined when flag absent', () => {
+    const result = parseArgs(['--topic', 'test topic']);
+    assert.equal(result.noWorktree, undefined);
+  });
+
+  it('parseArgs handles --no-worktree with other flags', () => {
+    const result = parseArgs(['--no-worktree', '--no-pr', '--topic', 'my topic']);
+    assert.equal(result.noWorktree, true);
+    assert.equal(result.noPr, true);
+    assert.equal(result.topic, 'my topic');
+  });
+});
+
 describe('parsePrRef', () => {
   it('extracts PR ref from topic with standard URL', () => {
     const ref = parsePrRef('fix https://github.com/owner/repo/pull/42');
