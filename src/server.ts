@@ -113,6 +113,7 @@ export async function probeExistingServer(port: number): Promise<{ action: 'join
             setTimeout(() => resolve({ action: 'replace' }), 500);
           });
           endReq.on('error', () => resolve({ action: 'replace' }));
+          endReq.on('timeout', () => { endReq.destroy(); });
           endReq.end(JSON.stringify({ session_id: owningId }));
         } catch {
           debugLog(`Port ${port} responded with non-JSON, treating as non-DEF`);
@@ -303,6 +304,8 @@ export function stop(): void {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
+    sessionRef = null;
+    controllerRef = null;
     targetRepoRef = null;
     browserOpened = false;
   }
@@ -722,7 +725,7 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
   }
 
   // Route to non-owning session via file-based IPC
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(sessionId)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(sessionId)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid session_id format' }));
     return;
@@ -800,7 +803,7 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
   }
 
   // Route to non-owning session via file-based IPC
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(sessionId)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(sessionId)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid session_id format' }));
     return;

@@ -223,8 +223,10 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   // File-based IPC poll loop — picks up interjections and end-requested flags
   // written by the shared server (coexists with in-memory controller methods).
   let ipcPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pollStopped = false;
 
   function schedulePoll(): void {
+    if (pollStopped) return;
     const delay = isPaused ? 500 : 1000;
     ipcPollTimeout = setTimeout(async () => {
       try {
@@ -718,6 +720,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
 
   } finally {
     clearInterval(heartbeatInterval);
+    pollStopped = true;
     if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
   }
 

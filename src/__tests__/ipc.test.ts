@@ -38,9 +38,9 @@ describe('writeInterjection + readInterjections', () => {
     // Write with small delays to ensure distinct timestamps
     await writeInterjection(sessionDir, 'first');
     // Tiny delay to get a different timestamp
-    await new Promise(r => setTimeout(r, 5));
+    await new Promise(r => setTimeout(r, 20));
     await writeInterjection(sessionDir, 'second');
-    await new Promise(r => setTimeout(r, 5));
+    await new Promise(r => setTimeout(r, 20));
     await writeInterjection(sessionDir, 'third');
 
     const contents = await readInterjections(sessionDir);

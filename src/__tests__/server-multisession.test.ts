@@ -257,6 +257,7 @@ describe('interject routing', () => {
   });
 
   it('interjection to non-owning active session writes file (delivery: queued)', async () => {
+    interjectCalled = false;
     const { status, body } = await httpPost(port, '/api/interject', {
       session_id: otherId,
       content: 'hello other',
@@ -265,6 +266,7 @@ describe('interject routing', () => {
     const json = JSON.parse(body);
     assert.equal(json.ok, true);
     assert.equal(json.delivery, 'queued');
+    assert.equal(interjectCalled, false, 'should not call in-memory interject');
 
     // Verify file was written to interjections/
     const interjDir = join(testRepo, '.def', 'sessions', otherId, 'interjections');
