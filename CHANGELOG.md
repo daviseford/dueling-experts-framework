@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.9](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.8...def-v0.0.9) (2026-03-26)
+
+
+### Features
+
+* UI polish — status badges, grid separation, summary card contrast ([#76](https://github.com/daviseford/dueling-experts-framework/issues/76)) ([f694fa8](https://github.com/daviseford/dueling-experts-framework/commit/f694fa8293e9bfc722751385b367923a9c7b0081))
+* **ui:** add toggleable grid view for multi-session display ([#70](https://github.com/daviseford/dueling-experts-framework/issues/70)) ([cfbee36](https://github.com/daviseford/dueling-experts-framework/commit/cfbee36fc49c6b8022293a2f76b0e4f0f7faae66))
+
 ## [0.0.8](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.7...def-v0.0.8) (2026-03-26)
 
 
