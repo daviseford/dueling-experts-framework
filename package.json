@@ -1,6 +1,6 @@
 {
   "name": "@daviseford/def",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "CLI that orchestrates turn-based debates between Claude Code and Codex, then implements and reviews changes",
   "type": "module",
   "bin": {
