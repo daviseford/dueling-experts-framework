@@ -126,22 +126,29 @@ export function Transcript({
         {pendingInterjections.map((p) => (
           <PendingTurnCard key={p.id} content={p.content} />
         ))}
-        {sessionStatus !== "completed" && decisions.length > 0 && (
+        {sessionStatus !== "completed" && (decisions.length > 0 || phase) && (
           <div className="rounded-lg border border-border/30 bg-card/60 px-4 py-3">
             <div className="mb-2 flex items-center gap-2">
               <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" />
               <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-                Decisions so far ({decisions.length})
+                Session context
               </span>
+              {phase && (
+                <span className="rounded-full bg-foreground/8 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-foreground/50">
+                  {phase} phase
+                </span>
+              )}
             </div>
-            <ul className="space-y-1">
-              {decisions.map((d, i) => (
-                <li key={i} className="flex items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-500/60" />
-                  {d}
-                </li>
-              ))}
-            </ul>
+            {decisions.length > 0 && (
+              <ul className="space-y-1">
+                {decisions.map((d, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-500/60" />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {thinking && (

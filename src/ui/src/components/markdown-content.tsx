@@ -71,23 +71,13 @@ const components: Components = {
       {children}
     </blockquote>
   ),
-  code: ({ className, children }) => {
-    const isBlock = className?.startsWith("language-") || false
-    if (isBlock) {
-      return (
-        <code className="text-[12px]">
-          {children}
-        </code>
-      )
-    }
-    return (
-      <code className="rounded bg-muted/40 px-1 py-0.5 font-mono text-[12px] text-foreground/90">
-        {children}
-      </code>
-    )
-  },
+  code: ({ children }) => (
+    <code className="rounded bg-muted/40 px-1 py-0.5 font-mono text-[12px] text-foreground/90">
+      {children}
+    </code>
+  ),
   pre: ({ children }) => (
-    <pre className="mb-2 overflow-x-auto rounded-lg bg-muted/20 p-3 font-mono text-[12px] leading-relaxed last:mb-0">
+    <pre className="mb-2 overflow-x-auto rounded-lg bg-muted/20 p-3 font-mono text-[12px] leading-relaxed last:mb-0 [&>code]:bg-transparent [&>code]:p-0 [&>code]:rounded-none">
       {children}
     </pre>
   ),
