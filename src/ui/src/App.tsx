@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
-import { useExplorer } from "@/hooks/use-explorer"
+import { useSessionList } from "@/hooks/use-explorer"
+import { useSessionTurns } from "@/hooks/use-session-turns"
 import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
@@ -17,6 +18,9 @@ export default function App() {
     sessions,
     selectedSessionId,
     setSelectedSessionId,
+  } = useSessionList()
+
+  const {
     turns,
     sessionId,
     sessionStatus,
@@ -32,7 +36,7 @@ export default function App() {
     prNumber,
     turnsPath,
     artifactsPath,
-  } = useExplorer()
+  } = useSessionTurns(selectedSessionId, sessions)
 
   const isReadOnly = sessionStatus !== "active"
   const isCompleted = sessionStatus === "completed"

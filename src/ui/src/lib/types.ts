@@ -61,6 +61,13 @@ export interface SessionsResponse {
   owning_session_id: string | null
 }
 
+export interface SessionListState {
+  sessions: SessionSummary[]
+  selectedSessionId: string
+  setSelectedSessionId: (id: string) => void
+  owningSessionId: string | null
+}
+
 export interface PollingState {
   turns: Turn[]
   sessionId: string
