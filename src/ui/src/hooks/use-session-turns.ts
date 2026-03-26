@@ -176,7 +176,7 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
   }
 }
 
-function useMockSessionTurns(sessionId: string, _sessions: SessionSummary[]): PollingState {
+function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {
   // Lazy-load mock data to avoid circular dependency issues
   const [mockData, setMockData] = useState<{ turns: Turn[], turn_count: number, artifact_names: string[] } | null>(null)
 
@@ -184,20 +184,24 @@ function useMockSessionTurns(sessionId: string, _sessions: SessionSummary[]): Po
     import("@/mocks/mock-session").then(m => setMockData(m.MOCK_RESPONSE))
   }, [])
 
+  const session = sessions.find(s => s.id === sessionId)
+  const status = (session?.session_status ?? "completed") as PollingState["sessionStatus"]
+  const statusText = status === "completed" ? "Session completed" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
+
   return {
     turns: sessionId === "mock-session-1" && mockData ? mockData.turns : [],
     sessionId,
-    sessionStatus: "completed",
-    topic: "",
-    turnCount: sessionId === "mock-session-1" && mockData ? mockData.turn_count : 0,
-    thinking: null,
-    thinkingElapsed: "",
-    statusText: "Session completed",
+    sessionStatus: status,
+    topic: session?.topic ?? "",
+    turnCount: sessionId === "mock-session-1" && mockData ? mockData.turn_count : (session?.current_turn ?? 0),
+    thinking: status === "active" ? { agent: "claude", since: new Date(Date.now() - 15000).toISOString() } : null,
+    thinkingElapsed: status === "active" ? "15s" : "",
+    statusText,
     sessionTimer: "58m 0s",
-    phase: "review",
-    branchName: null,
-    prUrl: null,
-    prNumber: null,
+    phase: (session?.phase ?? "review") as PollingState["phase"],
+    branchName: session?.branch_name ?? null,
+    prUrl: session?.pr_url ?? null,
+    prNumber: sessionId === "mock-session-1" ? 42 : null,
     turnsPath: `.def/sessions/${sessionId}/turns`,
     artifactsPath: `.def/sessions/${sessionId}/artifacts`,
     artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifact_names : [],
