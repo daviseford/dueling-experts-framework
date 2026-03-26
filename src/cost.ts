@@ -59,14 +59,21 @@ export function estimateCost(modelName: string, usage: TokenUsage): number | nul
  * Merge two TokenUsage records by summing their token counts.
  * Used to accumulate usage across retries within a single turn.
  * Returns undefined if both inputs are undefined.
+ * Preserves null semantics: a field stays null only when BOTH sides are null
+ * (meaning "unknown"). If at least one side has a value, the unknown side
+ * is treated as 0 for summation.
  */
 export function mergeUsage(a: TokenUsage | undefined, b: TokenUsage | undefined): TokenUsage | undefined {
   if (!a && !b) return undefined;
   if (!a) return b;
   if (!b) return a;
   return {
-    input_tokens: (a.input_tokens ?? 0) + (b.input_tokens ?? 0),
-    output_tokens: (a.output_tokens ?? 0) + (b.output_tokens ?? 0),
+    input_tokens: a.input_tokens === null && b.input_tokens === null
+      ? null
+      : (a.input_tokens ?? 0) + (b.input_tokens ?? 0),
+    output_tokens: a.output_tokens === null && b.output_tokens === null
+      ? null
+      : (a.output_tokens ?? 0) + (b.output_tokens ?? 0),
   };
 }
 

@@ -106,12 +106,28 @@ describe('mergeUsage', () => {
     assert.equal(merged.output_tokens, 1300);
   });
 
-  it('treats null token counts as zero when merging', () => {
+  it('preserves null when both sides have null for a field', () => {
+    const a: TokenUsage = { input_tokens: null, output_tokens: 500 };
+    const b: TokenUsage = { input_tokens: null, output_tokens: 600 };
+    const merged = mergeUsage(a, b)!;
+    assert.equal(merged.input_tokens, null);
+    assert.equal(merged.output_tokens, 1100);
+  });
+
+  it('treats one-sided null as zero when the other side has a value', () => {
     const a: TokenUsage = { input_tokens: 1000, output_tokens: null };
     const b: TokenUsage = { input_tokens: null, output_tokens: 600 };
     const merged = mergeUsage(a, b)!;
     assert.equal(merged.input_tokens, 1000);
     assert.equal(merged.output_tokens, 600);
+  });
+
+  it('returns all-null when both sides are fully unknown', () => {
+    const a: TokenUsage = { input_tokens: null, output_tokens: null };
+    const b: TokenUsage = { input_tokens: null, output_tokens: null };
+    const merged = mergeUsage(a, b)!;
+    assert.equal(merged.input_tokens, null);
+    assert.equal(merged.output_tokens, null);
   });
 });
 
