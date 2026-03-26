@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { fetchSessions } from "@/lib/api"
 import { useMockSessionList } from "./use-mock-explorer"
-import type { SessionSummary, SessionListState } from "@/lib/types"
+import type { SessionListState } from "@/lib/types"
+import { isMock } from "@/lib/env"
 
 const SESSIONS_POLL_INTERVAL = 5000
 
 function useLiveSessionList(enabled = true): SessionListState {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [owningSessionId, setOwningSessionId] = useState<string | null>(null)
-  const [selectedSessionId, setSelectedSessionIdRaw] = useState("")
+  const [selectedSessionId, setSelectedSessionId] = useState("")
 
   const sessionsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchingSessionsRef = useRef(false)
@@ -18,10 +19,6 @@ function useLiveSessionList(enabled = true): SessionListState {
   useEffect(() => {
     selectedRef.current = selectedSessionId
   }, [selectedSessionId])
-
-  const setSelectedSessionId = useCallback((id: string) => {
-    setSelectedSessionIdRaw(id)
-  }, [])
 
   // Poll sessions list
   const pollSessions = useCallback(async () => {
@@ -40,7 +37,7 @@ function useLiveSessionList(enabled = true): SessionListState {
         const nonStale = active ?? data.sessions.find(s => s.session_status !== "interrupted")
         const pick = nonStale?.id ?? data.sessions[0].id
 
-        setSelectedSessionIdRaw(pick)
+        setSelectedSessionId(pick)
         selectedRef.current = pick
       }
     } catch {
@@ -67,10 +64,6 @@ function useLiveSessionList(enabled = true): SessionListState {
     owningSessionId,
   }
 }
-
-const isMock =
-  import.meta.env.VITE_MOCK === "true" ||
-  new URLSearchParams(window.location.search).has("mock")
 
 export function useSessionList(): SessionListState {
   // Both hooks called unconditionally per React hook rules

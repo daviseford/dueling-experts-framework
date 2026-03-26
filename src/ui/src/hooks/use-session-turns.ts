@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchSessionTurns } from "@/lib/api"
 import type { Turn, ThinkingState, SessionPhase, PollingState, SessionSummary } from "@/lib/types"
+import { isMock } from "@/lib/env"
 
 const TURNS_POLL_INTERVAL = 3000
 const ELAPSED_INTERVAL = 1000
 
-export function elapsedStr(since: string): string {
+function elapsedStr(since: string): string {
   const secs = Math.round((Date.now() - new Date(since).getTime()) / 1000)
   if (secs < 60) return `${secs}s`
   return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
-export function formatDuration(ms: number): string {
+function formatDuration(ms: number): string {
   const totalSecs = Math.floor(ms / 1000)
   const h = Math.floor(totalSecs / 3600)
   const m = Math.floor((totalSecs % 3600) / 60)
@@ -207,10 +208,6 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifact_names : [],
   }
 }
-
-const isMock =
-  import.meta.env.VITE_MOCK === "true" ||
-  new URLSearchParams(window.location.search).has("mock")
 
 export function useSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {
   // Both hooks called unconditionally per React hook rules

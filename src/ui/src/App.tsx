@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { useSessionList } from "@/hooks/use-explorer"
-import { useSessionTurns } from "@/hooks/use-session-turns"
 import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
 import { SessionPanel } from "@/components/session-panel"
@@ -10,6 +9,7 @@ import { cn } from "@/lib/utils"
 
 type ViewMode = "single" | "grid"
 const VIEW_MODE_KEY = "def-view-mode"
+const DISMISSED_KEY = "def-dismissed-sessions"
 const MIN_GRID_WIDTH = 768
 
 function useMediaQuery(query: string): boolean {
@@ -32,8 +32,11 @@ export default function App() {
     setSelectedSessionId,
   } = useSessionList()
 
-  // Get topic for the selected session (used for document.title in single mode)
-  const { topic } = useSessionTurns(selectedSessionId, sessions)
+  // Get topic from the session list (avoids spinning up a full polling hook just for the title)
+  const topic = useMemo(
+    () => sessions.find(s => s.id === selectedSessionId)?.topic ?? "",
+    [sessions, selectedSessionId]
+  )
 
   // View mode state with localStorage persistence
   const [viewModePreference, setViewModePreference] = useState<ViewMode>(() => {
@@ -47,7 +50,6 @@ export default function App() {
   const isWideEnough = useMediaQuery(`(min-width: ${MIN_GRID_WIDTH}px)`)
 
   // Dismissed sessions (hidden from tab bar, persisted to localStorage)
-  const DISMISSED_KEY = "def-dismissed-sessions"
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem(DISMISSED_KEY)
@@ -66,11 +68,14 @@ export default function App() {
   const effectiveViewMode: ViewMode = canShowGrid && viewModePreference === "grid" ? "grid" : "single"
   const isGrid = effectiveViewMode === "grid"
 
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModePreference(mode)
+    try { localStorage.setItem(VIEW_MODE_KEY, mode) } catch { /* quota */ }
+  }, [])
+
   const handleToggleViewMode = useCallback(() => {
-    const next: ViewMode = viewModePreference === "grid" ? "single" : "grid"
-    setViewModePreference(next)
-    try { localStorage.setItem(VIEW_MODE_KEY, next) } catch { /* quota */ }
-  }, [viewModePreference])
+    setViewMode(viewModePreference === "grid" ? "single" : "grid")
+  }, [viewModePreference, setViewMode])
 
   const handleDismissSession = useCallback((id: string) => {
     setDismissedIds((prev) => {
@@ -148,8 +153,7 @@ export default function App() {
               showDismiss
               onMaximize={() => {
                 setSelectedSessionId(s.id)
-                setViewModePreference("single")
-                try { localStorage.setItem(VIEW_MODE_KEY, "single") } catch { /* quota */ }
+                setViewMode("single")
               }}
               onDismiss={() => handleDismissSession(s.id)}
               className={cn(gridCount === 3 && i === 2 && "col-span-2")}
