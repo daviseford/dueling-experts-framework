@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronsUpDown, Clock } from "lucide-react"
 import type { Turn } from "@/lib/types"
+import { MarkdownContent } from "./markdown-content"
 
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
@@ -64,15 +65,26 @@ function formatDuration(ms: number): string {
   return minutes + "m"
 }
 
-function truncateContent(content: string): string {
+function truncateContent(content: string, decisions?: string[]): string {
+  if (decisions && decisions.length > 0) {
+    const first = decisions[0]
+    const prefix = decisions.length === 1
+      ? "Decision: "
+      : `Decisions (${decisions.length}): `
+    const maxLen = 120 - prefix.length
+    const truncated = first.length > maxLen ? first.slice(0, maxLen) + "\u2026" : first
+    return prefix + truncated
+  }
   if (!content) return ""
-  const lines = content.split(/\r?\n/)
+  // Strip YAML frontmatter before extracting preview
+  const stripped = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
+  const lines = stripped.split(/\r?\n/)
   const trimmed = lines.map(function (l) { return l.trim() })
   const line = trimmed.find(function (l) {
     return l.length > 0 && !l.startsWith("---") && !l.startsWith("``" + "`")
   })
   if (!line) return ""
-  const clean = line.replace(/^#+\s*/, "").replace(/\*\*/g, "")
+  const clean = line.replace(/^#+\s*/, "").replace(/\*\*/g, "").replace(/^[-*]\s+/, "")
   if (clean.length > 120) return clean.slice(0, 120) + "\u2026"
   return clean
 }
@@ -151,7 +163,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
             )}
             {!open && (
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
-                {truncateContent(turn.content)}
+                {truncateContent(turn.content, turn.decisions)}
               </span>
             )}
             {open && <span className="flex-1" />}
@@ -162,9 +174,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t border-border/40 px-4 py-3">
-            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/85">
-              {turn.content}
-            </pre>
+            <MarkdownContent content={turn.content} />
           </div>
           <div className="flex justify-center border-t border-border/20 py-1.5">
             <Button

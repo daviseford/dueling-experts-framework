@@ -4,6 +4,8 @@ import { TurnCard } from "./turn-card"
 import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
+import { PhaseDivider } from "./phase-divider"
+import { CheckCircle2 } from "lucide-react"
 import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
 
 interface TranscriptProps {
@@ -107,17 +109,41 @@ export function Transcript({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-3 px-5 py-4">
-        {turns.map((turn) => (
-          <TurnCard
-            key={turn.id}
-            turn={turn}
-            open={openMap[turn.id] ?? true}
-            onOpenChange={(open) => onTurnOpenChange(turn.id, open)}
-          />
-        ))}
+        {turns.map((turn, i) => {
+          const prevPhase = i > 0 ? turns[i - 1].phase : null
+          const showDivider = prevPhase !== null && turn.phase !== prevPhase
+          return (
+            <div key={turn.id}>
+              {showDivider && <PhaseDivider phase={turn.phase} />}
+              <TurnCard
+                turn={turn}
+                open={openMap[turn.id] ?? true}
+                onOpenChange={(open) => onTurnOpenChange(turn.id, open)}
+              />
+            </div>
+          )
+        })}
         {pendingInterjections.map((p) => (
           <PendingTurnCard key={p.id} content={p.content} />
         ))}
+        {sessionStatus !== "completed" && decisions.length > 0 && (
+          <div className="rounded-lg border border-border/30 bg-card/60 px-4 py-3">
+            <div className="mb-2 flex items-center gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" />
+              <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
+                Decisions so far ({decisions.length})
+              </span>
+            </div>
+            <ul className="space-y-1">
+              {decisions.map((d, i) => (
+                <li key={i} className="flex items-start gap-2 text-[12px] leading-relaxed text-foreground/75">
+                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-500/60" />
+                  {d}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />
         )}

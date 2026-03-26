@@ -108,9 +108,9 @@ export function SessionTabBar({
               key={s.id}
               onClick={() => onSelectSession(s.id)}
               className={cn(
-                "group relative flex min-w-[140px] max-w-[220px] shrink-0 items-center gap-2 border-r border-border/20 px-3 py-2 text-left transition-colors",
+                "group relative flex min-w-[140px] max-w-[220px] shrink-0 items-center gap-2 border-r border-border/40 px-3 py-2 text-left transition-colors",
                 isSelected
-                  ? "bg-background/80"
+                  ? "bg-background"
                   : "bg-transparent hover:bg-background/40"
               )}
             >

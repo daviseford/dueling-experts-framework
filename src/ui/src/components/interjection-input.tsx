@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Send } from "lucide-react"
@@ -17,6 +17,20 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const MAX_HEIGHT = 96 // ~4 lines
+
+  const autoGrow = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = Math.min(el.scrollHeight, MAX_HEIGHT) + "px"
+    el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? "auto" : "hidden"
+  }, [])
+
+  useEffect(() => {
+    autoGrow()
+  }, [value, autoGrow])
+
   const doSend = useCallback(async () => {
     if (sending) return
     const content = value.trim()
@@ -27,6 +41,10 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
       await sendInterjection(sessionId, content)
       onSent?.(content)
       setValue("")
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto"
+        textareaRef.current.style.overflowY = "hidden"
+      }
       textareaRef.current?.focus()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send")
@@ -57,7 +75,7 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
         placeholder="Type a message to interject..."
         disabled={disabled || sending}
         rows={1}
-        className="min-h-10 flex-1 resize-none rounded-xl border-border/30 bg-background/60 px-4 font-sans text-sm transition-colors focus-visible:border-teal-500/40 focus-visible:ring-teal-500/20"
+        className="min-h-10 flex-1 resize-none overflow-hidden rounded-xl border-border/30 bg-background/60 px-4 font-sans text-sm transition-colors focus-visible:border-teal-500/40 focus-visible:ring-teal-500/20"
       />
       <Button
         onClick={doSend}
