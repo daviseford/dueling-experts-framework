@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react"
-import type { SessionListState } from "@/lib/types"
+import type { SessionListState, SessionSummary } from "@/lib/types"
 
-const MOCK_SESSIONS = [
+const MOCK_SESSIONS: SessionSummary[] = [
   {
     id: "mock-session-1",
     topic: "Add rate limiting middleware to the API gateway",
