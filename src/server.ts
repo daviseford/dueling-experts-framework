@@ -13,7 +13,7 @@ import * as ui from './ui.js';
 interface Controller {
   readonly isPaused: boolean;
   readonly endRequested: boolean;
-  readonly thinking: { agent: string; since: string } | null;
+  readonly thinking: { agent: string; since: string; model: string } | null;
   readonly phase: string;
   interject(content: string): void;
   requestEnd(): void;
@@ -569,11 +569,11 @@ export async function getSessionMetadata(sessionPath: string): Promise<SessionMe
  * Read thinking state from a session's thinking.json file.
  * Every session writes this file — no in-memory controller needed.
  */
-async function readThinkingState(sessionDir: string): Promise<{ agent: string; since: string } | null> {
+async function readThinkingState(sessionDir: string): Promise<{ agent: string; since: string; model: string | null } | null> {
   try {
     const raw = await readFile(join(sessionDir, 'thinking.json'), 'utf8');
     const data = JSON.parse(raw);
-    if (data.agent && data.since) return { agent: data.agent, since: data.since };
+    if (data.agent && data.since) return { agent: data.agent, since: data.since, model: data.model ?? null };
     return null;
   } catch {
     return null;

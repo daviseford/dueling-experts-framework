@@ -16,6 +16,7 @@ export interface Turn {
 export interface ThinkingState {
   agent: "claude" | "codex"
   since: string
+  model?: string | null
 }
 
 export type SessionPhase = "plan" | "debate" | "implement" | "review"

@@ -239,7 +239,9 @@ export async function isSessionAlive(sessionDir: string): Promise<{ alive: boole
   const sessionStatus: string = data.session_status ?? 'unknown';
   const pid: number | undefined = data.pid;
 
-  if (sessionStatus !== 'active' || !pid) {
+  // Only active and paused sessions can be "alive" — check PID + heartbeat for both.
+  // A paused session still has a running orchestrator process with a heartbeat writer.
+  if ((sessionStatus !== 'active' && sessionStatus !== 'paused') || !pid) {
     return { alive: false, status: sessionStatus };
   }
 
@@ -259,7 +261,7 @@ export async function isSessionAlive(sessionDir: string): Promise<{ alive: boole
     : false;
 
   if (pidAlive && (heartbeatFresh || !heartbeatAt)) {
-    return { alive: true, status: 'active', heartbeatAt };
+    return { alive: true, status: sessionStatus, heartbeatAt };
   }
 
   // PID dead or heartbeat stale — detected crash
