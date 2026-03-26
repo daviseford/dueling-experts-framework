@@ -17,12 +17,14 @@ const STATUS_BADGE: Record<string, string> = {
   active: "border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   paused: "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400",
   completed: "border-border bg-muted text-muted-foreground",
+  interrupted: "border-red-500/40 bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
 const DOT_COLORS: Record<string, string> = {
   active: "text-emerald-600 dark:text-emerald-400",
   paused: "text-amber-600 dark:text-amber-400",
   completed: "text-muted-foreground",
+  interrupted: "text-red-600 dark:text-red-400",
 }
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll }: StatusBarProps) {

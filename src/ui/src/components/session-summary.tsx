@@ -54,12 +54,12 @@ export function SessionSummary({
       </div>
 
       {/* Content */}
-      <div className="space-y-4 p-5">
+      <div className="space-y-3 p-5">
         {/* Branch + PR in side-by-side cards */}
         {(branchName || prUrl) && (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {branchName && (
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
+              <div className="rounded-lg border border-border/50 bg-muted/30 p-3.5">
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <GitBranch className="h-3.5 w-3.5 text-muted-foreground/60" />
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -72,7 +72,7 @@ export function SessionSummary({
               </div>
             )}
             {prUrl && (
-              <div className="rounded-lg border border-border/40 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
+              <div className="rounded-lg border border-border/50 bg-muted/30 p-3.5">
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/60" />
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -94,9 +94,9 @@ export function SessionSummary({
 
         {/* Key Decisions */}
         {decisions && decisions.length > 0 && (
-          <div className="space-y-2.5">
-            <div className="flex items-center gap-2.5">
-              <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+          <div className="rounded-lg border border-border/50 bg-muted/30 p-3.5">
+            <div className="mb-2.5 flex items-center gap-2">
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-teal-500/60" />
               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Key Decisions
               </span>
@@ -116,9 +116,9 @@ export function SessionSummary({
 
         {/* Key Implementations */}
         {implementations && implementations.length > 0 && (
-          <div className="space-y-2.5">
-            <div className="flex items-center gap-2.5">
-              <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+          <div className="rounded-lg border border-border/50 bg-muted/30 p-3.5">
+            <div className="mb-2.5 flex items-center gap-2">
+              <Wrench className="h-3.5 w-3.5 shrink-0 text-cyan-500/60" />
               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Key Implementations
               </span>
@@ -137,30 +137,32 @@ export function SessionSummary({
         )}
 
         {/* File paths */}
-        <div className="space-y-2">
-          {turnsPath && (
-            <div className="flex items-center gap-2.5">
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-              <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Turns
-              </span>
-              <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
-                {shortenPath(turnsPath)}
-              </code>
-            </div>
-          )}
+        <div className="rounded-lg border border-border/50 bg-muted/30 p-3.5">
+          <div className="space-y-2.5">
+            {turnsPath && (
+              <div className="flex items-center gap-2.5">
+                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Turns
+                </span>
+                <code className="min-w-0 truncate rounded bg-background/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
+                  {shortenPath(turnsPath)}
+                </code>
+              </div>
+            )}
 
-          {artifactsPath && (
-            <div className="flex items-center gap-2.5">
-              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-              <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Artifacts
-              </span>
-              <code className="min-w-0 truncate rounded bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
-                {shortenPath(artifactsPath)}
-              </code>
-            </div>
-          )}
+            {artifactsPath && (
+              <div className="flex items-center gap-2.5">
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                <span className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Artifacts
+                </span>
+                <code className="min-w-0 truncate rounded bg-background/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/80">
+                  {shortenPath(artifactsPath)}
+                </code>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
