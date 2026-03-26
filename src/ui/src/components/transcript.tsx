@@ -5,8 +5,13 @@ import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
 import { DecisionLog } from "./decision-log"
-import type { DecisionEntry } from "./decision-log"
 import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
+
+interface DecisionEntry {
+  text: string
+  from: Turn["from"]
+  turn: number
+}
 
 interface TranscriptProps {
   turns: Turn[]

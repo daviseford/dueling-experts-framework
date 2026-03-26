@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -8,12 +8,6 @@ import {
 import { ChevronRight, ListChecks } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SessionPhase } from "@/lib/types"
-
-export interface DecisionEntry {
-  text: string
-  from: "claude" | "codex" | "human" | "system"
-  turn: number
-}
 
 const AGENT_BADGE_STYLES: Record<string, string> = {
   claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
@@ -30,13 +24,22 @@ const AGENT_LABELS: Record<string, string> = {
 }
 
 interface DecisionLogProps {
-  entries: DecisionEntry[]
+  entries: { text: string; from: string; turn: number }[]
   phase: SessionPhase
 }
 
 export function DecisionLog({ entries, phase }: DecisionLogProps) {
-  const defaultOpen = phase === "plan" || phase === "debate"
-  const [open, setOpen] = useState(defaultOpen)
+  const shouldBeOpen = phase === "plan" || phase === "debate"
+  const [open, setOpen] = useState(shouldBeOpen)
+  const prevPhaseRef = useRef(phase)
+
+  // Sync collapse state when phase transitions
+  useEffect(() => {
+    if (prevPhaseRef.current !== phase) {
+      prevPhaseRef.current = phase
+      setOpen(phase === "plan" || phase === "debate")
+    }
+  }, [phase])
 
   if (entries.length === 0) return null
 
