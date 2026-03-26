@@ -38,10 +38,9 @@ export default function App() {
   const isCompleted = sessionStatus === "completed"
 
   // Dismissed sessions (hidden from tab bar, client-side only)
-  // Interrupted (stale) sessions are auto-hidden — their process is dead
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const visibleSessions = useMemo(
-    () => sessions.filter((s) => !dismissedIds.has(s.id) && s.session_status !== "interrupted"),
+    () => sessions.filter((s) => !dismissedIds.has(s.id)),
     [sessions, dismissedIds]
   )
   const handleDismissSession = useCallback((id: string) => {

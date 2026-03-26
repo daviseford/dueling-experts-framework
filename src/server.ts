@@ -590,15 +590,8 @@ async function handleGetSessions(res: ServerResponse): Promise<void> {
   const allSessions = await listSessions(targetRepoRef);
   const repoName = basename(targetRepoRef);
 
-  // In normal mode, only show active/paused sessions (plus the owning session).
-  // In explorer mode (no owning session), show all sessions.
-  const isExplorerMode = sessionRef === null;
-  const filtered = isExplorerMode
-    ? allSessions
-    : allSessions.filter(s =>
-        s.session_status === 'active' || s.session_status === 'paused' || s.id === sessionRef?.id
-      );
-  const sessionsWithRepo = filtered.map(s => ({ ...s, repo: repoName }));
+  // Show all sessions — users dismiss completed/interrupted sessions manually via the UI.
+  const sessionsWithRepo = allSessions.map(s => ({ ...s, repo: repoName }));
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
