@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile, readdir, stat, access } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, dirname, basename, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
@@ -42,13 +42,12 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
-function getDefaultPort(): number {
+export function getDefaultPort(): number {
   return process.env.CI || process.env.DEF_NO_OPEN ? 0 : 18541;
 }
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
-let readOnlyMode = false;
 let targetRepoRef: string | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
@@ -96,6 +95,13 @@ export async function probeExistingServer(port: number): Promise<{ action: 'join
 
           // DEF server but no active sessions — stale, replace it
           debugLog(`Stale DEF server on port ${port} (no active sessions), replacing`);
+          const owningId: string | null = json.owning_session_id ?? null;
+          if (!owningId) {
+            // Explorer-mode server (no owning session) — can't end-session it,
+            // just try to bind and let EADDRINUSE fallback handle it.
+            resolve({ action: 'replace' });
+            return;
+          }
           const endReq = http.request({
             hostname: '127.0.0.1',
             port,
@@ -107,7 +113,7 @@ export async function probeExistingServer(port: number): Promise<{ action: 'join
             setTimeout(() => resolve({ action: 'replace' }), 500);
           });
           endReq.on('error', () => resolve({ action: 'replace' }));
-          endReq.end('{}');
+          endReq.end(JSON.stringify({ session_id: owningId }));
         } catch {
           debugLog(`Port ${port} responded with non-JSON, treating as non-DEF`);
           resolve({ action: 'bind-new' });
@@ -204,9 +210,9 @@ export async function startReadOnly(session: Session): Promise<void> {
     throw new Error('Server is already running');
   }
 
-  readOnlyMode = true;
   sessionRef = session;
   controllerRef = null;
+  targetRepoRef = resolve(session.dir, '..', '..', '..');
 
   try {
     httpServer = createServer(handleRequest);
@@ -216,7 +222,6 @@ export async function startReadOnly(session: Session): Promise<void> {
     ui.status('server.url', { url });
     openBrowserOnce(url);
   } catch (err) {
-    readOnlyMode = false;
     httpServer = null;
     sessionRef = null;
     throw err;
@@ -232,7 +237,6 @@ export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: n
     throw new Error('Server is already running');
   }
 
-  readOnlyMode = true;
   sessionRef = null;
   controllerRef = null;
   targetRepoRef = targetRepo;
@@ -299,7 +303,6 @@ export function stop(): void {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
-    readOnlyMode = false;
     targetRepoRef = null;
     browserOpened = false;
   }

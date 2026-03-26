@@ -116,18 +116,23 @@ let ownsServer = false;
 try {
   server = await import('./server.js');
 
-  const defaultPort = 18541;
-  const probe = await server.probeExistingServer(defaultPort);
-
-  if (probe.action === 'join') {
-    // A shared DEF server with active sessions exists — run headless
-    ui.status('server.shared', { port: defaultPort });
-    server = null;
-    ownsServer = false;
-  } else {
-    // 'replace' or 'bind-new' — start our own server
-    // For 'replace', the probe already sent end-session to the stale server
+  const defaultPort = server.getDefaultPort();
+  if (defaultPort === 0) {
+    // CI or DEF_NO_OPEN — skip probe, start our own server
     ownsServer = true;
+  } else {
+    const probe = await server.probeExistingServer(defaultPort);
+
+    if (probe.action === 'join') {
+      // A shared DEF server with active sessions exists — run headless
+      ui.status('server.shared', { port: defaultPort });
+      server = null;
+      ownsServer = false;
+    } else {
+      // 'replace' or 'bind-new' — start our own server
+      // For 'replace', the probe already sent end-session to the stale server
+      ownsServer = true;
+    }
   }
 } catch {
   // Headless mode — server module unavailable

@@ -1,11 +1,5 @@
 import type { TurnsResponse, SessionsResponse } from "./types"
 
-export async function fetchTurns(): Promise<TurnsResponse> {
-  const res = await fetch("/api/turns")
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
-}
-
 export async function fetchSessions(): Promise<SessionsResponse> {
   const res = await fetch("/api/sessions")
   if (!res.ok) throw new Error(`HTTP ${res.status}`)

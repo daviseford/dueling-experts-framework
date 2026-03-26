@@ -223,7 +223,6 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   // File-based IPC poll loop — picks up interjections and end-requested flags
   // written by the shared server (coexists with in-memory controller methods).
   let ipcPollTimeout: ReturnType<typeof setTimeout> | null = null;
-  let lastPollTime = 0;
 
   function schedulePoll(): void {
     const delay = isPaused ? 500 : 1000;
@@ -250,7 +249,6 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
           }
         }
 
-        lastPollTime = Date.now();
       } catch {
         // IPC poll errors are non-fatal — the next poll will retry
       }

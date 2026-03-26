@@ -72,7 +72,7 @@ export async function run(argv: string[]): Promise<void> {
   // Start server in explorer mode
   await server.startExplorer(targetRepo, {
     idleTimeout: args.idleTimeout,
-    port: args.port,
+    port: preferredPort,
   });
 
   // Wait for SIGINT or idle timeout
