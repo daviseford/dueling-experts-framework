@@ -4,9 +4,10 @@ import { readFile, readdir, stat, access } from 'node:fs/promises';
 import { join, dirname, basename, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
-import { update as updateSession, listTurnFiles, listSessions, findSessionDir } from './session.js';
+import { update as updateSession, listTurnFiles, listSessions, findSessionDir, isSessionAlive } from './session.js';
 import type { Session } from './session.js';
 import { readEvents, listAttempts } from './trace.js';
+import { writeInterjection, writeEndRequest } from './ipc.js';
 import * as ui from './ui.js';
 
 interface Controller {
@@ -241,7 +242,7 @@ export async function startReadOnly(session: Session): Promise<void> {
 
 /**
  * Start the server in explorer mode — no owning session, multi-session browsing only.
- * POST endpoints return 404. Serves the UI for browsing all sessions. Idle timeout starts immediately.
+ * POST endpoints route to file-based IPC when session_id is provided. Serves the UI for browsing all sessions. Idle timeout starts immediately.
  */
 export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
   if (httpServer) {
@@ -387,18 +388,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
-      if (!controllerRef) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No active session' }));
-        return;
-      }
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
-      if (!controllerRef) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No active session' }));
-        return;
-      }
       await handleEndSession(req, res);
     } else if (req.method === 'GET') {
       // Static file serving from Vite build output
@@ -591,6 +582,7 @@ async function handleGetSessions(res: ServerResponse): Promise<void> {
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
+    server: 'def',
     sessions: sessionsWithRepo,
     owning_session_id: sessionRef?.id ?? null,
   }));
@@ -692,13 +684,6 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
-  // Defense-in-depth: if session_id is provided, verify it matches the owning session
-  if (parsed.session_id && sessionRef && parsed.session_id !== sessionRef.id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Session ID mismatch' }));
-    return;
-  }
-
   const content = parsed.content;
   if (!content || typeof content !== 'string' || !content.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -712,10 +697,59 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
-  controllerRef!.interject(content);
+  const trimmed = content.trim();
+  const sessionId: string | undefined = parsed.session_id;
 
+  // Explorer mode (no owning session) requires session_id
+  if (!sessionRef && !sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'session_id is required' }));
+    return;
+  }
+
+  // Route to owning session via in-memory controller
+  if (!sessionId || sessionId === sessionRef?.id) {
+    if (!controllerRef) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No active session' }));
+      return;
+    }
+    controllerRef.interject(trimmed);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, delivery: 'direct' }));
+    return;
+  }
+
+  // Route to non-owning session via file-based IPC
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(sessionId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session_id format' }));
+    return;
+  }
+
+  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  if (!sessionDir) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  const { alive, status } = await isSessionAlive(sessionDir);
+  if (!alive) {
+    if (status === 'completed' || status === 'interrupted') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Session is ${status}` }));
+      return;
+    }
+    // PID dead but status is active — stale session
+    res.writeHead(410, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session process is dead' }));
+    return;
+  }
+
+  await writeInterjection(sessionDir, trimmed);
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true }));
+  res.end(JSON.stringify({ ok: true, delivery: 'queued' }));
 }
 
 async function handleEndSession(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -725,9 +759,74 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
     res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
     return;
   }
-  controllerRef!.requestEnd();
+
+  let body;
+  try {
+    body = await readBody(req);
+  } catch {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Request body too large' }));
+    return;
+  }
+
+  let parsed: { session_id?: string };
+  try {
+    parsed = JSON.parse(body || '{}');
+  } catch {
+    parsed = {};
+  }
+
+  const sessionId: string | undefined = parsed.session_id;
+
+  // Explorer mode (no owning session) requires session_id
+  if (!sessionRef && !sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'session_id is required' }));
+    return;
+  }
+
+  // Route to owning session via in-memory controller
+  if (!sessionId || sessionId === sessionRef?.id) {
+    if (!controllerRef) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No active session' }));
+      return;
+    }
+    controllerRef.requestEnd();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, delivery: 'direct' }));
+    return;
+  }
+
+  // Route to non-owning session via file-based IPC
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(sessionId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session_id format' }));
+    return;
+  }
+
+  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  if (!sessionDir) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  const { alive, status } = await isSessionAlive(sessionDir);
+  if (!alive) {
+    if (status === 'completed' || status === 'interrupted') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Session is ${status}` }));
+      return;
+    }
+    res.writeHead(410, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session process is dead' }));
+    return;
+  }
+
+  await writeEndRequest(sessionDir);
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true }));
+  res.end(JSON.stringify({ ok: true, delivery: 'queued' }));
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
