@@ -28,7 +28,7 @@ interface InvokeOnceResult {
 export interface Controller {
   readonly isPaused: boolean;
   readonly endRequested: boolean;
-  readonly thinking: { agent: AgentName; since: string } | null;
+  readonly thinking: { agent: AgentName; since: string; model: string } | null;
   readonly phase: string;
   interject(content: string): void;
   requestEnd(): void;
@@ -184,11 +184,12 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
 
   let thinkingAgent: AgentName | null = null;
   let thinkingSince: string | null = null;
+  let thinkingModel: string = '';
 
   const controller: Controller = {
     get isPaused() { return isPaused; },
     get endRequested() { return endRequested; },
-    get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince! } : null; },
+    get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince!, model: thinkingModel } : null; },
     get phase() { return phase; },
     interject(content: string): void {
       if (isPaused && humanResponseResolve) {
@@ -280,7 +281,8 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
-    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: thinkingAgent, since: thinkingSince }) + '\n').catch(() => {});
+    thinkingModel = resolveModelName(nextAgent, currentTier);
+    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: thinkingAgent, since: thinkingSince, model: thinkingModel }) + '\n').catch(() => {});
     const invokeStart: number = Date.now();
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
     let result: InvokeOnceResult = retryResult;
@@ -288,7 +290,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
-    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: null, since: null }) + '\n').catch(() => {});
+    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: null, since: null, model: null }) + '\n').catch(() => {});
 
     if (endRequested) {
       ui.status('end.requested', { turn: turnCount });

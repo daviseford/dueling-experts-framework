@@ -115,7 +115,7 @@ describe('GET /api/sessions', () => {
     const mockController = {
       isPaused: false,
       endRequested: false,
-      thinking: null as { agent: string; since: string } | null,
+      thinking: null as { agent: string; since: string; model: string } | null,
       phase: 'plan',
       interject() {},
       requestEnd() {},
@@ -164,7 +164,7 @@ describe('GET /api/sessions', () => {
   it('reads thinking state from thinking.json for any session', async () => {
     // Write thinking.json for the non-owning session
     const thinkingPath = join(testRepo, '.def', 'sessions', sessionId1, 'thinking.json');
-    const thinkingData = { agent: 'claude', since: '2025-01-01T00:00:00.000Z' };
+    const thinkingData = { agent: 'claude', since: '2025-01-01T00:00:00.000Z', model: 'opus' };
     await writeFile(thinkingPath, JSON.stringify(thinkingData) + '\n');
 
     const { status, body } = await httpGet(port, `/api/sessions/${sessionId1}/turns`);
@@ -235,7 +235,7 @@ describe('interject routing', () => {
     const mockController = {
       isPaused: false,
       endRequested: false,
-      thinking: null as { agent: string; since: string } | null,
+      thinking: null as { agent: string; since: string; model: string } | null,
       phase: 'plan',
       interject() { interjectCalled = true; },
       requestEnd() {},
@@ -357,7 +357,7 @@ describe('end-session routing', () => {
     const mockController = {
       isPaused: false,
       endRequested: false,
-      thinking: null as { agent: string; since: string } | null,
+      thinking: null as { agent: string; since: string; model: string } | null,
       phase: 'plan',
       interject() {},
       requestEnd() { endRequested = true; },

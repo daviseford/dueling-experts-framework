@@ -24,6 +24,12 @@ const PHASE_COLOR: Record<string, string> = {
   review: "text-purple-600/70 dark:text-purple-400/70",
 }
 
+const STATUS_COLOR: Record<string, string> = {
+  completed: "text-emerald-600/70 dark:text-emerald-400/70",
+  interrupted: "text-red-500/70 dark:text-red-400/70",
+  paused: "text-amber-600/70 dark:text-amber-400/70",
+}
+
 function phaseLabel(phase: string): string {
   switch (phase) {
     case "plan": return "PLAN"
@@ -31,6 +37,20 @@ function phaseLabel(phase: string): string {
     case "review": return "REVIEW"
     default: return phase.toUpperCase()
   }
+}
+
+/** For dead sessions, show outcome status instead of frozen phase. */
+function badgeInfo(session: { phase: string; session_status: string }): { label: string; color: string } {
+  if (session.session_status === "completed") {
+    return { label: "DONE", color: STATUS_COLOR.completed }
+  }
+  if (session.session_status === "interrupted") {
+    return { label: "INTERRUPTED", color: STATUS_COLOR.interrupted }
+  }
+  if (session.session_status === "paused") {
+    return { label: "PAUSED", color: STATUS_COLOR.paused }
+  }
+  return { label: phaseLabel(session.phase), color: PHASE_COLOR[session.phase] || "text-muted-foreground/60" }
 }
 
 function isDead(status: string): boolean {
@@ -133,7 +153,7 @@ export function SessionTabBar({
                 </span>
 
                 {/* Dismiss button */}
-                {dead && onDismissSession && (
+                {onDismissSession && (
                   <span
                     role="button"
                     tabIndex={0}
@@ -155,20 +175,19 @@ export function SessionTabBar({
                 )}
               </div>
 
-              {/* Row 2: Phase + turn count + elapsed */}
+              {/* Row 2: Status/phase badge + turn count + elapsed */}
               <div className="mt-1 flex items-center gap-2 text-[10px]">
-                <span className={cn(
-                  "font-semibold tracking-wider",
-                  PHASE_COLOR[s.phase] || "text-muted-foreground/60"
-                )}>
-                  {phaseLabel(s.phase)}
+                {(() => { const b = badgeInfo(s); return (
+                <span className={cn("font-semibold tracking-wider", b.color)}>
+                  {b.label}
                 </span>
-                <span className="text-muted-foreground/40">&middot;</span>
-                <span className="font-mono text-muted-foreground/50">
+                ) })()}
+                <span className="text-muted-foreground/60">&middot;</span>
+                <span className="font-mono text-muted-foreground/70">
                   {s.current_turn === 0 ? "—" : `${s.current_turn} turns`}
                 </span>
-                <span className="text-muted-foreground/40">&middot;</span>
-                <span className="text-muted-foreground/40">
+                <span className="text-muted-foreground/60">&middot;</span>
+                <span className="text-muted-foreground/70">
                   {elapsed(s.created)}
                 </span>
               </div>

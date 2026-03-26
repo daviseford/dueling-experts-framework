@@ -152,8 +152,10 @@ describe('listSessions liveness detection', () => {
     const idDead = 'dead2222-0000-0000-0000-000000000000';
     const idStale = 'stale333-0000-0000-0000-000000000000';
     const idCompleted = 'done4444-0000-0000-0000-000000000000';
+    const idPausedAlive = 'paus5555-0000-0000-0000-000000000000';
+    const idPausedDead = 'paus6666-0000-0000-0000-000000000000';
 
-    for (const id of [idActive, idDead, idStale, idCompleted]) {
+    for (const id of [idActive, idDead, idStale, idCompleted, idPausedAlive, idPausedDead]) {
       await mkdir(join(sessionsDir, id), { recursive: true });
     }
 
@@ -201,6 +203,30 @@ describe('listSessions liveness detection', () => {
       session_status: 'completed',
       pid: process.pid,
     }));
+
+    // Paused session with live PID + fresh heartbeat — still alive
+    await writeFile(join(sessionsDir, idPausedAlive, 'session.json'), makeSessionJson({
+      id: idPausedAlive,
+      topic: 'Paused alive session',
+      created: '2026-03-25T06:00:00.000Z',
+      session_status: 'paused',
+      pid: process.pid,
+    }));
+    await writeFile(join(sessionsDir, idPausedAlive, 'heartbeat.json'), JSON.stringify({
+      heartbeat_at: new Date().toISOString(),
+    }));
+
+    // Paused session with dead PID — should resolve to interrupted
+    await writeFile(join(sessionsDir, idPausedDead, 'session.json'), makeSessionJson({
+      id: idPausedDead,
+      topic: 'Paused dead session',
+      created: '2026-03-25T05:00:00.000Z',
+      session_status: 'paused',
+      pid: 99999999,
+    }));
+    await writeFile(join(sessionsDir, idPausedDead, 'heartbeat.json'), JSON.stringify({
+      heartbeat_at: new Date(Date.now() - 60_000).toISOString(),
+    }));
   });
 
   after(async () => {
@@ -237,6 +263,22 @@ describe('listSessions liveness detection', () => {
     assert.ok(s);
     assert.equal(s!.is_active, false);
     assert.equal(s!.session_status, 'completed');
+  });
+
+  it('paused session with live PID + fresh heartbeat: is_active true', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Paused alive session');
+    assert.ok(s);
+    assert.equal(s!.is_active, true);
+    assert.equal(s!.session_status, 'paused');
+  });
+
+  it('paused session with dead PID: reported as interrupted', async () => {
+    const sessions = await listSessions(testRepo);
+    const s = sessions.find(s => s.topic === 'Paused dead session');
+    assert.ok(s);
+    assert.equal(s!.is_active, false);
+    assert.equal(s!.session_status, 'interrupted');
   });
 });
 
