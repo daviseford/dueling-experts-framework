@@ -516,4 +516,105 @@ describe('orchestrator retry write path (real code)', () => {
     assert.equal(recovered[0].cost_usd, expectedCost,
       'recovered cost should reflect per-invocation pricing, not single-model pricing');
   });
+
+  it('finalize emits null cost when one retry has usage but cannot be priced', () => {
+    // Regression: if one invocation is priceable and another is not (e.g.,
+    // unknown model or null tokens), cost_usd must be null -- NOT a partial
+    // sum that silently underreports spend.
+    const tracker = new TurnCostTracker();
+
+    // First invocation: known model, priceable
+    tracker.record({ usage: { input_tokens: 2000, output_tokens: 1000 } }, 'opus');
+
+    // Second invocation (validation retry): unknown model name -- estimateCost returns null
+    tracker.record({ usage: { input_tokens: 3000, output_tokens: 1500 } }, 'unknown-model-xyz');
+
+    // The tracker saw one priced and one unpriced invocation
+    const canonicalData: CanonicalTurnData = {
+      id: 'turn-0001-claude',
+      turn: 1,
+      from: 'claude',
+      timestamp: new Date().toISOString(),
+      status: 'decided',
+      phase: 'plan',
+      duration_ms: 10000,
+      model_name: 'opus',
+    };
+
+    tracker.finalize(canonicalData);
+
+    // Tokens should still be accumulated (we know the counts)
+    assert.equal(canonicalData.tokens_in, 5000);
+    assert.equal(canonicalData.tokens_out, 2500);
+
+    // Cost MUST be null -- not the partial $opusCost from the first invocation alone
+    assert.equal(canonicalData.cost_usd, null,
+      'cost_usd must be null when any invocation has usage but cannot be priced');
+
+    // The cost getter should also reflect null
+    assert.equal(tracker.cost, null,
+      'tracker.cost must be null when any invocation is unpriced');
+  });
+
+  it('finalize emits null cost when one retry has null tokens making it unpriceable', () => {
+    // Variant: the model is known, but input_tokens is null (CLI didn't report them)
+    const tracker = new TurnCostTracker();
+
+    // First invocation: fully priceable
+    tracker.record({ usage: { input_tokens: 2000, output_tokens: 1000 } }, 'opus');
+
+    // Second invocation: known model, but null input_tokens -- estimateCost returns null
+    tracker.record({ usage: { input_tokens: null, output_tokens: 1500 } }, 'opus');
+
+    const canonicalData: CanonicalTurnData = {
+      id: 'turn-0001-claude',
+      turn: 1,
+      from: 'claude',
+      timestamp: new Date().toISOString(),
+      status: 'decided',
+      phase: 'plan',
+      duration_ms: 10000,
+      model_name: 'opus',
+    };
+
+    tracker.finalize(canonicalData);
+
+    // Tokens: input is 2000 (one known + one null = 2000), output is 2500
+    assert.equal(canonicalData.tokens_in, 2000);
+    assert.equal(canonicalData.tokens_out, 2500);
+
+    // Cost must be null because the second invocation's input_tokens were unknown
+    assert.equal(canonicalData.cost_usd, null,
+      'cost_usd must be null when any invocation has null input_tokens');
+  });
+
+  it('finalize emits null cost when usage exists but no model name was provided', () => {
+    // If record() is called with usage but without a modelName, that invocation
+    // is unpriceable and the entire turn cost must be null.
+    const tracker = new TurnCostTracker();
+
+    // First invocation: priceable
+    tracker.record({ usage: { input_tokens: 2000, output_tokens: 1000 } }, 'opus');
+
+    // Second invocation: usage present but no modelName
+    tracker.record({ usage: { input_tokens: 3000, output_tokens: 1500 } });
+
+    const canonicalData: CanonicalTurnData = {
+      id: 'turn-0001-claude',
+      turn: 1,
+      from: 'claude',
+      timestamp: new Date().toISOString(),
+      status: 'decided',
+      phase: 'plan',
+      duration_ms: 10000,
+      model_name: 'opus',
+    };
+
+    tracker.finalize(canonicalData);
+
+    assert.equal(canonicalData.tokens_in, 5000);
+    assert.equal(canonicalData.tokens_out, 2500);
+    assert.equal(canonicalData.cost_usd, null,
+      'cost_usd must be null when any invocation lacks a model name');
+  });
 });

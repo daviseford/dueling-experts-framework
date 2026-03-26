@@ -96,11 +96,16 @@ export class TurnCostTracker {
   private _usage: TokenUsage | undefined;
   private _costParts: number[] = [];
   private _hasPerInvocationCosts = false;
+  private _hasUnpricedUsage = false;
 
   /**
    * Record usage from an invocation result.
    * @param result - The invocation result containing optional usage data.
    * @param modelName - The model used for this invocation (for per-invocation cost estimation).
+   *
+   * If any invocation has usage data but cannot be priced (unknown model or
+   * null tokens), finalize() will emit cost_usd = null rather than a partial
+   * sum. This prevents silent underreporting when only some retries are priceable.
    */
   record(result: { usage?: TokenUsage }, modelName?: string): void {
     this._usage = mergeUsage(this._usage, result.usage);
@@ -109,23 +114,37 @@ export class TurnCostTracker {
       if (partCost !== null) {
         this._costParts.push(partCost);
         this._hasPerInvocationCosts = true;
+      } else {
+        this._hasUnpricedUsage = true;
       }
+    } else if (result.usage) {
+      // Usage exists but no model name provided -- cannot price this invocation
+      this._hasUnpricedUsage = true;
     }
   }
 
   /**
    * Attach accumulated usage to canonical turn data.
    * Sets tokens_in, tokens_out, and cost_usd fields.
-   * Cost is the sum of per-invocation costs when model names were provided
-   * to record(). Falls back to single-model estimation from data.model_name
-   * when no per-invocation costs were recorded.
-   * No-op if no usage was recorded.
+   *
+   * Cost rules:
+   * - If ANY invocation had usage but could not be priced, cost_usd = null
+   *   (prevents silent underreporting from partial sums).
+   * - Otherwise, cost is the sum of per-invocation costs when model names
+   *   were provided to record().
+   * - Falls back to single-model estimation from data.model_name when no
+   *   per-invocation costs were recorded and no unpriced usage exists.
+   * - No-op if no usage was recorded at all.
    */
   finalize(data: { model_name?: string; tokens_in?: number | null; tokens_out?: number | null; cost_usd?: number | null }): void {
     if (!this._usage) return;
     data.tokens_in = this._usage.input_tokens ?? null;
     data.tokens_out = this._usage.output_tokens ?? null;
-    if (this._hasPerInvocationCosts) {
+    if (this._hasUnpricedUsage) {
+      // At least one invocation had usage but no estimable cost --
+      // emitting a partial sum would silently underreport spend.
+      data.cost_usd = null;
+    } else if (this._hasPerInvocationCosts) {
       const total = this._costParts.reduce((a, b) => a + b, 0);
       data.cost_usd = Math.round(total * 10000) / 10000;
     } else {
@@ -139,8 +158,13 @@ export class TurnCostTracker {
     return this._usage;
   }
 
-  /** Get per-invocation cost sum (read-only, for inspection/testing). Returns null if no per-invocation costs were recorded. */
+  /**
+   * Get per-invocation cost sum (read-only, for inspection/testing).
+   * Returns null if no per-invocation costs were recorded or if any
+   * invocation had usage but could not be priced.
+   */
   get cost(): number | null {
+    if (this._hasUnpricedUsage) return null;
     return this._hasPerInvocationCosts
       ? Math.round(this._costParts.reduce((a, b) => a + b, 0) * 10000) / 10000
       : null;
