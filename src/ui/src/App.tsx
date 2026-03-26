@@ -30,7 +30,9 @@ export default function App() {
   const sessionStatus = selectedSession?.session_status ?? "active"
 
   const handleEndSession = useCallback(async () => {
-    if (selectedSessionId) await endSession(selectedSessionId)
+    if (selectedSessionId) {
+      try { await endSession(selectedSessionId) } catch { /* session may already be ended */ }
+    }
   }, [selectedSessionId])
 
   // View mode state with localStorage persistence
@@ -101,6 +103,8 @@ export default function App() {
     } else if (topic) {
       const short = topic.length > 30 ? topic.slice(0, 30) + "\u2026" : topic
       document.title = `DEF - ${short}`
+    } else {
+      document.title = "DEF"
     }
   }, [topic, isGrid, gridCount])
 
