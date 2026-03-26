@@ -95,6 +95,8 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
 
       if (data.session_status === "completed") {
         setStatusText("Session completed")
+      } else if (data.session_status === "interrupted") {
+        setStatusText("Session interrupted")
       } else if (data.session_status === "paused") {
         setStatusText("Paused \u2014 waiting for human")
       } else {
@@ -200,7 +202,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
 
   const session = sessions.find(s => s.id === sessionId)
   const status = session?.session_status ?? "completed"
-  const statusText = status === "completed" ? "Session completed" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
+  const statusText = status === "completed" ? "Session completed" : status === "interrupted" ? "Session interrupted" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
 
   return {
     turns: sessionId === "mock-session-1" && mockData ? mockData.turns : [],
