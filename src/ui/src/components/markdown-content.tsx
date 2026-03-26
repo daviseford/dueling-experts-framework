@@ -36,11 +36,39 @@ export function extractPreview(content: string, maxLen = 120): string {
   const lines = body.split(/\r?\n/)
 
   let preview = ""
+  let inFencedBlock = false
+  let prevLineBlank = false
+
   for (const raw of lines) {
     const line = raw.trim()
-    // Skip empty lines, code fences, horizontal rules, HTML comments
-    if (!line) continue
-    if (line.startsWith("```")) continue
+
+    // Track fenced code blocks (``` or ~~~, optionally followed by a language tag)
+    if (/^(`{3,}|~{3,})/.test(line)) {
+      inFencedBlock = !inFencedBlock
+      prevLineBlank = false
+      continue
+    }
+
+    // Skip all lines inside fenced code blocks
+    if (inFencedBlock) {
+      prevLineBlank = false
+      continue
+    }
+
+    // Skip empty lines (but track for indented code block detection)
+    if (!line) {
+      prevLineBlank = true
+      continue
+    }
+
+    // Skip indented code blocks (4+ spaces or tab after a blank line)
+    if (prevLineBlank && /^( {4,}|\t)/.test(raw)) {
+      continue
+    }
+
+    prevLineBlank = false
+
+    // Skip horizontal rules, HTML comments
     if (line === "---" || line === "***" || line === "___") continue
     if (line.startsWith("<!--")) continue
     // Skip pure image/link lines
