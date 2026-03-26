@@ -56,8 +56,6 @@ const MOCK_SESSIONS = [
   },
 ]
 
-export { MOCK_SESSIONS }
-
 export function useMockSessionList(): SessionListState {
   const [selectedSessionId, setSelectedSessionIdRaw] = useState("mock-session-1")
 

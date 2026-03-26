@@ -7,8 +7,7 @@ import { SessionTabBar } from "@/components/session-tab-bar"
 import { SessionPanel } from "@/components/session-panel"
 import { EmptyState } from "@/components/empty-state"
 import { cn } from "@/lib/utils"
-
-type ViewMode = "single" | "grid"
+import type { ViewMode } from "@/lib/types"
 const VIEW_MODE_KEY = "def-view-mode"
 const DISMISSED_KEY = "def-dismissed-sessions"
 const MIN_GRID_WIDTH = 768

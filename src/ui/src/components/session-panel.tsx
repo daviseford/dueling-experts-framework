@@ -158,7 +158,7 @@ export function SessionPanel({
           {!isReadOnly && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50 hover:text-destructive" disabled={isCompleted}>
+                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50 hover:text-destructive">
                   <span className="sr-only">End session</span>
                   <X className="h-3 w-3" />
                 </Button>
@@ -179,6 +179,7 @@ export function SessionPanel({
           )}
           {canDismiss && onDismiss && (
             <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onDismiss} title="Dismiss">
+              <span className="sr-only">Dismiss session</span>
               <X className="h-3 w-3" />
             </Button>
           )}

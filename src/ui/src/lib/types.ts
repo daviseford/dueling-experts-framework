@@ -61,6 +61,8 @@ export interface SessionsResponse {
   owning_session_id: string | null
 }
 
+export type ViewMode = "single" | "grid"
+
 export interface SessionListState {
   sessions: SessionSummary[]
   selectedSessionId: string

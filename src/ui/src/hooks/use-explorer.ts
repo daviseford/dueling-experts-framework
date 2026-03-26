@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchSessions } from "@/lib/api"
 import { useMockSessionList } from "./use-mock-explorer"
-import type { SessionListState } from "@/lib/types"
+import type { SessionListState, SessionSummary } from "@/lib/types"
 import { isMock } from "@/lib/env"
 
 const SESSIONS_POLL_INTERVAL = 5000
