@@ -265,11 +265,26 @@ export function beginIdleShutdown(): Promise<void> {
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    stop();
-    if (idleResolve) {
-      idleResolve();
-      idleResolve = null;
-    }
+    void (async () => {
+      // Check for active sessions before shutting down
+      if (targetRepoRef) {
+        try {
+          const sessions = await listSessions(targetRepoRef);
+          if (sessions.some(s => s.is_active)) {
+            debugLog('Active sessions exist, deferring idle shutdown');
+            resetIdleTimer();
+            return;
+          }
+        } catch {
+          // On error, proceed with shutdown
+        }
+      }
+      stop();
+      if (idleResolve) {
+        idleResolve();
+        idleResolve = null;
+      }
+    })();
   }, idleTimeoutMs);
 }
 
