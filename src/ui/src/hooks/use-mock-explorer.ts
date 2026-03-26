@@ -1,8 +1,7 @@
 import { useState, useCallback } from "react"
-import { MOCK_RESPONSE } from "@/mocks/mock-session"
-import type { ExplorerState } from "./use-explorer"
+import type { SessionListState, SessionSummary } from "@/lib/types"
 
-const MOCK_SESSIONS = [
+const MOCK_SESSIONS: SessionSummary[] = [
   {
     id: "mock-session-1",
     topic: "Add rate limiting middleware to the API gateway",
@@ -29,9 +28,35 @@ const MOCK_SESSIONS = [
     dir: ".def/sessions/mock-session-2",
     repo: "my-project",
   },
+  {
+    id: "mock-session-3",
+    topic: "Implement WebSocket event streaming",
+    created: "2026-03-25T09:00:00.000Z",
+    session_status: "active",
+    phase: "implement",
+    current_turn: 4,
+    mode: "edit",
+    branch_name: "def/c3d4e5f6-websocket-streaming",
+    pr_url: null,
+    dir: ".def/sessions/mock-session-3",
+    repo: "my-project",
+  },
+  {
+    id: "mock-session-4",
+    topic: "Fix authentication token refresh race condition",
+    created: "2026-03-25T11:30:00.000Z",
+    session_status: "paused",
+    phase: "plan",
+    current_turn: 2,
+    mode: "edit",
+    branch_name: null,
+    pr_url: null,
+    dir: ".def/sessions/mock-session-4",
+    repo: "my-project",
+  },
 ]
 
-export function useMockExplorer(): ExplorerState {
+export function useMockSessionList(): SessionListState {
   const [selectedSessionId, setSelectedSessionIdRaw] = useState("mock-session-1")
 
   const setSelectedSessionId = useCallback((id: string) => {
@@ -42,22 +67,5 @@ export function useMockExplorer(): ExplorerState {
     sessions: MOCK_SESSIONS,
     selectedSessionId,
     setSelectedSessionId,
-    owningSessionId: null,
-    turns: selectedSessionId === "mock-session-1" ? MOCK_RESPONSE.turns : [],
-    sessionId: selectedSessionId,
-    sessionStatus: "completed",
-    topic: MOCK_SESSIONS.find((s) => s.id === selectedSessionId)?.topic ?? "",
-    turnCount: selectedSessionId === "mock-session-1" ? MOCK_RESPONSE.turn_count : 6,
-    thinking: null,
-    thinkingElapsed: "",
-    statusText: "Session completed",
-    sessionTimer: "58m 0s",
-    phase: selectedSessionId === "mock-session-1" ? "review" : "implement",
-    branchName: MOCK_SESSIONS.find((s) => s.id === selectedSessionId)?.branch_name ?? null,
-    prUrl: MOCK_SESSIONS.find((s) => s.id === selectedSessionId)?.pr_url ?? null,
-    prNumber: selectedSessionId === "mock-session-1" ? 42 : null,
-    turnsPath: `.def/sessions/${selectedSessionId}/turns`,
-    artifactsPath: `.def/sessions/${selectedSessionId}/artifacts`,
-    artifactNames: selectedSessionId === "mock-session-1" ? MOCK_RESPONSE.artifact_names : [],
   }
 }

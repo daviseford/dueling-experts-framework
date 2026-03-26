@@ -1,44 +1,52 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
-import { toast } from "sonner"
-import { useExplorer } from "@/hooks/use-explorer"
+import { useSessionList } from "@/hooks/use-explorer"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
-import { PauseBanner } from "@/components/pause-banner"
-import { Transcript } from "@/components/transcript"
-import { InterjectionInput } from "@/components/interjection-input"
-import { StatusBar } from "@/components/status-bar"
+import { SessionPanel } from "@/components/session-panel"
 import { EmptyState } from "@/components/empty-state"
-import type { PendingInterjection } from "@/lib/types"
+import { cn } from "@/lib/utils"
+import type { ViewMode } from "@/lib/types"
+
+const VIEW_MODE_KEY = "def-view-mode"
+const DISMISSED_KEY = "def-dismissed-sessions"
+const MIN_GRID_WIDTH = 768
 
 export default function App() {
   const {
     sessions,
     selectedSessionId,
     setSelectedSessionId,
-    turns,
-    sessionId,
-    sessionStatus,
-    topic,
-    turnCount,
-    thinking,
-    thinkingElapsed,
-    statusText,
-    sessionTimer,
-    phase,
-    branchName,
-    prUrl,
-    prNumber,
-    turnsPath,
-    artifactsPath,
-  } = useExplorer()
+  } = useSessionList()
 
-  const isReadOnly = sessionStatus !== "active"
-  const isCompleted = sessionStatus === "completed"
+  // Get selected session metadata from the session list (avoids spinning up a full polling hook)
+  const selectedSession = useMemo(
+    () => sessions.find(s => s.id === selectedSessionId),
+    [sessions, selectedSessionId]
+  )
+  const topic = selectedSession?.topic ?? ""
+  const sessionStatus = selectedSession?.session_status ?? "active"
+
+  const handleEndSession = useCallback(async () => {
+    if (selectedSessionId) {
+      try { await endSession(selectedSessionId) } catch { /* session may already be ended */ }
+    }
+  }, [selectedSessionId])
+
+  // View mode state with localStorage persistence
+  const [viewModePreference, setViewModePreference] = useState<ViewMode>(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_MODE_KEY)
+      return stored === "grid" ? "grid" : "single"
+    } catch {
+      return "single"
+    }
+  })
+  const isWideEnough = useMediaQuery(`(min-width: ${MIN_GRID_WIDTH}px)`)
 
   // Dismissed sessions (hidden from tab bar, persisted to localStorage)
-  const DISMISSED_KEY = "def-dismissed-sessions"
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem(DISMISSED_KEY)
@@ -51,6 +59,21 @@ export default function App() {
     () => sessions.filter((s) => !dismissedIds.has(s.id)),
     [sessions, dismissedIds]
   )
+
+  // Effective view mode: preference AND viewport >= 768px AND >= 2 visible sessions
+  const canShowGrid = isWideEnough && visibleSessions.length >= 2
+  const effectiveViewMode: ViewMode = canShowGrid && viewModePreference === "grid" ? "grid" : "single"
+  const isGrid = effectiveViewMode === "grid"
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModePreference(mode)
+    try { localStorage.setItem(VIEW_MODE_KEY, mode) } catch { /* quota */ }
+  }, [])
+
+  const handleToggleViewMode = useCallback(() => {
+    setViewMode(viewModePreference === "grid" ? "single" : "grid")
+  }, [viewModePreference, setViewMode])
+
   const handleDismissSession = useCallback((id: string) => {
     setDismissedIds((prev) => {
       const next = new Set(prev).add(id)
@@ -66,155 +89,85 @@ export default function App() {
     }
   }, [sessions, selectedSessionId, dismissedIds, setSelectedSessionId])
 
-  // Pending interjections: messages sent but not yet processed into turns
-  const [pendingInterjections, setPendingInterjections] = useState<PendingInterjection[]>([])
-  const prevPhaseRef = useRef(phase)
-  const prevSelectedRef = useRef(selectedSessionId)
+  // Grid sessions: first 4 visible sessions
+  const gridSessions = useMemo(
+    () => visibleSessions.slice(0, 4),
+    [visibleSessions]
+  )
+  const gridCount = gridSessions.length
 
-  // Reset state when switching sessions
+  // Document title
   useEffect(() => {
-    if (prevSelectedRef.current !== selectedSessionId) {
-      prevSelectedRef.current = selectedSessionId
-      setPendingInterjections([])
-      setOpenMap({})
-      prevPhaseRef.current = phase
-    }
-  }, [selectedSessionId, phase])
-
-  const handleInterjectionSent = useCallback((content: string) => {
-    setPendingInterjections((prev) => [
-      ...prev,
-      { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, content },
-    ])
-  }, [])
-
-  // Count-based reconciliation: for each content string, keep only unmatched pending items.
-  const visiblePending = useMemo(() => {
-    const humanCounts = new Map<string, number>()
-    for (const t of turns) {
-      if (t.from === "human") {
-        humanCounts.set(t.content, (humanCounts.get(t.content) ?? 0) + 1)
-      }
-    }
-    const consumed = new Map<string, number>()
-    return pendingInterjections.filter((p) => {
-      const available = (humanCounts.get(p.content) ?? 0) - (consumed.get(p.content) ?? 0)
-      if (available > 0) {
-        consumed.set(p.content, (consumed.get(p.content) ?? 0) + 1)
-        return false
-      }
-      return true
-    })
-  }, [turns, pendingInterjections])
-
-  // Garbage-collect reconciled pending items from state
-  useEffect(() => {
-    if (visiblePending.length < pendingInterjections.length) {
-      setPendingInterjections(visiblePending)
-    }
-  }, [visiblePending, pendingInterjections.length])
-
-  // Detect dropped interjections: clear pending items when phase leaves plan
-  useEffect(() => {
-    const prevPhase = prevPhaseRef.current
-    prevPhaseRef.current = phase
-    if (prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
-      const count = visiblePending.length
-      setPendingInterjections([])
-      toast.info(
-        count === 1
-          ? "Your queued message was not delivered — agents moved past the planning phase."
-          : `${count} queued messages were not delivered — agents moved past the planning phase.`
-      )
-    }
-  }, [phase, visiblePending])
-
-  // Per-turn open state, keyed by turn id. New turns default to open.
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
-  const allCollapsed = turns.length > 0 && turns.every((t) => openMap[t.id] === false)
-
-  useEffect(() => {
-    setOpenMap((prev) => {
-      const next = { ...prev }
-      for (const t of turns) {
-        if (!(t.id in next)) next[t.id] = true
-      }
-      return next
-    })
-  }, [turns])
-
-  const handleTurnOpenChange = useCallback((id: string, open: boolean) => {
-    setOpenMap((prev) => ({ ...prev, [id]: open }))
-  }, [])
-
-  const handleToggleAll = useCallback(() => {
-    setOpenMap((prev) => {
-      const next = { ...prev }
-      const newValue = allCollapsed
-      for (const t of turns) {
-        next[t.id] = newValue
-      }
-      return next
-    })
-  }, [turns, allCollapsed])
-
-  useEffect(() => {
-    if (topic) {
+    if (isGrid) {
+      document.title = `DEF \u2014 ${gridCount} session${gridCount !== 1 ? "s" : ""}`
+    } else if (topic) {
       const short = topic.length > 30 ? topic.slice(0, 30) + "\u2026" : topic
       document.title = `DEF - ${short}`
+    } else {
+      document.title = "DEF"
     }
-  }, [topic])
+  }, [topic, isGrid, gridCount])
 
-  const handleEndSession = useCallback(async () => {
-    await endSession(selectedSessionId)
-  }, [selectedSessionId])
+  const hasAnySessions = sessions.length > 0
+
+  // Tab bar: hidden in grid mode OR when <= 1 session
+  const showTabBar = !isGrid && visibleSessions.length > 1
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <SessionHeader
         topic={topic}
-        sessionId={sessionId}
-        disabled={isCompleted}
-        isReadOnly={isReadOnly}
+        sessionId={selectedSessionId}
+        sessions={visibleSessions}
+        viewMode={effectiveViewMode}
+        canShowGrid={canShowGrid}
+        sessionStatus={sessionStatus}
+        onToggleViewMode={handleToggleViewMode}
         onEndSession={handleEndSession}
       />
-      <SessionTabBar
-        sessions={visibleSessions}
-        selectedSessionId={selectedSessionId}
-        onSelectSession={setSelectedSessionId}
-        onDismissSession={handleDismissSession}
-      />
-      {sessions.length === 0 && turns.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <>
-          <PauseBanner visible={sessionStatus === "paused"} isReadOnly={isReadOnly} />
-          <Transcript
-            turns={turns}
-            thinking={thinking}
-            thinkingElapsed={thinkingElapsed}
-            phase={phase}
-            sessionStatus={sessionStatus}
-            branchName={branchName}
-            prUrl={prUrl}
-            prNumber={prNumber}
-            turnsPath={turnsPath}
-            artifactsPath={artifactsPath}
-            openMap={openMap}
-            onTurnOpenChange={handleTurnOpenChange}
-            pendingInterjections={visiblePending}
-          />
-          <InterjectionInput sessionId={selectedSessionId} disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
-        </>
+      {showTabBar && (
+        <SessionTabBar
+          sessions={visibleSessions}
+          selectedSessionId={selectedSessionId}
+          onSelectSession={setSelectedSessionId}
+          onDismissSession={handleDismissSession}
+        />
       )}
-      <StatusBar
-        statusText={statusText}
-        turnCount={turnCount}
-        sessionStatus={sessionStatus}
-        sessionTimer={sessionTimer}
-        allCollapsed={allCollapsed}
-        onToggleAll={handleToggleAll}
-      />
+      {!hasAnySessions ? (
+        <EmptyState />
+      ) : isGrid ? (
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 gap-1",
+            gridCount <= 1 && "grid-cols-1",
+            gridCount >= 2 && "grid-cols-2",
+            gridCount >= 3 && "grid-rows-[1fr_1fr]",
+          )}
+        >
+          {gridSessions.map((s, i) => (
+            <SessionPanel
+              key={s.id}
+              sessionId={s.id}
+              sessions={sessions}
+              showPanelHeader
+              showMaximize
+              showDismiss
+              onMaximize={() => {
+                setSelectedSessionId(s.id)
+                setViewMode("single")
+              }}
+              onDismiss={() => handleDismissSession(s.id)}
+              className={cn(gridCount === 3 && i === 2 && "col-span-2")}
+            />
+          ))}
+        </div>
+      ) : (
+        <SessionPanel
+          key={selectedSessionId}
+          sessionId={selectedSessionId}
+          sessions={sessions}
+        />
+      )}
       <Toaster position="bottom-right" />
     </div>
   )
