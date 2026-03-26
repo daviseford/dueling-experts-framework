@@ -1,3 +1,15 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ThemeToggle } from "./theme-toggle"
@@ -10,12 +22,16 @@ interface SessionHeaderProps {
   sessions: SessionSummary[]
   viewMode?: "single" | "grid"
   canShowGrid?: boolean
+  sessionStatus?: "active" | "paused" | "completed" | "interrupted"
   onToggleViewMode?: () => void
+  onEndSession?: () => void
 }
 
-export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGrid, onToggleViewMode }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGrid, sessionStatus, onToggleViewMode, onEndSession }: SessionHeaderProps) {
   const isGrid = viewMode === "grid"
   const sessionCount = sessions.length
+  const isReadOnly = sessionStatus !== "active"
+  const isCompleted = sessionStatus === "completed"
 
   return (
     <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
@@ -49,6 +65,40 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
         )}
       </div>
       <div className="flex items-center gap-2">
+        {!isGrid && sessionStatus && (
+          isReadOnly ? (
+            <Badge variant="outline" className="h-7 border-muted-foreground/20 px-3 text-[11px] text-muted-foreground">
+              Viewing — read-only
+            </Badge>
+          ) : onEndSession ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={isCompleted}
+                  className="h-7 px-3 text-xs"
+                >
+                  End Session
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>End this session?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will stop the session. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onEndSession}>
+                    End Session
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null
+        )}
         {canShowGrid && onToggleViewMode && (
           <Button
             variant="ghost"

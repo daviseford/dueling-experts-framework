@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { useSessionList } from "@/hooks/use-explorer"
+import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
 import { SessionPanel } from "@/components/session-panel"
@@ -32,11 +33,17 @@ export default function App() {
     setSelectedSessionId,
   } = useSessionList()
 
-  // Get topic from the session list (avoids spinning up a full polling hook just for the title)
-  const topic = useMemo(
-    () => sessions.find(s => s.id === selectedSessionId)?.topic ?? "",
+  // Get selected session metadata from the session list (avoids spinning up a full polling hook)
+  const selectedSession = useMemo(
+    () => sessions.find(s => s.id === selectedSessionId),
     [sessions, selectedSessionId]
   )
+  const topic = selectedSession?.topic ?? ""
+  const sessionStatus = (selectedSession?.session_status ?? "active") as "active" | "paused" | "completed" | "interrupted"
+
+  const handleEndSession = useCallback(async () => {
+    if (selectedSessionId) await endSession(selectedSessionId)
+  }, [selectedSessionId])
 
   // View mode state with localStorage persistence
   const [viewModePreference, setViewModePreference] = useState<ViewMode>(() => {
@@ -122,7 +129,9 @@ export default function App() {
         sessions={visibleSessions}
         viewMode={effectiveViewMode}
         canShowGrid={canShowGrid}
+        sessionStatus={sessionStatus}
         onToggleViewMode={handleToggleViewMode}
+        onEndSession={handleEndSession}
       />
       {showTabBar && (
         <SessionTabBar
