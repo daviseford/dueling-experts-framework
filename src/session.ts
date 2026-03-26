@@ -225,7 +225,7 @@ const HEARTBEAT_STALE_MS = 30_000;
  * Returns `{ alive: true, status: 'active' }` when the process is running with a
  * fresh heartbeat (or no heartbeat file yet), or `{ alive: false, status }` otherwise.
  */
-export async function isSessionAlive(sessionDir: string): Promise<{ alive: boolean; status: string }> {
+export async function isSessionAlive(sessionDir: string): Promise<{ alive: boolean; status: string; heartbeatAt?: string }> {
   const sessionPath = join(sessionDir, 'session.json');
   const raw = await readFile(sessionPath, 'utf8');
   const data = JSON.parse(raw);
@@ -253,11 +253,11 @@ export async function isSessionAlive(sessionDir: string): Promise<{ alive: boole
     : false;
 
   if (pidAlive && (heartbeatFresh || !heartbeatAt)) {
-    return { alive: true, status: 'active' };
+    return { alive: true, status: 'active', heartbeatAt };
   }
 
   // PID dead or heartbeat stale — detected crash
-  return { alive: false, status: 'interrupted' };
+  return { alive: false, status: 'interrupted', heartbeatAt };
 }
 
 export async function listSessions(targetRepo: string): Promise<SessionSummaryInfo[]> {
@@ -277,17 +277,7 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
       const raw = await readFile(sessionPath, 'utf8');
       const data = JSON.parse(raw);
 
-      const { alive, status: resolvedStatus } = await isSessionAlive(sessionDir);
-
-      // Read heartbeat_at for summary display
-      let heartbeatAt: string | undefined;
-      try {
-        const hbRaw = await readFile(join(sessionDir, 'heartbeat.json'), 'utf8');
-        const hb = JSON.parse(hbRaw);
-        heartbeatAt = hb.heartbeat_at;
-      } catch {
-        // No heartbeat file
-      }
+      const { alive, status: resolvedStatus, heartbeatAt } = await isSessionAlive(sessionDir);
 
       summaries.push({
         id: data.id ?? dir,

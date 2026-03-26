@@ -25,9 +25,13 @@ export async function sendInterjection(sessionId: string, content: string): Prom
 }
 
 export async function endSession(sessionId: string): Promise<void> {
-  await fetch("/api/end-session", {
+  const res = await fetch("/api/end-session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId }),
   })
+  if (!res.ok) {
+    const data = await res.json()
+    throw new Error(data.error || "Failed to end session")
+  }
 }

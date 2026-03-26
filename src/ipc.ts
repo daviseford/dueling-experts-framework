@@ -41,13 +41,22 @@ export async function readInterjections(sessionDir: string): Promise<string[]> {
     try {
       const raw = await readFile(filePath, 'utf8');
       const parsed = JSON.parse(raw);
+      if (typeof parsed.content !== 'string') {
+        // eslint-disable-next-line no-console
+        console.error(`[ipc] Skipping interjection file with missing content: ${file}`);
+        await unlinkSafe(filePath);
+        continue;
+      }
       contents.push(parsed.content);
+      // Delete consumed file
+      await unlinkSafe(filePath);
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw e;
+      // Corrupted file (SyntaxError, etc.) — log, delete, and continue
+      // eslint-disable-next-line no-console
+      console.error(`[ipc] Skipping corrupted interjection file ${file}: ${(e as Error).message}`);
+      await unlinkSafe(filePath);
     }
-    // Delete consumed file
-    await unlinkSafe(filePath);
   }
 
   return contents;

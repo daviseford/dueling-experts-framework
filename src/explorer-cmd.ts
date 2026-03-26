@@ -4,11 +4,11 @@ import * as ui from './ui.js';
 
 interface ExplorerArgs {
   idleTimeout: number;
-  port: number;
+  port: number | undefined;
 }
 
 function parseExplorerArgs(argv: string[]): ExplorerArgs {
-  const result: ExplorerArgs = { idleTimeout: 300, port: 0 };
+  const result: ExplorerArgs = { idleTimeout: 300, port: undefined };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--idle-timeout':
@@ -51,7 +51,7 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   // Probe for an existing DEF server on the default port
-  const preferredPort = args.port || 18541;
+  const preferredPort = args.port ?? 18541;
   const probe = await server.probeExistingServer(preferredPort);
   if (probe.action === 'join') {
     // Existing DEF server found with active sessions — reuse it
