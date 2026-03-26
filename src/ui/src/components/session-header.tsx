@@ -1,28 +1,20 @@
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Radio } from "lucide-react"
+import type { SessionSummary } from "@/lib/types"
 
 interface SessionHeaderProps {
   topic: string
   sessionId: string
-  disabled: boolean
-  isReadOnly?: boolean
-  onEndSession: () => void
+  sessions: SessionSummary[]
+  viewMode?: "single" | "grid"
+  onToggleViewMode?: () => void
 }
 
-export function SessionHeader({ topic, sessionId, disabled, isReadOnly, onEndSession }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, sessions, viewMode, onToggleViewMode }: SessionHeaderProps) {
+  const isGrid = viewMode === "grid"
+  const sessionCount = sessions.length
+
   return (
     <header className="relative flex items-center justify-between border-b border-border/30 bg-card/80 px-5 py-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
@@ -32,52 +24,30 @@ export function SessionHeader({ topic, sessionId, disabled, isReadOnly, onEndSes
           </div>
           <h1 className="text-sm font-bold tracking-tight text-foreground">DEF</h1>
         </div>
-        {topic && (
+        {isGrid ? (
           <>
             <Separator orientation="vertical" className="h-4" />
-            <span className="text-[13px] text-muted-foreground">{topic}</span>
+            <span className="text-[13px] text-muted-foreground">{sessionCount} session{sessionCount !== 1 ? "s" : ""}</span>
           </>
-        )}
-        {sessionId && (
+        ) : (
           <>
-            <Separator orientation="vertical" className="h-4" />
-            <span className="font-mono text-[11px] text-muted-foreground/50">{sessionId}</span>
+            {topic && (
+              <>
+                <Separator orientation="vertical" className="h-4" />
+                <span className="text-[13px] text-muted-foreground">{topic}</span>
+              </>
+            )}
+            {sessionId && (
+              <>
+                <Separator orientation="vertical" className="h-4" />
+                <span className="font-mono text-[11px] text-muted-foreground/50">{sessionId}</span>
+              </>
+            )}
           </>
         )}
       </div>
       <div className="flex items-center gap-2">
-        {isReadOnly ? (
-          <Badge variant="outline" className="h-7 border-muted-foreground/20 px-3 text-[11px] text-muted-foreground">
-            Viewing — read-only
-          </Badge>
-        ) : (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={disabled}
-                className="h-7 px-3 text-xs"
-              >
-                End Session
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>End this session?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will stop the session. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={onEndSession}>
-                  End Session
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+        {/* View mode toggle and ThemeToggle will be added in Unit 3 */}
       </div>
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent" />
     </header>
