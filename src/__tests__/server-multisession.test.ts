@@ -157,8 +157,26 @@ describe('GET /api/sessions', () => {
     const json = JSON.parse(body);
     assert.ok(Array.isArray(json.turns));
     assert.equal(json.session_id, sessionId1);
-    // Non-owning session should have thinking: null
+    // No thinking.json on disk → thinking: null
     assert.equal(json.thinking, null);
+  });
+
+  it('reads thinking state from thinking.json for any session', async () => {
+    // Write thinking.json for the non-owning session
+    const thinkingPath = join(testRepo, '.def', 'sessions', sessionId1, 'thinking.json');
+    const thinkingData = { agent: 'claude', since: '2025-01-01T00:00:00.000Z' };
+    await writeFile(thinkingPath, JSON.stringify(thinkingData) + '\n');
+
+    const { status, body } = await httpGet(port, `/api/sessions/${sessionId1}/turns`);
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.deepEqual(json.thinking, thinkingData);
+
+    // Clear thinking state — should return null
+    await writeFile(thinkingPath, JSON.stringify({ agent: null, since: null }) + '\n');
+    const { body: body2 } = await httpGet(port, `/api/sessions/${sessionId1}/turns`);
+    const json2 = JSON.parse(body2);
+    assert.equal(json2.thinking, null);
   });
 
   it('returns 404 for invalid session ID', async () => {

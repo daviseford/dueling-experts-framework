@@ -17,7 +17,6 @@ export default function App() {
     sessions,
     selectedSessionId,
     setSelectedSessionId,
-    owningSessionId,
     turns,
     sessionId,
     sessionStatus,
@@ -35,9 +34,26 @@ export default function App() {
     artifactsPath,
   } = useExplorer()
 
-  const isOwningSession = selectedSessionId === owningSessionId
   const isReadOnly = sessionStatus !== "active"
   const isCompleted = sessionStatus === "completed"
+
+  // Dismissed sessions (hidden from tab bar, client-side only)
+  // Interrupted (stale) sessions are auto-hidden — their process is dead
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => !dismissedIds.has(s.id) && s.session_status !== "interrupted"),
+    [sessions, dismissedIds]
+  )
+  const handleDismissSession = useCallback((id: string) => {
+    setDismissedIds((prev) => new Set(prev).add(id))
+    // If the dismissed session was selected, pick the next best tab
+    if (id === selectedSessionId) {
+      const remaining = sessions.filter((s) => s.id !== id && !dismissedIds.has(s.id))
+      const next = remaining.find((s) => s.session_status === "active" || s.session_status === "paused")
+        ?? remaining[0]
+      if (next) setSelectedSessionId(next.id)
+    }
+  }, [sessions, selectedSessionId, dismissedIds, setSelectedSessionId])
 
   // Pending interjections: messages sent but not yet processed into turns
   const [pendingInterjections, setPendingInterjections] = useState<PendingInterjection[]>([])
@@ -87,12 +103,11 @@ export default function App() {
     }
   }, [visiblePending, pendingInterjections.length])
 
-  // Detect dropped interjections: clear pending items when phase is not plan
-  // Only fire toasts for the owning session
+  // Detect dropped interjections: clear pending items when phase leaves plan
   useEffect(() => {
     const prevPhase = prevPhaseRef.current
     prevPhaseRef.current = phase
-    if (isOwningSession && prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
+    if (prevPhase === "plan" && phase !== "plan" && visiblePending.length > 0) {
       const count = visiblePending.length
       setPendingInterjections([])
       toast.info(
@@ -101,7 +116,7 @@ export default function App() {
           : `${count} queued messages were not delivered — agents moved past the planning phase.`
       )
     }
-  }, [phase, visiblePending, isOwningSession])
+  }, [phase, visiblePending])
 
   // Per-turn open state, keyed by turn id. New turns default to open.
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
@@ -153,10 +168,10 @@ export default function App() {
         onEndSession={handleEndSession}
       />
       <SessionTabBar
-        sessions={sessions}
+        sessions={visibleSessions}
         selectedSessionId={selectedSessionId}
         onSelectSession={setSelectedSessionId}
-        owningSessionId={owningSessionId}
+        onDismissSession={handleDismissSession}
       />
       {sessions.length === 0 && turns.length === 0 ? (
         <EmptyState />

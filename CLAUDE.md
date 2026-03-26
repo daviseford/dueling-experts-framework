@@ -30,3 +30,4 @@ This repo IS a multi-agent orchestrator (DEF). When discussing agents, reviewers
 - **Conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
 - **Never commit to `main`/`master`/`dev`/`stage`** — use feature branches.
 - **No session resumption.** Sessions are not recoverable — each `def` invocation starts fresh.
+- **All def sessions are equal.** There are no special sessions - the initial session that happens to launch the explorer is not special. All sessions are treated equally.

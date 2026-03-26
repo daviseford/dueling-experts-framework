@@ -489,16 +489,17 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
   // Read session.json — authoritative source for status and completion metadata
   const sessionPath = join(sessionRef!.dir, 'session.json');
   const metadata = await getSessionMetadata(sessionPath);
+  const thinking = await readThinkingState(sessionRef!.dir);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
     session_id: sessionRef!.id,
     session_status: metadata.sessionStatus,
-    phase: metadata.phase ?? controllerRef?.phase ?? 'plan',
+    phase: metadata.phase ?? 'plan',
     topic: sessionRef!.topic,
     turn_count: turns.length,
-    thinking: controllerRef?.thinking ?? null,
+    thinking,
     branch_name: metadata.branchName,
     pr_url: metadata.prUrl,
     pr_number: metadata.prNumber,
@@ -562,6 +563,21 @@ export async function getSessionMetadata(sessionPath: string): Promise<SessionMe
   }
 
   return { sessionStatus, phase, topic, branchName, prUrl, prNumber, artifactNames };
+}
+
+/**
+ * Read thinking state from a session's thinking.json file.
+ * Every session writes this file — no in-memory controller needed.
+ */
+async function readThinkingState(sessionDir: string): Promise<{ agent: string; since: string } | null> {
+  try {
+    const raw = await readFile(join(sessionDir, 'thinking.json'), 'utf8');
+    const data = JSON.parse(raw);
+    if (data.agent && data.since) return { agent: data.agent, since: data.since };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function handleGetSessions(res: ServerResponse): Promise<void> {
@@ -636,22 +652,20 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
     })
   );
 
-  // Read session metadata
+  // Read session metadata and thinking state from disk (all sessions are equal)
   const sessionPath = join(sessionDir, 'session.json');
   const metadata = await getSessionMetadata(sessionPath);
-
-  // For the owning session, include live thinking state
-  const isOwning = sessionRef?.id === sessionId;
+  const thinking = await readThinkingState(sessionDir);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
     session_id: sessionId,
     session_status: metadata.sessionStatus,
-    phase: metadata.phase ?? (isOwning ? controllerRef?.phase : null) ?? 'plan',
+    phase: metadata.phase ?? 'plan',
     topic: metadata.topic ?? '(no topic)',
     turn_count: turns.length,
-    thinking: isOwning ? (controllerRef?.thinking ?? null) : null,
+    thinking,
     branch_name: metadata.branchName,
     pr_url: metadata.prUrl,
     pr_number: metadata.prNumber,

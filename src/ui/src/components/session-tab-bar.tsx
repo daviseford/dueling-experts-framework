@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect } from "react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Home } from "lucide-react"
+import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SessionSummary } from "@/lib/types"
 
@@ -9,47 +8,50 @@ interface SessionTabBarProps {
   sessions: SessionSummary[]
   selectedSessionId: string
   onSelectSession: (id: string) => void
-  owningSessionId: string | null
+  onDismissSession?: (id: string) => void
 }
 
-function statusDotClass(status: string): string {
-  switch (status) {
-    case "active":
-      return "bg-green-500"
-    case "paused":
-      return "bg-amber-500 animate-pulse"
-    case "completed":
-      return "bg-zinc-400 dark:bg-zinc-500"
-    case "interrupted":
-      return "bg-red-500"
-    default:
-      return "bg-zinc-400"
-  }
+const STATUS_BORDER: Record<string, string> = {
+  active: "border-l-emerald-500",
+  paused: "border-l-amber-500",
+  completed: "border-l-zinc-300 dark:border-l-zinc-600",
+  interrupted: "border-l-red-400 dark:border-l-red-500",
 }
 
-function phaseBadgeVariant(phase: string): string {
+const PHASE_COLOR: Record<string, string> = {
+  plan: "text-blue-600/70 dark:text-blue-400/70",
+  implement: "text-emerald-600/70 dark:text-emerald-400/70",
+  review: "text-purple-600/70 dark:text-purple-400/70",
+}
+
+function phaseLabel(phase: string): string {
   switch (phase) {
-    case "plan":
-      return "text-blue-600 bg-blue-500/10 dark:text-blue-400"
-    case "implement":
-      return "text-green-600 bg-green-500/10 dark:text-green-400"
-    case "review":
-      return "text-purple-600 bg-purple-500/10 dark:text-purple-400"
-    default:
-      return ""
+    case "plan": return "PLAN"
+    case "implement": return "IMPL"
+    case "review": return "REVIEW"
+    default: return phase.toUpperCase()
   }
 }
 
-function truncate(str: string, max: number): string {
-  if (str.length <= max) return str
-  return str.slice(0, max) + "\u2026"
+function isDead(status: string): boolean {
+  return status === "completed" || status === "interrupted"
+}
+
+function elapsed(created: string): string {
+  const ms = Date.now() - new Date(created).getTime()
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return "<1m"
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  return `${Math.floor(hrs / 24)}d`
 }
 
 export function SessionTabBar({
   sessions,
   selectedSessionId,
   onSelectSession,
-  owningSessionId,
+  onDismissSession,
 }: SessionTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -85,12 +87,12 @@ export function SessionTabBar({
   if (sessions.length <= 1) return null
 
   return (
-    <div className="relative flex items-center border-b border-border/30 bg-card/60">
+    <div className="relative flex items-center bg-muted/30 dark:bg-card/30">
       {canScrollLeft && (
         <Button
           variant="ghost"
           size="icon"
-          className="absolute left-0 z-10 h-full w-7 rounded-none bg-gradient-to-r from-card/90 to-transparent"
+          className="absolute left-0 z-10 h-full w-7 rounded-none bg-gradient-to-r from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("left")}
         >
           <ChevronLeft className="h-3.5 w-3.5" />
@@ -102,47 +104,74 @@ export function SessionTabBar({
       >
         {sessions.map((s) => {
           const isSelected = s.id === selectedSessionId
-          const isOwning = s.id === owningSessionId
+          const dead = isDead(s.session_status)
           return (
             <button
               key={s.id}
               onClick={() => onSelectSession(s.id)}
               className={cn(
-                "group relative flex min-w-[140px] max-w-[220px] shrink-0 items-center gap-2 border-r border-border/20 px-3 py-2 text-left transition-colors",
+                "group relative flex w-[240px] shrink-0 flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
+                STATUS_BORDER[s.session_status] || "border-l-zinc-400",
                 isSelected
-                  ? "bg-background/80"
-                  : "bg-transparent hover:bg-background/40"
+                  ? "bg-background shadow-[inset_0_-2px_0_0] shadow-teal-500"
+                  : "bg-transparent hover:bg-background/60",
+                dead && !isSelected && "opacity-50 hover:opacity-75"
               )}
             >
-              {/* Status dot */}
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotClass(s.session_status))} />
-
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              {/* Row 1: Topic + close button */}
+              <div className="flex items-start gap-1.5">
                 {multiRepo && (
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
+                  <span className="mt-px shrink-0 rounded bg-muted px-1 py-px text-[8px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                     {s.repo}
                   </span>
                 )}
-                <span className="flex items-center gap-1.5 text-[12px] font-medium leading-tight text-foreground/90">
-                  {isOwning && <Home className="h-2.5 w-2.5 shrink-0 text-teal-500" />}
-                  <span className="truncate">{truncate(s.topic, 30)}</span>
+                <span className={cn(
+                  "min-w-0 flex-1 truncate text-[12px] font-medium leading-snug",
+                  isSelected ? "text-foreground" : "text-foreground/80"
+                )}>
+                  {s.topic}
                 </span>
+
+                {/* Dismiss button */}
+                {dead && onDismissSession && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Dismiss ${s.topic}`}
+                    className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDismissSession(s.id)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.stopPropagation()
+                        onDismissSession(s.id)
+                      }
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                )}
               </div>
 
-              <Badge
-                variant="outline"
-                className={cn(
-                  "shrink-0 border-0 px-1.5 py-0 text-[9px] font-medium uppercase",
-                  phaseBadgeVariant(s.phase)
-                )}
-              >
-                {s.phase === "plan" ? "plan" : s.phase === "implement" ? "impl" : s.phase}
-              </Badge>
-
-              {/* Selected indicator */}
-              {isSelected && (
-                <div className="absolute inset-x-0 bottom-0 h-0.5 bg-teal-500" />
-              )}
+              {/* Row 2: Phase + turn count + elapsed */}
+              <div className="mt-1 flex items-center gap-2 text-[10px]">
+                <span className={cn(
+                  "font-semibold tracking-wider",
+                  PHASE_COLOR[s.phase] || "text-muted-foreground/60"
+                )}>
+                  {phaseLabel(s.phase)}
+                </span>
+                <span className="text-muted-foreground/40">&middot;</span>
+                <span className="font-mono text-muted-foreground/50">
+                  {s.current_turn === 0 ? "—" : `${s.current_turn} turns`}
+                </span>
+                <span className="text-muted-foreground/40">&middot;</span>
+                <span className="text-muted-foreground/40">
+                  {elapsed(s.created)}
+                </span>
+              </div>
             </button>
           )
         })}
@@ -151,7 +180,7 @@ export function SessionTabBar({
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-0 z-10 h-full w-7 rounded-none bg-gradient-to-l from-card/90 to-transparent"
+          className="absolute right-0 z-10 h-full w-7 rounded-none bg-gradient-to-l from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("right")}
         >
           <ChevronRight className="h-3.5 w-3.5" />
