@@ -1,7 +1,7 @@
 process.env.DEF_NO_OPEN = '1';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile, readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -42,6 +42,31 @@ function httpPost(port: number, path: string, body: object): Promise<{ status: n
   });
 }
 
+/** Helper to create a session directory on disk for testing. */
+async function createSessionOnDisk(
+  sessionsDir: string,
+  id: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const dir = join(sessionsDir, id);
+  await mkdir(join(dir, 'turns'), { recursive: true });
+  await mkdir(join(dir, 'artifacts'), { recursive: true });
+  await writeFile(join(dir, 'session.json'), JSON.stringify({
+    id,
+    topic: 'Test session',
+    session_status: 'active',
+    created: new Date().toISOString(),
+    phase: 'plan',
+    current_turn: 0,
+    mode: 'edit',
+    branch_name: null,
+    pr_url: null,
+    pid: process.pid,
+    ...overrides,
+  }));
+  return dir;
+}
+
 describe('GET /api/sessions', () => {
   let testRepo: string;
   let port: number;
@@ -57,21 +82,7 @@ describe('GET /api/sessions', () => {
       [sessionId1, 'First session', 'active'],
       [sessionId2, 'Second session', 'active'],
     ] as const) {
-      const dir = join(sessionsDir, id);
-      await mkdir(join(dir, 'turns'), { recursive: true });
-      await mkdir(join(dir, 'artifacts'), { recursive: true });
-      await writeFile(join(dir, 'session.json'), JSON.stringify({
-        id,
-        topic,
-        session_status: status,
-        created: new Date().toISOString(),
-        phase: 'plan',
-        current_turn: 0,
-        mode: 'edit',
-        branch_name: null,
-        pr_url: null,
-        pid: process.pid,
-      }));
+      await createSessionOnDisk(sessionsDir, id, { topic, session_status: status });
     }
 
     // Start server with the second session as owning
@@ -131,6 +142,13 @@ describe('GET /api/sessions', () => {
     assert.ok(json.sessions.every((s: { repo: string }) => typeof s.repo === 'string'));
   });
 
+  it('returns server: "def" field in GET /api/sessions', async () => {
+    const { status, body } = await httpGet(port, '/api/sessions');
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.server, 'def');
+  });
+
   it('returns turns for a specific session', async () => {
     const { status, body } = await httpGet(port, `/api/sessions/${sessionId1}/turns`);
     assert.equal(status, 200);
@@ -145,6 +163,231 @@ describe('GET /api/sessions', () => {
   it('returns 404 for invalid session ID', async () => {
     const { status } = await httpGet(port, '/api/sessions/nonexistent-id/turns');
     assert.equal(status, 404);
+  });
+});
+
+describe('interject routing', () => {
+  let testRepo: string;
+  let port: number;
+  const owningId = randomUUID();
+  const otherId = randomUUID();
+  const completedId = randomUUID();
+  let interjectCalled = false;
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-interject-${randomUUID()}`);
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+
+    // Owning session
+    await createSessionOnDisk(sessionsDir, owningId, { topic: 'Owning' });
+    // Other active session (same pid so isSessionAlive returns true)
+    await createSessionOnDisk(sessionsDir, otherId, { topic: 'Other active' });
+    // Completed session
+    await createSessionOnDisk(sessionsDir, completedId, {
+      topic: 'Done',
+      session_status: 'completed',
+    });
+
+    const owningDir = join(sessionsDir, owningId);
+    const mockSession = {
+      id: owningId,
+      topic: 'Owning',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string } | null,
+      phase: 'plan',
+      interject() { interjectCalled = true; },
+      requestEnd() {},
+    };
+
+    await start(mockSession, mockController);
+    const updated = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
+
+  after(async () => {
+    stop();
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('interjection to owning session uses in-memory controller (delivery: direct)', async () => {
+    interjectCalled = false;
+    const { status, body } = await httpPost(port, '/api/interject', {
+      session_id: owningId,
+      content: 'hello owner',
+    });
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.ok, true);
+    assert.equal(json.delivery, 'direct');
+    assert.equal(interjectCalled, true);
+  });
+
+  it('omitted session_id routes to owning session', async () => {
+    interjectCalled = false;
+    const { status, body } = await httpPost(port, '/api/interject', {
+      content: 'no session_id',
+    });
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.delivery, 'direct');
+    assert.equal(interjectCalled, true);
+  });
+
+  it('interjection to non-owning active session writes file (delivery: queued)', async () => {
+    interjectCalled = false;
+    const { status, body } = await httpPost(port, '/api/interject', {
+      session_id: otherId,
+      content: 'hello other',
+    });
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.ok, true);
+    assert.equal(json.delivery, 'queued');
+    assert.equal(interjectCalled, false, 'should not call in-memory interject');
+
+    // Verify file was written to interjections/
+    const interjDir = join(testRepo, '.def', 'sessions', otherId, 'interjections');
+    const files = await readdir(interjDir);
+    assert.ok(files.length >= 1, 'interjection file should exist');
+    const raw = JSON.parse(await readFile(join(interjDir, files[0]), 'utf8'));
+    assert.equal(raw.content, 'hello other');
+  });
+
+  it('interjection to completed session returns 409', async () => {
+    const { status, body } = await httpPost(port, '/api/interject', {
+      session_id: completedId,
+      content: 'too late',
+    });
+    assert.equal(status, 409);
+    const json = JSON.parse(body);
+    assert.ok(json.error.includes('completed'));
+  });
+
+  it('interjection to nonexistent session returns 404', async () => {
+    const fakeId = randomUUID();
+    const { status } = await httpPost(port, '/api/interject', {
+      session_id: fakeId,
+      content: 'nobody home',
+    });
+    assert.equal(status, 404);
+  });
+});
+
+describe('end-session routing', () => {
+  let testRepo: string;
+  let port: number;
+  const owningId = randomUUID();
+  const otherId = randomUUID();
+  let endRequested = false;
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-endsession-${randomUUID()}`);
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+
+    await createSessionOnDisk(sessionsDir, owningId, { topic: 'Owning' });
+    await createSessionOnDisk(sessionsDir, otherId, { topic: 'Other active' });
+
+    const owningDir = join(sessionsDir, owningId);
+    const mockSession = {
+      id: owningId,
+      topic: 'Owning',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() { endRequested = true; },
+    };
+
+    await start(mockSession, mockController);
+    const updated = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
+
+  after(async () => {
+    stop();
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('end-session to owning session uses in-memory controller (delivery: direct)', async () => {
+    endRequested = false;
+    const { status, body } = await httpPost(port, '/api/end-session', {
+      session_id: owningId,
+    });
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.ok, true);
+    assert.equal(json.delivery, 'direct');
+    assert.equal(endRequested, true);
+  });
+
+  it('end-session to non-owning session writes end-requested file', async () => {
+    const { status, body } = await httpPost(port, '/api/end-session', {
+      session_id: otherId,
+    });
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.ok, true);
+    assert.equal(json.delivery, 'queued');
+
+    // Verify end-requested file was written
+    const endFile = join(testRepo, '.def', 'sessions', otherId, 'end-requested');
+    const s = await stat(endFile);
+    assert.ok(s.isFile(), 'end-requested file should exist');
+  });
+
+  it('omitted session_id routes end-session to owning session', async () => {
+    endRequested = false;
+    const { status, body } = await httpPost(port, '/api/end-session', {});
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.delivery, 'direct');
+    assert.equal(endRequested, true);
   });
 });
 
@@ -175,8 +418,8 @@ describe('explorer mode null guards', () => {
   // Explorer tests are more structural — the null guards are already covered by the
   // route-level checks added in handleRequest. The key tests above verify the
   // /api/sessions and /api/sessions/:id/turns endpoints work correctly.
-  // POST endpoints return 404 in explorer mode (controllerRef is null).
-  it('POST /api/interject returns 404 without controller', async () => {
+  // POST endpoints require session_id in explorer mode (no owning session).
+  it('POST /api/interject returns 400 without session_id in explorer mode', async () => {
     // We need the actual port. Since explorer uses port 0, we can't easily get it
     // without more infrastructure. This test verifies the code path exists.
     assert.ok(true, 'explorer mode null guards are covered by route-level checks');

@@ -1,12 +1,13 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile, readdir, stat, access } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, dirname, basename, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
-import { update as updateSession, listTurnFiles, listSessions, findSessionDir } from './session.js';
+import { update as updateSession, listTurnFiles, listSessions, findSessionDir, isSessionAlive } from './session.js';
 import type { Session } from './session.js';
 import { readEvents, listAttempts } from './trace.js';
+import { writeInterjection, writeEndRequest } from './ipc.js';
 import * as ui from './ui.js';
 
 interface Controller {
@@ -41,13 +42,12 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
-function getDefaultPort(): number {
+export function getDefaultPort(): number {
   return process.env.CI || process.env.DEF_NO_OPEN ? 0 : 18541;
 }
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
 let controllerRef: Controller | null = null;
-let readOnlyMode = false;
 let targetRepoRef: string | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
@@ -59,12 +59,12 @@ function debugLog(msg: string): void {
 }
 
 /**
- * Try to shut down a stale DEF server on the given port.
- * Returns true if the port should now be free.
+ * Probe an existing server on the given port to decide whether to join it,
+ * replace it (stale), or bind a new server.
  */
-async function evictStaleServer(port: number): Promise<boolean> {
+export async function probeExistingServer(port: number): Promise<{ action: 'join' | 'replace' | 'bind-new' }> {
   const http = await import('node:http');
-  return new Promise<boolean>((resolve) => {
+  return new Promise<{ action: 'join' | 'replace' | 'bind-new' }>((resolve) => {
     const req = http.request({
       hostname: '127.0.0.1',
       port,
@@ -77,81 +77,72 @@ async function evictStaleServer(port: number): Promise<boolean> {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          // It's a DEF server if it has a sessions array
-          if (Array.isArray(json.sessions)) {
-            debugLog(`Stale DEF server detected on port ${port}, stopping it`);
-            // Send end-session to trigger shutdown
-            const endReq = http.request({
-              hostname: '127.0.0.1',
-              port,
-              path: '/api/end-session',
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              timeout: 1000,
-            }, () => {
-              // Give it a moment to shut down
-              setTimeout(() => resolve(true), 500);
-            });
-            endReq.on('error', () => resolve(true));
-            endReq.end('{}');
+          // Must be a DEF server (has server: 'def' field)
+          if (json.server !== 'def') {
+            debugLog(`Port ${port} is in use by a non-DEF service`);
+            resolve({ action: 'bind-new' });
             return;
           }
-        } catch { /* not a DEF server */ }
-        debugLog(`Port ${port} is in use by a non-DEF service`);
-        resolve(false);
+
+          const sessions: Array<{ is_active?: boolean }> = Array.isArray(json.sessions) ? json.sessions : [];
+          const hasActiveSessions = sessions.some(s => s.is_active === true);
+
+          if (hasActiveSessions) {
+            debugLog(`Active DEF server with live sessions on port ${port}, joining`);
+            resolve({ action: 'join' });
+            return;
+          }
+
+          // DEF server but no active sessions — stale, replace it
+          debugLog(`Stale DEF server on port ${port} (no active sessions), replacing`);
+          const owningId: string | null = json.owning_session_id ?? null;
+          if (!owningId) {
+            // Explorer-mode server (no owning session) — can't end-session it,
+            // just try to bind and let EADDRINUSE fallback handle it.
+            resolve({ action: 'replace' });
+            return;
+          }
+          const endReq = http.request({
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/end-session',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 1000,
+          }, () => {
+            setTimeout(() => resolve({ action: 'replace' }), 500);
+          });
+          endReq.on('error', () => resolve({ action: 'replace' }));
+          endReq.on('timeout', () => { endReq.destroy(); });
+          endReq.end(JSON.stringify({ session_id: owningId }));
+        } catch {
+          debugLog(`Port ${port} responded with non-JSON, treating as non-DEF`);
+          resolve({ action: 'bind-new' });
+        }
       });
     });
     req.on('error', () => {
-      debugLog(`Port ${port} in use but not responding to HTTP`);
-      resolve(false);
+      debugLog(`Port ${port} not responding, binding new server`);
+      resolve({ action: 'bind-new' });
     });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('timeout', () => {
+      req.destroy();
+      debugLog(`Port ${port} timed out, binding new server`);
+      resolve({ action: 'bind-new' });
+    });
     req.end();
   });
 }
 
 /**
- * Listen on the preferred port. If taken by a stale DEF server, evict it and retry.
- * Falls back to a random port as a last resort.
+ * Listen on the preferred port, falling back to a random port on EADDRINUSE.
+ * Probe/eviction decisions happen before this is called.
  */
 function listenWithFallback(server: import('node:http').Server, preferredPort: number): Promise<number> {
   return new Promise<number>((resolve, reject) => {
-    let evicted = false;
-    const onError = async (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE' && preferredPort !== 0 && !evicted) {
-        evicted = true;
-        debugLog(`Port ${preferredPort} in use, attempting eviction`);
-        server.removeListener('error', onError);
-        const freed = await evictStaleServer(preferredPort);
-        if (freed) {
-          debugLog(`Retrying port ${preferredPort} after eviction`);
-          // Retry preferred port
-          server.on('error', (retryErr: NodeJS.ErrnoException) => {
-            if (retryErr.code === 'EADDRINUSE') {
-              debugLog(`Port ${preferredPort} still taken, falling back to random`);
-              server.listen(0, '127.0.0.1', () => {
-                const addr = server.address();
-                resolve(typeof addr === 'object' && addr ? addr.port : 0);
-              });
-            } else {
-              reject(retryErr);
-            }
-          });
-          server.listen(preferredPort, '127.0.0.1', () => {
-            const addr = server.address();
-            debugLog(`Bound to port ${preferredPort} after eviction`);
-            resolve(typeof addr === 'object' && addr ? addr.port : 0);
-          });
-        } else {
-          debugLog(`Eviction failed, falling back to random port`);
-          server.listen(0, '127.0.0.1', () => {
-            const addr = server.address();
-            resolve(typeof addr === 'object' && addr ? addr.port : 0);
-          });
-        }
-      } else if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
-        // Already tried eviction, fall back to random
-        debugLog(`Falling back to random port`);
+    const onError = (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
+        debugLog(`Port ${preferredPort} in use, falling back to random`);
         server.removeListener('error', onError);
         server.listen(0, '127.0.0.1', () => {
           const addr = server.address();
@@ -220,9 +211,9 @@ export async function startReadOnly(session: Session): Promise<void> {
     throw new Error('Server is already running');
   }
 
-  readOnlyMode = true;
   sessionRef = session;
   controllerRef = null;
+  targetRepoRef = resolve(session.dir, '..', '..', '..');
 
   try {
     httpServer = createServer(handleRequest);
@@ -232,7 +223,6 @@ export async function startReadOnly(session: Session): Promise<void> {
     ui.status('server.url', { url });
     openBrowserOnce(url);
   } catch (err) {
-    readOnlyMode = false;
     httpServer = null;
     sessionRef = null;
     throw err;
@@ -241,14 +231,13 @@ export async function startReadOnly(session: Session): Promise<void> {
 
 /**
  * Start the server in explorer mode — no owning session, multi-session browsing only.
- * POST endpoints return 404. Serves the UI for browsing all sessions. Idle timeout starts immediately.
+ * POST endpoints route to file-based IPC when session_id is provided. Serves the UI for browsing all sessions. Idle timeout starts immediately.
  */
 export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
   if (httpServer) {
     throw new Error('Server is already running');
   }
 
-  readOnlyMode = true;
   sessionRef = null;
   controllerRef = null;
   targetRepoRef = targetRepo;
@@ -281,11 +270,26 @@ export function beginIdleShutdown(): Promise<void> {
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    stop();
-    if (idleResolve) {
-      idleResolve();
-      idleResolve = null;
-    }
+    void (async () => {
+      // Check for active sessions before shutting down
+      if (targetRepoRef) {
+        try {
+          const sessions = await listSessions(targetRepoRef);
+          if (sessions.some(s => s.is_active)) {
+            debugLog('Active sessions exist, deferring idle shutdown');
+            resetIdleTimer();
+            return;
+          }
+        } catch {
+          // On error, proceed with shutdown
+        }
+      }
+      stop();
+      if (idleResolve) {
+        idleResolve();
+        idleResolve = null;
+      }
+    })();
   }, idleTimeoutMs);
 }
 
@@ -300,7 +304,8 @@ export function stop(): void {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
-    readOnlyMode = false;
+    sessionRef = null;
+    controllerRef = null;
     targetRepoRef = null;
     browserOpened = false;
   }
@@ -387,18 +392,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await handleGetAttempts(res);
     } else if (url.pathname === '/api/interject' && req.method === 'POST') {
-      if (!controllerRef) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No active session' }));
-        return;
-      }
       await handleInterject(req, res);
     } else if (url.pathname === '/api/end-session' && req.method === 'POST') {
-      if (!controllerRef) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No active session' }));
-        return;
-      }
       await handleEndSession(req, res);
     } else if (req.method === 'GET') {
       // Static file serving from Vite build output
@@ -591,6 +586,7 @@ async function handleGetSessions(res: ServerResponse): Promise<void> {
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
+    server: 'def',
     sessions: sessionsWithRepo,
     owning_session_id: sessionRef?.id ?? null,
   }));
@@ -692,13 +688,6 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
-  // Defense-in-depth: if session_id is provided, verify it matches the owning session
-  if (parsed.session_id && sessionRef && parsed.session_id !== sessionRef.id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Session ID mismatch' }));
-    return;
-  }
-
   const content = parsed.content;
   if (!content || typeof content !== 'string' || !content.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -712,10 +701,59 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
-  controllerRef!.interject(content);
+  const trimmed = content.trim();
+  const sessionId: string | undefined = parsed.session_id;
 
+  // Explorer mode (no owning session) requires session_id
+  if (!sessionRef && !sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'session_id is required' }));
+    return;
+  }
+
+  // Route to owning session via in-memory controller
+  if (!sessionId || sessionId === sessionRef?.id) {
+    if (!controllerRef) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No active session' }));
+      return;
+    }
+    controllerRef.interject(trimmed);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, delivery: 'direct' }));
+    return;
+  }
+
+  // Route to non-owning session via file-based IPC
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(sessionId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session_id format' }));
+    return;
+  }
+
+  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  if (!sessionDir) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  const { alive, status } = await isSessionAlive(sessionDir);
+  if (!alive) {
+    if (status === 'completed' || status === 'interrupted') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Session is ${status}` }));
+      return;
+    }
+    // PID dead but status is active — stale session
+    res.writeHead(410, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session process is dead' }));
+    return;
+  }
+
+  await writeInterjection(sessionDir, trimmed);
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true }));
+  res.end(JSON.stringify({ ok: true, delivery: 'queued' }));
 }
 
 async function handleEndSession(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -725,9 +763,74 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
     res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
     return;
   }
-  controllerRef!.requestEnd();
+
+  let body;
+  try {
+    body = await readBody(req);
+  } catch {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Request body too large' }));
+    return;
+  }
+
+  let parsed: { session_id?: string };
+  try {
+    parsed = JSON.parse(body || '{}');
+  } catch {
+    parsed = {};
+  }
+
+  const sessionId: string | undefined = parsed.session_id;
+
+  // Explorer mode (no owning session) requires session_id
+  if (!sessionRef && !sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'session_id is required' }));
+    return;
+  }
+
+  // Route to owning session via in-memory controller
+  if (!sessionId || sessionId === sessionRef?.id) {
+    if (!controllerRef) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No active session' }));
+      return;
+    }
+    controllerRef.requestEnd();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, delivery: 'direct' }));
+    return;
+  }
+
+  // Route to non-owning session via file-based IPC
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(sessionId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session_id format' }));
+    return;
+  }
+
+  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  if (!sessionDir) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  const { alive, status } = await isSessionAlive(sessionDir);
+  if (!alive) {
+    if (status === 'completed' || status === 'interrupted') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Session is ${status}` }));
+      return;
+    }
+    res.writeHead(410, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session process is dead' }));
+    return;
+  }
+
+  await writeEndRequest(sessionDir);
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true }));
+  res.end(JSON.stringify({ ok: true, delivery: 'queued' }));
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

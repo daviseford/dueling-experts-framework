@@ -90,13 +90,31 @@ function useLiveExplorer(enabled = true): ExplorerState {
       setSessions(data.sessions)
       setOwningSessionId(data.owning_session_id)
 
-      // Auto-select owning session on first load
-      if (!selectedRef.current && data.owning_session_id) {
-        setSelectedSessionIdRaw(data.owning_session_id)
-        selectedRef.current = data.owning_session_id
-      } else if (!selectedRef.current && data.sessions.length > 0) {
-        setSelectedSessionIdRaw(data.sessions[0].id)
-        selectedRef.current = data.sessions[0].id
+      // Auto-select: prefer owning session if active, then first active/paused, then first session
+      if (!selectedRef.current && data.sessions.length > 0) {
+        let pick: string | null = null
+
+        // Prefer owning session if it exists and is still active
+        if (data.owning_session_id) {
+          const owning = data.sessions.find(s => s.id === data.owning_session_id)
+          if (owning && (owning.session_status === "active" || owning.session_status === "paused")) {
+            pick = owning.id
+          }
+        }
+
+        // Fallback: first active or paused session
+        if (!pick) {
+          const active = data.sessions.find(
+            s => s.session_status === "active" || s.session_status === "paused"
+          )
+          if (active) pick = active.id
+        }
+
+        // Final fallback: first session in the list
+        if (!pick) pick = data.sessions[0].id
+
+        setSelectedSessionIdRaw(pick)
+        selectedRef.current = pick
       }
     } catch {
       // Silently retry

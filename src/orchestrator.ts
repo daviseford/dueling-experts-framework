@@ -8,6 +8,7 @@ import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
+import { readInterjections, checkEndRequest } from './ipc.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
 import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from './pr.js';
 import { Tracer } from './trace.js';
@@ -218,6 +219,45 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   }, 10_000);
   // Write initial heartbeat immediately
   atomicWrite(join(session.dir, 'heartbeat.json'), JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n').catch(() => {});
+
+  // File-based IPC poll loop — picks up interjections and end-requested flags
+  // written by the shared server (coexists with in-memory controller methods).
+  let ipcPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pollStopped = false;
+
+  function schedulePoll(): void {
+    if (pollStopped) return;
+    const delay = isPaused ? 500 : 1000;
+    ipcPollTimeout = setTimeout(async () => {
+      try {
+        // Read pending interjections from the session's interjections/ directory
+        const contents = await readInterjections(session.dir);
+        for (const content of contents) {
+          if (isPaused && humanResponseResolve) {
+            humanResponseResolve(content);
+            humanResponseResolve = null;
+            isPaused = false;
+          } else {
+            interjectionQueue.push(content);
+          }
+        }
+
+        // Check for end-session request
+        const shouldEnd = await checkEndRequest(session.dir);
+        if (shouldEnd) {
+          endRequested = true;
+          if (session._currentChild) {
+            killChildProcess(session._currentChild);
+          }
+        }
+
+      } catch {
+        // IPC poll errors are non-fatal — the next poll will retry
+      }
+      schedulePoll();
+    }, delay);
+  }
+  schedulePoll();
 
   try {
 
@@ -680,6 +720,8 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
 
   } finally {
     clearInterval(heartbeatInterval);
+    pollStopped = true;
+    if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
   }
 
   // --- Helper closures ---

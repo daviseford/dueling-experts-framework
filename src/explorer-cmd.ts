@@ -4,11 +4,11 @@ import * as ui from './ui.js';
 
 interface ExplorerArgs {
   idleTimeout: number;
-  port: number;
+  port: number | undefined;
 }
 
 function parseExplorerArgs(argv: string[]): ExplorerArgs {
-  const result: ExplorerArgs = { idleTimeout: 300, port: 0 };
+  const result: ExplorerArgs = { idleTimeout: 300, port: undefined };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--idle-timeout':
@@ -50,12 +50,29 @@ export async function run(argv: string[]): Promise<void> {
     return; // unreachable, satisfies TS
   }
 
+  // Probe for an existing DEF server on the default port
+  const preferredPort = args.port ?? 18541;
+  const probe = await server.probeExistingServer(preferredPort);
+  if (probe.action === 'join') {
+    // Existing DEF server found with active sessions — reuse it
+    const url = `http://localhost:${preferredPort}`;
+    console.log(`DEF server already running at ${url}`);
+    const openCmd = process.platform === 'win32' ? 'start'
+      : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    if (!process.env.CI && !process.env.DEF_NO_OPEN) {
+      const { exec } = await import('node:child_process');
+      exec(`${openCmd} ${url}`);
+    }
+    process.exit(0);
+    return; // unreachable, satisfies TS
+  }
+
   console.log('Starting explorer mode...');
 
   // Start server in explorer mode
   await server.startExplorer(targetRepo, {
     idleTimeout: args.idleTimeout,
-    port: args.port,
+    port: preferredPort,
   });
 
   // Wait for SIGINT or idle timeout

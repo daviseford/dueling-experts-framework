@@ -202,7 +202,7 @@ export interface SessionSummaryInfo {
   is_active: boolean;
 }
 
-export async function findSessionDir(targetRepo: string, idPrefix: string): Promise<string | null> {
+export async function findSessionDir(targetRepo: string, id: string, opts?: { exact?: boolean }): Promise<string | null> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
   let dirs: string[];
   try {
@@ -210,13 +210,55 @@ export async function findSessionDir(targetRepo: string, idPrefix: string): Prom
   } catch {
     return null;
   }
-  const matches = dirs.filter(d => d.startsWith(idPrefix));
+  const matches = opts?.exact
+    ? dirs.filter(d => d === id)
+    : dirs.filter(d => d.startsWith(id));
   if (matches.length === 1) return join(sessionsDir, matches[0]);
   return null;
 }
 
 /** Heartbeat staleness threshold (30 seconds). */
 const HEARTBEAT_STALE_MS = 30_000;
+
+/**
+ * Check whether a session is still alive based on its PID and heartbeat freshness.
+ * Returns `{ alive: true, status: 'active' }` when the process is running with a
+ * fresh heartbeat (or no heartbeat file yet), or `{ alive: false, status }` otherwise.
+ */
+export async function isSessionAlive(sessionDir: string): Promise<{ alive: boolean; status: string; heartbeatAt?: string }> {
+  const sessionPath = join(sessionDir, 'session.json');
+  const raw = await readFile(sessionPath, 'utf8');
+  const data = JSON.parse(raw);
+
+  const sessionStatus: string = data.session_status ?? 'unknown';
+  const pid: number | undefined = data.pid;
+
+  if (sessionStatus !== 'active' || !pid) {
+    return { alive: false, status: sessionStatus };
+  }
+
+  // Read heartbeat.json (separate file to avoid session.json contention)
+  let heartbeatAt: string | undefined;
+  try {
+    const hbRaw = await readFile(join(sessionDir, 'heartbeat.json'), 'utf8');
+    const hb = JSON.parse(hbRaw);
+    heartbeatAt = hb.heartbeat_at;
+  } catch {
+    // No heartbeat file (pre-existing session or not yet written)
+  }
+
+  const pidAlive = isProcessAlive(pid);
+  const heartbeatFresh = heartbeatAt
+    ? (Date.now() - new Date(heartbeatAt).getTime()) < HEARTBEAT_STALE_MS
+    : false;
+
+  if (pidAlive && (heartbeatFresh || !heartbeatAt)) {
+    return { alive: true, status: 'active', heartbeatAt };
+  }
+
+  // PID dead or heartbeat stale — detected crash
+  return { alive: false, status: 'interrupted', heartbeatAt };
+}
 
 export async function listSessions(targetRepo: string): Promise<SessionSummaryInfo[]> {
   const sessionsDir = join(targetRepo, '.def', 'sessions');
@@ -235,40 +277,13 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
       const raw = await readFile(sessionPath, 'utf8');
       const data = JSON.parse(raw);
 
-      // Read heartbeat.json (separate file to avoid session.json contention)
-      let heartbeatAt: string | undefined;
-      try {
-        const hbRaw = await readFile(join(sessionDir, 'heartbeat.json'), 'utf8');
-        const hb = JSON.parse(hbRaw);
-        heartbeatAt = hb.heartbeat_at;
-      } catch {
-        // No heartbeat file (pre-existing session or not yet written)
-      }
-
-      const pid: number | undefined = data.pid;
-      let sessionStatus = data.session_status ?? 'unknown';
-      let isActive = false;
-
-      if (sessionStatus === 'active' && pid) {
-        const pidAlive = isProcessAlive(pid);
-        const heartbeatFresh = heartbeatAt
-          ? (Date.now() - new Date(heartbeatAt).getTime()) < HEARTBEAT_STALE_MS
-          : false;
-
-        if (pidAlive && (heartbeatFresh || !heartbeatAt)) {
-          // PID alive and heartbeat fresh (or no heartbeat file = pre-existing session)
-          isActive = true;
-        } else {
-          // PID dead or heartbeat stale — detected crash
-          sessionStatus = 'interrupted';
-        }
-      }
+      const { alive, status: resolvedStatus, heartbeatAt } = await isSessionAlive(sessionDir);
 
       summaries.push({
         id: data.id ?? dir,
         topic: data.topic ?? '(no topic)',
         created: data.created ?? '',
-        session_status: sessionStatus,
+        session_status: resolvedStatus,
         phase: data.phase === 'debate' ? 'plan' : (data.phase ?? 'plan'),
         current_turn: data.current_turn ?? 0,
         mode: data.mode ?? 'edit',
@@ -276,9 +291,9 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
         pr_url: data.pr_url ?? null,
         dir: sessionDir,
         port: data.port ?? null,
-        pid,
+        pid: data.pid,
         heartbeat_at: heartbeatAt,
-        is_active: isActive,
+        is_active: alive,
       });
     } catch {
       // Skip corrupted session directories
