@@ -11,7 +11,7 @@ import { createWorktree, removeWorktree, captureDiff, commitChanges } from './wo
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
-import { extractFilePaths, verifyDeliverables } from './deliverable.js';
+import { extractFilePaths } from './deliverable.js';
 import * as ui from './ui.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -929,7 +929,7 @@ async function generatePlan(session: Session, tracer: Tracer): Promise<void> {
   const turnFiles: string[] = await listTurnFiles(turnsDir);
   if (turnFiles.length === 0) return;
 
-  const planTurns: { turn: number; from: string; decisions: string[]; content: string }[] = [];
+  const planTurns: { turn: number; from: string; status: string; decisions: string[]; content: string }[] = [];
   for (const file of turnFiles) {
     const raw: string = await readFile(join(turnsDir, file), 'utf8');
     const parsed = validate(raw);
@@ -940,6 +940,7 @@ async function generatePlan(session: Session, tracer: Tracer): Promise<void> {
     planTurns.push({
       turn: parsed.data.turn,
       from: parsed.data.from,
+      status: parsed.data.status,
       decisions: parsed.data.decisions || [],
       content: parsed.content,
     });
@@ -959,26 +960,18 @@ async function generatePlan(session: Session, tracer: Tracer): Promise<void> {
     lines.push('');
   }
 
-  // Advisory deliverable report -- extract referenced file paths and check existence.
-  // This is informational only; it does NOT block consensus.
-  const mentionedPaths = extractFilePaths(allDecisions);
+  // Advisory deliverable report -- extract referenced file paths from consensus
+  // decisions only (status: decided), not the full append-only turn history.
+  // Existence is NOT checked here because generatePlan runs before worktree
+  // creation, so session.target_repo may not reflect the correct checkout
+  // (e.g. for PR topics the PR-head branch is only available post-worktree).
+  const consensusDecisions = planTurns.filter(t => t.status === 'decided').flatMap(t => t.decisions);
+  const mentionedPaths = extractFilePaths(consensusDecisions);
   if (mentionedPaths.length > 0) {
-    const { missing } = await verifyDeliverables(mentionedPaths, session.target_repo);
-    const existing = mentionedPaths.filter(p => !missing.includes(p));
-    lines.push('## Deliverables (Advisory)', '');
-    if (existing.length > 0) {
-      lines.push('**Existing files:**');
-      for (const p of existing) lines.push(`- ${p}`);
-      lines.push('');
-    }
-    if (missing.length > 0) {
-      lines.push('**Files to be created:**');
-      for (const p of missing) lines.push(`- ${p}`);
-      lines.push('');
-    }
-    if (missing.length > 0) {
-      tracer.emit('deliverable.report', { turn: 0, phase: 'plan', data: { existing, missing } });
-    }
+    lines.push('## Referenced Deliverables (Advisory)', '');
+    for (const p of mentionedPaths) lines.push(`- ${p}`);
+    lines.push('');
+    tracer.emit('deliverable.report', { turn: 0, phase: 'plan', data: { paths: mentionedPaths } });
   }
 
   lines.push('## Discussion Summary', '');
