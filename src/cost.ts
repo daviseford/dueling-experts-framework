@@ -85,31 +85,65 @@ export function mergeUsage(a: TokenUsage | undefined, b: TokenUsage | undefined)
  * invocation (initial, validation retry, verdict retry). finalize() attaches
  * the accumulated totals to the canonical turn data.
  *
+ * Cost is computed per-invocation (each priced at its own model's rate) and
+ * summed, rather than estimating once from merged tokens at the final model's
+ * rate. This handles mixed-tier retries correctly -- e.g., a fast-tier initial
+ * invocation followed by a full-tier validation retry.
+ *
  * Exported so that tests can exercise the exact same code path the orchestrator uses.
  */
 export class TurnCostTracker {
   private _usage: TokenUsage | undefined;
+  private _costParts: number[] = [];
+  private _hasPerInvocationCosts = false;
 
-  /** Record usage from an invocation result. */
-  record(result: { usage?: TokenUsage }): void {
+  /**
+   * Record usage from an invocation result.
+   * @param result - The invocation result containing optional usage data.
+   * @param modelName - The model used for this invocation (for per-invocation cost estimation).
+   */
+  record(result: { usage?: TokenUsage }, modelName?: string): void {
     this._usage = mergeUsage(this._usage, result.usage);
+    if (result.usage && modelName) {
+      const partCost = estimateCost(modelName, result.usage);
+      if (partCost !== null) {
+        this._costParts.push(partCost);
+        this._hasPerInvocationCosts = true;
+      }
+    }
   }
 
   /**
    * Attach accumulated usage to canonical turn data.
    * Sets tokens_in, tokens_out, and cost_usd fields.
+   * Cost is the sum of per-invocation costs when model names were provided
+   * to record(). Falls back to single-model estimation from data.model_name
+   * when no per-invocation costs were recorded.
    * No-op if no usage was recorded.
    */
   finalize(data: { model_name?: string; tokens_in?: number | null; tokens_out?: number | null; cost_usd?: number | null }): void {
     if (!this._usage) return;
     data.tokens_in = this._usage.input_tokens ?? null;
     data.tokens_out = this._usage.output_tokens ?? null;
-    data.cost_usd = data.model_name ? estimateCost(data.model_name, this._usage) : null;
+    if (this._hasPerInvocationCosts) {
+      const total = this._costParts.reduce((a, b) => a + b, 0);
+      data.cost_usd = Math.round(total * 10000) / 10000;
+    } else {
+      // Fallback: no per-invocation model info (e.g., record() called without modelName)
+      data.cost_usd = data.model_name ? estimateCost(data.model_name, this._usage) : null;
+    }
   }
 
   /** Get accumulated usage (read-only, for inspection/testing). */
   get usage(): TokenUsage | undefined {
     return this._usage;
+  }
+
+  /** Get per-invocation cost sum (read-only, for inspection/testing). Returns null if no per-invocation costs were recorded. */
+  get cost(): number | null {
+    return this._hasPerInvocationCosts
+      ? Math.round(this._costParts.reduce((a, b) => a + b, 0) * 10000) / 10000
+      : null;
   }
 }
 

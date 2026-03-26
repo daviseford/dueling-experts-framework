@@ -322,14 +322,14 @@ describe('orchestrator retry write path (real code)', () => {
     // --- Step 1: Use the REAL TurnCostTracker (same as orchestrator line 315) ---
     const tracker = new TurnCostTracker();
 
-    // Initial invocation (orchestrator line 315: costTracker.record(retryResult))
-    tracker.record({ usage: { input_tokens: 5000, output_tokens: 2000 } });
+    // Initial invocation (orchestrator line 315: costTracker.record(retryResult, modelName))
+    tracker.record({ usage: { input_tokens: 5000, output_tokens: 2000 } }, 'opus');
 
-    // Validation retry (orchestrator line 373: costTracker.record(result))
-    tracker.record({ usage: { input_tokens: 5200, output_tokens: 2100 } });
+    // Validation retry (orchestrator line 373: costTracker.record(result, modelName))
+    tracker.record({ usage: { input_tokens: 5200, output_tokens: 2100 } }, 'opus');
 
-    // Verdict retry (orchestrator line 431: costTracker.record(verdictRetry))
-    tracker.record({ usage: { input_tokens: 4800, output_tokens: 1900 } });
+    // Verdict retry (orchestrator line 431: costTracker.record(verdictRetry, modelName))
+    tracker.record({ usage: { input_tokens: 4800, output_tokens: 1900 } }, 'opus');
 
     const expectedIn = 5000 + 5200 + 4800;
     const expectedOut = 2000 + 2100 + 1900;
@@ -445,5 +445,75 @@ describe('orchestrator retry write path (real code)', () => {
     assert.equal(canonicalData.tokens_in, undefined, 'tokens_in should remain undefined');
     assert.equal(canonicalData.tokens_out, undefined, 'tokens_out should remain undefined');
     assert.equal(canonicalData.cost_usd, undefined, 'cost_usd should remain undefined');
+  });
+
+  it('mixed-tier retries price each invocation at its own model rate', async () => {
+    // Regression test: a fast-tier initial invocation (haiku) followed by a
+    // full-tier validation retry (opus) must price tokens at their respective
+    // rates, not all at the final model's rate.
+    const tracker = new TurnCostTracker();
+
+    // Initial invocation at fast tier (haiku)
+    const fastUsage = { input_tokens: 2000, output_tokens: 1000 };
+    tracker.record({ usage: fastUsage }, 'haiku');
+
+    // Validation retry at full tier (opus)
+    const fullUsage = { input_tokens: 3000, output_tokens: 1500 };
+    tracker.record({ usage: fullUsage }, 'opus');
+
+    // Expected: sum of individual costs, NOT cost(opus, merged_tokens)
+    const haikuCost = estimateCost('haiku', fastUsage)!;
+    const opusCost = estimateCost('opus', fullUsage)!;
+    const expectedCost = Math.round((haikuCost + opusCost) * 10000) / 10000;
+
+    // What the OLD code would compute (all tokens at opus rate) -- this is WRONG
+    const mergedTokens = { input_tokens: 5000, output_tokens: 2500 };
+    const wrongCost = estimateCost('opus', mergedTokens)!;
+
+    // Sanity: the two approaches must differ for this test to be meaningful
+    assert.notEqual(expectedCost, wrongCost,
+      'per-invocation cost and single-model cost must differ for mixed tiers');
+
+    // Finalize and verify
+    const canonicalData: CanonicalTurnData = {
+      id: 'turn-0001-claude',
+      turn: 1,
+      from: 'claude',
+      timestamp: new Date().toISOString(),
+      status: 'decided',
+      phase: 'plan',
+      duration_ms: 10000,
+      model_tier: 'full',
+      model_name: 'opus', // final tier -- the old code would use this for ALL tokens
+    };
+
+    tracker.finalize(canonicalData);
+
+    assert.equal(canonicalData.cost_usd, expectedCost,
+      `cost should be haiku($${haikuCost}) + opus($${opusCost}) = $${expectedCost}, not all-opus $${wrongCost}`);
+    assert.equal(canonicalData.tokens_in, 5000);
+    assert.equal(canonicalData.tokens_out, 2500);
+
+    // Also verify the cost getter matches
+    assert.equal(tracker.cost, expectedCost);
+
+    // Write and recover to verify the per-invocation cost survives round-trip
+    await writeCanonicalTurn(session, 'turn-0001-claude', canonicalData, 'Mixed tier content.');
+    const usageEntries: UsageEntry[] = [{
+      turn: 1,
+      from: 'claude',
+      model: 'opus',
+      tokens_in: canonicalData.tokens_in ?? null,
+      tokens_out: canonicalData.tokens_out ?? null,
+      cost_usd: canonicalData.cost_usd ?? null,
+      duration_ms: 10000,
+    }];
+    const usageArtifact = buildUsageArtifact(usageEntries);
+    await atomicWrite(join(tmpDir, 'artifacts', 'usage.json'), JSON.stringify(usageArtifact, null, 2) + '\n');
+
+    const recovered = await recoverUsageState(session);
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0].cost_usd, expectedCost,
+      'recovered cost should reflect per-invocation pricing, not single-model pricing');
   });
 });

@@ -313,7 +313,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     let result: InvokeOnceResult = retryResult;
     // Accumulate usage across all invocations in this turn (initial + retries)
     const costTracker = new TurnCostTracker();
-    costTracker.record(retryResult);
+    costTracker.record(retryResult, resolveModelForParticipant(nextAgent, session, retryResult.effectiveTier ?? currentTier));
     if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
@@ -371,7 +371,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
           ui.status('turn.retry', { turn: turnCount });
         }
         result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry', 'full');
-        costTracker.record(result);
+        costTracker.record(result, resolveModelForParticipant(nextAgent, session, 'full'));
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
@@ -429,7 +429,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
         // decided without verdict — retry once
         ui.status('review.no.verdict', { turn: turnCount });
         const verdictRetry = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
-        costTracker.record(verdictRetry);
+        costTracker.record(verdictRetry, resolveModelForParticipant(nextAgent, session, 'full'));
         const retryValidation = verdictRetry.ok ? validate(verdictRetry.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
         const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
