@@ -396,26 +396,12 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         bothEverDecided = claudeEverDecided && codexEverDecided;
 
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
-          // Both agents agreed — check deliverable gate before accepting consensus
-          const allTurnDecisions = await collectAllDecisions(session);
-          const mentionedPaths = extractFilePaths(allTurnDecisions);
-          if (mentionedPaths.length > 0) {
-            const { missing } = await verifyDeliverables(mentionedPaths, session.target_repo);
-            if (missing.length > 0) {
-              tracer.emit('deliverable.missing', { turn: turnCount, phase, data: { missing } });
-              ui.status('deliverable.missing', { turn: turnCount, missing });
-              pendingPlanDecided = null;
-              nextAgent = oppositeAgent;
-              continue;
-            }
-          }
-
-          // Consensus reached — all deliverables verified
+          // Both agents agreed — consensus reached
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           ui.status('consensus.reached', { turn: turnCount });
 
           // Generate plan artifact from plan-phase turns
-          await generatePlan(session);
+          await generatePlan(session, tracer);
 
           // Planning mode: no implementation, session ends here
           if (session.mode === 'planning') {
@@ -938,21 +924,7 @@ async function writeDiffArtifact(session: Session, turnCount: number, diff: stri
   await atomicWrite(join(artifactsDir, filename), diff + '\n');
 }
 
-async function collectAllDecisions(session: Session): Promise<string[]> {
-  const turnsDir = join(session.dir, 'turns');
-  const turnFiles = await listTurnFiles(turnsDir);
-  const decisions: string[] = [];
-  for (const file of turnFiles) {
-    const raw = await readFile(join(turnsDir, file), 'utf8');
-    const parsed = validate(raw);
-    if (parsed.valid && parsed.data?.decisions) {
-      decisions.push(...parsed.data.decisions);
-    }
-  }
-  return decisions;
-}
-
-async function generatePlan(session: Session): Promise<void> {
+async function generatePlan(session: Session, tracer: Tracer): Promise<void> {
   const turnsDir: string = join(session.dir, 'turns');
   const turnFiles: string[] = await listTurnFiles(turnsDir);
   if (turnFiles.length === 0) return;
@@ -985,6 +957,28 @@ async function generatePlan(session: Session): Promise<void> {
       lines.push(`- ${d}`);
     }
     lines.push('');
+  }
+
+  // Advisory deliverable report -- extract referenced file paths and check existence.
+  // This is informational only; it does NOT block consensus.
+  const mentionedPaths = extractFilePaths(allDecisions);
+  if (mentionedPaths.length > 0) {
+    const { missing } = await verifyDeliverables(mentionedPaths, session.target_repo);
+    const existing = mentionedPaths.filter(p => !missing.includes(p));
+    lines.push('## Deliverables (Advisory)', '');
+    if (existing.length > 0) {
+      lines.push('**Existing files:**');
+      for (const p of existing) lines.push(`- ${p}`);
+      lines.push('');
+    }
+    if (missing.length > 0) {
+      lines.push('**Files to be created:**');
+      for (const p of missing) lines.push(`- ${p}`);
+      lines.push('');
+    }
+    if (missing.length > 0) {
+      tracer.emit('deliverable.report', { turn: 0, phase: 'plan', data: { existing, missing } });
+    }
   }
 
   lines.push('## Discussion Summary', '');
