@@ -77,6 +77,42 @@ export function mergeUsage(a: TokenUsage | undefined, b: TokenUsage | undefined)
   };
 }
 
+// ── Turn-level usage accumulator ───────────────────────────────────
+
+/**
+ * Accumulates token usage across multiple invocations within a single turn.
+ * The orchestrator creates one tracker per turn and calls record() after each
+ * invocation (initial, validation retry, verdict retry). finalize() attaches
+ * the accumulated totals to the canonical turn data.
+ *
+ * Exported so that tests can exercise the exact same code path the orchestrator uses.
+ */
+export class TurnCostTracker {
+  private _usage: TokenUsage | undefined;
+
+  /** Record usage from an invocation result. */
+  record(result: { usage?: TokenUsage }): void {
+    this._usage = mergeUsage(this._usage, result.usage);
+  }
+
+  /**
+   * Attach accumulated usage to canonical turn data.
+   * Sets tokens_in, tokens_out, and cost_usd fields.
+   * No-op if no usage was recorded.
+   */
+  finalize(data: { model_name?: string; tokens_in?: number | null; tokens_out?: number | null; cost_usd?: number | null }): void {
+    if (!this._usage) return;
+    data.tokens_in = this._usage.input_tokens ?? null;
+    data.tokens_out = this._usage.output_tokens ?? null;
+    data.cost_usd = data.model_name ? estimateCost(data.model_name, this._usage) : null;
+  }
+
+  /** Get accumulated usage (read-only, for inspection/testing). */
+  get usage(): TokenUsage | undefined {
+    return this._usage;
+  }
+}
+
 // ── Provider-specific token parsers ────────────────────────────────
 
 /**

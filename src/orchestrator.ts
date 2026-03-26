@@ -15,7 +15,7 @@ import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
 import { getOtherParticipant, getImplementer, getReviewer } from './roster.js';
-import { estimateCost, buildUsageArtifact, mergeUsage } from './cost.js';
+import { buildUsageArtifact, TurnCostTracker } from './cost.js';
 import type { TokenUsage, UsageEntry } from './cost.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export interface RecoveredState {
   bothEverDecided: boolean;
 }
 
-interface CanonicalTurnData {
+export interface CanonicalTurnData {
   id: string;
   turn: number;
   from: string;
@@ -312,7 +312,8 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
     let result: InvokeOnceResult = retryResult;
     // Accumulate usage across all invocations in this turn (initial + retries)
-    let turnUsage: TokenUsage | undefined = retryResult.usage;
+    const costTracker = new TurnCostTracker();
+    costTracker.record(retryResult);
     if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
@@ -370,7 +371,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
           ui.status('turn.retry', { turn: turnCount });
         }
         result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry', 'full');
-        turnUsage = mergeUsage(turnUsage, result.usage);
+        costTracker.record(result);
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
@@ -428,7 +429,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
         // decided without verdict — retry once
         ui.status('review.no.verdict', { turn: turnCount });
         const verdictRetry = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
-        turnUsage = mergeUsage(turnUsage, verdictRetry.usage);
+        costTracker.record(verdictRetry);
         const retryValidation = verdictRetry.ok ? validate(verdictRetry.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
         const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
@@ -456,12 +457,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     // Attach accumulated token usage and cost estimate from all invocations in this turn.
     // This runs AFTER all retry paths (validation retry, verdict retry) so the totals
     // reflect every invocation, not just the initial one.
-    if (turnUsage) {
-      canonicalData.tokens_in = turnUsage.input_tokens ?? null;
-      canonicalData.tokens_out = turnUsage.output_tokens ?? null;
-      const modelName = canonicalData.model_name;
-      canonicalData.cost_usd = estimateCost(modelName, turnUsage);
-    }
+    costTracker.finalize(canonicalData);
 
     if (normalizedStatus !== validData.status) {
       ui.status('turn.downgrade', { turn: turnCount, claimed: validData.status });
@@ -1043,7 +1039,7 @@ async function invokeWithRetry(agentName: string, session: Session, turnCount: n
 
 // --- Turn file helpers ---
 
-async function writeCanonicalTurn(session: Session, id: string, data: CanonicalTurnData, content: string): Promise<void> {
+export async function writeCanonicalTurn(session: Session, id: string, data: CanonicalTurnData, content: string): Promise<void> {
   const filename = `${id}.md`;
   const turnsDir: string = join(session.dir, 'turns');
   await mkdir(turnsDir, { recursive: true }); // ensure dir exists (agents may interfere)
