@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { getSessionMetadata, start, stop } from '../server.js';
+import { buildDefaultRoster } from '../roster.js';
 
 describe('getSessionMetadata', () => {
   let sessionDir: string;
@@ -120,6 +121,7 @@ describe('/api/turns response shape', () => {
       base_ref: null,
       pr_url: 'https://github.com/org/repo/pull/7',
       pr_number: 7,
+      roster: buildDefaultRoster('claude', 'claude'),
     };
 
     const mockController = {

@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
-import { invoke, resolveModelName } from './agent.js';
+import { invoke, resolveModelName, resolveModelForParticipant } from './agent.js';
 import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
-import type { Session, AgentName, SessionPhase } from './session.js';
+import type { Session, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { readInterjections, checkEndRequest } from './ipc.js';
 import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
@@ -14,6 +14,9 @@ import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from 
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
+import { getOtherParticipant, getImplementer, getReviewer } from './roster.js';
+import { estimateCost, buildUsageArtifact } from './cost.js';
+import type { TokenUsage, UsageEntry } from './cost.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -23,12 +26,13 @@ interface InvokeOnceResult {
   rawOutput: string;
   reason: string;
   attemptDir?: string;
+  usage?: TokenUsage;
 }
 
 export interface Controller {
   readonly isPaused: boolean;
   readonly endRequested: boolean;
-  readonly thinking: { agent: AgentName; since: string; model: string } | null;
+  readonly thinking: { agent: string; since: string; model: string } | null;
   readonly phase: string;
   interject(content: string): void;
   requestEnd(): void;
@@ -47,8 +51,8 @@ interface RunOptions {
 }
 
 export interface RecoveredState {
-  pendingPlanDecided: AgentName | null;
-  pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null;
+  pendingPlanDecided: string | null;
+  pendingReviewDecided: { agent: string; verdict: 'approve' | 'fix' } | null;
   reviewLoopCount: number;
   bothEverDecided: boolean;
 }
@@ -65,6 +69,9 @@ interface CanonicalTurnData {
   decisions?: string[];
   model_tier?: ModelTier;
   model_name?: string;
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  cost_usd?: number | null;
 }
 
 interface DecisionEntry {
@@ -82,7 +89,7 @@ interface DecisionEntry {
 export function selectModelTier(
   phase: SessionPhase,
   noFast: boolean,
-  pendingPlanDecided: AgentName | null,
+  pendingPlanDecided: string | null,
   bothEverDecided: boolean,
 ): ModelTier {
   if (noFast) return 'full';
@@ -114,26 +121,29 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   });
 
   let turnCount: number = session.current_turn;
-  let nextAgent: AgentName = session.next_agent;
+  let nextAgent: string = session.next_agent;
   let endRequested = false;
 
   // Phase tracking
   let phase: SessionPhase = session.phase || 'plan';
 
-  // Consensus tracking for plan phase — derive from turn history on recovery
-  let pendingPlanDecided: AgentName | null = null;
+  // Consensus tracking for plan phase -- derive from turn history on recovery
+  let pendingPlanDecided: string | null = null;
 
-  // Review consensus tracking — separate from plan consensus
-  let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
+  // Review consensus tracking -- separate from plan consensus
+  let pendingReviewDecided: { agent: string; verdict: 'approve' | 'fix' } | null = null;
 
-  // Review loop counter — increments only on review consensus fix transitions
+  // Review loop counter -- increments only on review consensus fix transitions
   let reviewLoopCount = 0;
 
-  // Track whether both agents have ever emitted decided/done in the plan phase.
-  // Monotonically additive — once true, never cleared (even on contested consensus).
-  let claudeEverDecided = false;
-  let codexEverDecided = false;
+  // Track which participants have ever emitted decided/done in the plan phase.
+  // Uses a Set instead of per-agent booleans -- supports N participants.
+  const decidedParticipants = new Set<string>();
   let bothEverDecided = false;
+
+  // Cost tracking -- accumulate per-turn usage entries
+  const usageEntries: UsageEntry[] = [];
+  let cumulativeCostUsd = 0;
 
   // Track consecutive empty-diff implement attempts to prevent infinite loops
   let emptyDiffRetries = 0;
@@ -146,8 +156,10 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     pendingReviewDecided = recovered.pendingReviewDecided;
     reviewLoopCount = recovered.reviewLoopCount;
     bothEverDecided = recovered.bothEverDecided;
-    // Per-agent tracking not needed after recovery — bothEverDecided is sufficient
-    if (bothEverDecided) { claudeEverDecided = true; codexEverDecided = true; }
+    // Mark all roster participants as decided if bothEverDecided (recovery shortcut)
+    if (bothEverDecided) {
+      for (const p of session.roster) decidedParticipants.add(p.id);
+    }
   }
 
   // Apply pending review decision from recovery before entering the loop.
@@ -182,7 +194,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   let isPaused = false;
   let humanResponseResolve: ((content: string) => void) | null = null;
 
-  let thinkingAgent: AgentName | null = null;
+  let thinkingAgent: string | null = null;
   let thinkingSince: string | null = null;
   let thinkingModel: string = '';
 
@@ -265,14 +277,19 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
 
-    // In implement phase, only the impl_model agent takes turns
+    // In implement phase, only the implementer takes turns (roster lookup)
     if (phase === 'implement') {
-      nextAgent = session.impl_model;
+      nextAgent = getImplementer(session.roster).id;
     }
-    // In review phase, only the non-impl agent takes turns
+    // In review phase, only the reviewer takes turns (roster lookup)
     if (phase === 'review') {
-      const implModel: AgentName = session.impl_model;
-      nextAgent = implModel === 'claude' ? 'codex' : 'claude';
+      nextAgent = getReviewer(session.roster).id;
+    }
+
+    // Budget enforcement -- check before invoking
+    if (session.budget && cumulativeCostUsd >= session.budget) {
+      ui.status('end.requested', { turn: turnCount });
+      break;
     }
 
     // Select model tier for this turn (may be upgraded to 'full' on validation retry)
@@ -281,7 +298,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
-    thinkingModel = resolveModelName(nextAgent, currentTier);
+    thinkingModel = resolveModelForParticipant(nextAgent, session, currentTier);
     atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: thinkingAgent, since: thinkingSince, model: thinkingModel }) + '\n').catch(() => {});
     const invokeStart: number = Date.now();
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
@@ -384,7 +401,15 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
       canonicalData.decisions = validData.decisions;
     }
     canonicalData.model_tier = currentTier;
-    canonicalData.model_name = resolveModelName(nextAgent, currentTier);
+    canonicalData.model_name = resolveModelForParticipant(nextAgent, session, currentTier);
+
+    // Attach token usage and cost estimate if available
+    if (retryResult.usage) {
+      canonicalData.tokens_in = retryResult.usage?.input_tokens ?? null;
+      canonicalData.tokens_out = retryResult.usage?.output_tokens ?? null;
+      const modelName = canonicalData.model_name;
+      canonicalData.cost_usd = retryResult.usage ? estimateCost(modelName, retryResult.usage) : null;
+    }
 
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
@@ -433,7 +458,29 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     tracer.emit('turn.written', { turn: turnCount, agent: nextAgent, phase, data: { id: canonicalId, status: canonicalData.status, duration_ms: durationMs } });
     ui.status('turn.written', { turn: turnCount, phase, tier: currentTier, id: canonicalId, status: canonicalData.status });
 
-    const oppositeAgent: AgentName = nextAgent === 'claude' ? 'codex' : 'claude';
+    // Accumulate usage entry for cost tracking
+    if (canonicalData.tokens_in !== undefined || canonicalData.cost_usd !== undefined) {
+      usageEntries.push({
+        turn: turnCount,
+        from: nextAgent,
+        model: canonicalData.model_name ?? '',
+        tokens_in: canonicalData.tokens_in ?? null,
+        tokens_out: canonicalData.tokens_out ?? null,
+        cost_usd: canonicalData.cost_usd ?? null,
+        duration_ms: durationMs,
+      });
+      cumulativeCostUsd += canonicalData.cost_usd ?? 0;
+    }
+
+    // Write usage artifact after each turn (atomic)
+    if (usageEntries.length > 0) {
+      const usageArtifact = buildUsageArtifact(usageEntries);
+      const artifactsDir = join(session.dir, 'artifacts');
+      await mkdir(artifactsDir, { recursive: true });
+      await atomicWrite(join(artifactsDir, 'usage.json'), JSON.stringify(usageArtifact, null, 2) + '\n');
+    }
+
+    const oppositeAgent = getOtherParticipant(session.roster, nextAgent).id;
 
     // === Phase-specific post-turn logic ===
 
@@ -443,7 +490,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
         next_agent: oppositeAgent,
       });
 
-      // Check for consensus signaling — treat 'done' as 'decided' in edit mode.
+      // Check for consensus signaling -- treat 'done' as 'decided' in edit mode.
       // Also treat 'needs_human' as 'decided': plan-phase agents have read-only
       // access, so needs_human typically means the agent wants to implement
       // changes rather than genuinely needing human input.
@@ -455,10 +502,9 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
       }
 
       if (effectiveStatus === 'decided') {
-        // Track per-agent decided for fast-model heuristic
-        if (nextAgent === 'claude') claudeEverDecided = true;
-        else codexEverDecided = true;
-        bothEverDecided = claudeEverDecided && codexEverDecided;
+        // Track per-participant decided for fast-model heuristic (Set-based)
+        decidedParticipants.add(nextAgent);
+        bothEverDecided = session.roster.every(p => decidedParticipants.has(p.id));
 
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
           // Both agents agreed — consensus reached
@@ -557,7 +603,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
         phase = 'review';
         session.phase = phase;
         pendingReviewDecided = null;
-        const reviewer: AgentName = session.impl_model === 'claude' ? 'codex' : 'claude';
+        const reviewer = getReviewer(session.roster).id;
         nextAgent = reviewer;
         tracer.emit('phase.changed', { turn: turnCount, phase, data: { from_phase: 'implement', to_phase: 'review' } });
         await updateSession(session.dir, {
@@ -764,11 +810,11 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
   const turnsDir: string = join(session.dir, 'turns');
   const turnFiles: string[] = await listTurnFiles(turnsDir);
 
-  let pendingPlanDecided: AgentName | null = null;
-  let pendingReviewDecided: { agent: AgentName; verdict: 'approve' | 'fix' } | null = null;
+  let pendingPlanDecided: string | null = null;
+  let pendingReviewDecided: { agent: string; verdict: 'approve' | 'fix' } | null = null;
   let reviewLoopCount = 0;
-  let claudeDecided = false;
-  let codexDecided = false;
+  // Track which participants have ever decided (Set-based, supports N participants)
+  const decidedParticipants = new Set<string>();
 
   for (const file of turnFiles) {
     const raw: string = await readFile(join(turnsDir, file), 'utf8');
@@ -780,35 +826,34 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     const verdict = (parsed.data as Record<string, unknown>).verdict as 'approve' | 'fix' | undefined;
 
     if (turnPhase === 'plan' || turnPhase === 'debate') {
-      // Plan-phase consensus tracking (two-agent model)
+      // Plan-phase consensus tracking (generic participant model)
       if (status === 'decided' || status === 'done') {
-        // Track per-agent decided for fast-model heuristic (monotonically additive)
-        if (from === 'claude') claudeDecided = true;
-        else if (from === 'codex') codexDecided = true;
+        // Track per-participant decided for fast-model heuristic (monotonically additive)
+        decidedParticipants.add(from);
 
         if (pendingPlanDecided && pendingPlanDecided !== from) {
-          // Both agents agreed — plan consensus reached
+          // Both agents agreed -- plan consensus reached
           pendingPlanDecided = null;
         } else {
-          pendingPlanDecided = from as AgentName;
+          pendingPlanDecided = from;
         }
       } else if (status === 'complete' && pendingPlanDecided) {
-        // Contested — clear pending
+        // Contested -- clear pending
         pendingPlanDecided = null;
       }
     } else if (turnPhase === 'review') {
       // Review-phase: single-agent verdict model.
       // Only track verdicts we can trust:
-      // - Legacy 'done' → approve (compat shim)
-      // - 'decided' with verdict → use it
-      // - 'decided' without verdict → skip (the live loop would have errored/retried)
+      // - Legacy 'done' -> approve (compat shim)
+      // - 'decided' with verdict -> use it
+      // - 'decided' without verdict -> skip (the live loop would have errored/retried)
       if (status === 'done') {
         // Legacy compat: done in review = approve
-        pendingReviewDecided = { agent: from as AgentName, verdict: 'approve' };
+        pendingReviewDecided = { agent: from, verdict: 'approve' };
       } else if (status === 'decided' && verdict) {
-        pendingReviewDecided = { agent: from as AgentName, verdict };
+        pendingReviewDecided = { agent: from, verdict };
       }
-      // decided without verdict: the live loop errored — don't set pending
+      // decided without verdict: the live loop errored -- don't set pending
     } else if (turnPhase === 'implement') {
       // An implement turn after a pending review fix means the transition completed
       if (pendingReviewDecided && pendingReviewDecided.verdict === 'fix') {
@@ -818,7 +863,11 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
     }
   }
 
-  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided: claudeDecided && codexDecided };
+  // Check if all roster participants have ever decided
+  const rosterIds = session.roster ? session.roster.map(p => p.id) : ['claude', 'codex'];
+  const bothEverDecided = rosterIds.every(id => decidedParticipants.has(id));
+
+  return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided };
 }
 
 // --- Status normalization ---
@@ -852,7 +901,7 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: ModelTier): Promise<InvokeOnceResult> {
+async function invokeOnce(agentName: string, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: ModelTier): Promise<InvokeOnceResult> {
   let attemptIdx = 0;
   if (turnCount !== undefined && attemptCounters) {
     const key = `${turnCount}-${agentName}`;
@@ -900,13 +949,13 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
       phase: session.phase,
       data: { attempt_dir: attemptDir, exit_code: result.exitCode, elapsed_ms: elapsedMs, timed_out: result.timedOut, ok: !failed },
     });
-    return { ok: !failed, output: result.output, rawOutput: result.output, reason, attemptDir };
+    return { ok: !failed, output: result.output, rawOutput: result.output, reason, attemptDir, usage: result.usage };
   }
 
-  return { ok: !failed, output: result.output, rawOutput: result.output, reason };
+  return { ok: !failed, output: result.output, rawOutput: result.output, reason, usage: result.usage };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
+async function invokeWithRetry(agentName: string, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
   let activity = ui.startActivity(turnCount, agentName, undefined, tier);
   let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
   activity.stop();
@@ -952,7 +1001,7 @@ async function savePromptForTurn(session: Session, canonicalId: string): Promise
   }
 }
 
-async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: ModelTier): Promise<void> {
+async function writeErrorTurn(session: Session, turnCount: number, agent: string, reason: string, rawOutput: string, modelTier?: ModelTier): Promise<void> {
   const id = `turn-${String(turnCount).padStart(4, '0')}-${agent}`;
   const data: CanonicalTurnData = {
     id,
@@ -964,7 +1013,11 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
   };
   if (modelTier) {
     data.model_tier = modelTier;
-    data.model_name = resolveModelName(agent, modelTier);
+    try {
+      data.model_name = resolveModelForParticipant(agent, session, modelTier);
+    } catch {
+      data.model_name = modelTier;
+    }
   }
   // Sanitize rawOutput to prevent code fence escape
   const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');

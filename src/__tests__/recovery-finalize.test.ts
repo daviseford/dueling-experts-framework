@@ -9,6 +9,7 @@ import yaml from 'js-yaml';
 import { run } from '../orchestrator.js';
 import { readEvents, listAttempts } from '../trace.js';
 import type { Session } from '../session.js';
+import { buildDefaultRoster } from '../roster.js';
 
 /**
  * Helper: write a session.json file for the given session object.
@@ -62,6 +63,7 @@ function makeSession(dir: string, overrides: Partial<Session> = {}): Session {
     base_ref: null,
     pr_url: null,
     pr_number: null,
+    roster: buildDefaultRoster('claude', 'claude'),
     ...overrides,
   };
 }

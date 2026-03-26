@@ -2,7 +2,9 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listTurnFiles } from './session.js';
 import { validate } from './validation.js';
-import type { Session, AgentName, SessionPhase } from './session.js';
+import type { Session, SessionPhase } from './session.js';
+import type { Participant } from './roster.js';
+import { getProvider } from './agent.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
@@ -19,24 +21,57 @@ interface TurnContent {
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const AGENT_NAMES: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex' };
-
 /** Shared rule appended to all prompt templates to prevent encoding issues. */
 const ASCII_RULE = 'Use ASCII-safe punctuation only. Use - or -- instead of em-dashes or en-dashes. Do not use Unicode special characters.';
 
-// Budget: ~100K tokens × 4 chars/token = 400K chars.
+// Budget: ~100K tokens x 4 chars/token = 400K chars.
 // Must stay within Haiku's 200K-token context window when fast-tier is active.
 // Code-heavy content may compress to ~3 chars/token (~133K tokens). Reserve headroom
 // for the model's response.
 const CHAR_BUDGET = 400_000;
 
-function planPrompt(agent: AgentName, topic: string): string {
-  const other = agent === 'claude' ? 'Codex' : 'Claude';
-  return `You are ${AGENT_NAMES[agent]}, participating in a structured planning conversation with another AI agent (${other}).
+// ── Participant resolution ──────────────────────────────────────────
+
+/**
+ * Resolve the current participant and the "other" participant from the session.
+ * Uses the roster if present, falls back to provider registry for display names.
+ */
+function resolveParticipants(session: Session): { self: Participant; other: Participant } {
+  const roster = session.roster;
+  if (roster && roster.length >= 2) {
+    const self = roster.find(p => p.id === session.next_agent);
+    if (!self) throw new Error(`Participant "${session.next_agent}" not found in roster`);
+    const other = roster.find(p => p.id !== session.next_agent);
+    if (!other) throw new Error('No other participant found in roster');
+    return { self, other };
+  }
+  // Fallback for sessions without a valid roster
+  const provider = getProvider(session.next_agent);
+  if (!provider) throw new Error(`Unknown agent: "${session.next_agent}". No matching provider or roster entry found.`);
+  const selfParticipant: Participant = {
+    id: session.next_agent,
+    provider: session.next_agent,
+    role: 'planner',
+    displayName: provider.displayName,
+  };
+  const otherParticipant: Participant = {
+    id: 'unknown',
+    provider: 'unknown',
+    role: 'reviewer',
+    displayName: 'Other Agent',
+  };
+  return { self: selfParticipant, other: otherParticipant };
+}
+
+// ── Prompt templates ────────────────────────────────────────────────
+
+function planPrompt(self: Participant, other: Participant, topic: string): string {
+  const personaLine = self.persona ? `\n\nYour persona: ${self.persona}\n` : '';
+  return `You are ${self.displayName}, participating in a structured planning conversation with another AI agent (${other.displayName}).${personaLine}
 You are collaborating on: ${topic}
 
 ## Rules
-- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status (complete | needs_human | done | decided).
+- Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${self.id}"), timestamp (ISO-8601), status (complete | needs_human | done | decided).
 - Optional frontmatter: decisions (array of strings -- key decisions made in this turn).
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
 - Challenge the other agent's assumptions. Don't just agree -- push for better solutions.
@@ -48,12 +83,12 @@ You are collaborating on: ${topic}
 - ${ASCII_RULE}`;
 }
 
-function implementPrompt(agent: AgentName, topic: string, decisions: string[]): string {
+function implementPrompt(self: Participant, topic: string, decisions: string[]): string {
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(No decisions recorded -- implement based on the debate context above.)';
 
-  return `You are ${AGENT_NAMES[agent]}, implementing the decisions from a debate on: ${topic}
+  return `You are ${self.displayName}, implementing the decisions from a debate on: ${topic}
 
 ## Debate Decisions
 ${decisionsList}
@@ -65,15 +100,14 @@ Make the changes directly. Do not describe what you would do -- actually do it.
 
 ## Rules
 - Respond with YAML frontmatter followed by a brief markdown summary of what you implemented.
-- Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
+- Required frontmatter fields: id, turn, from (must be "${self.id}"), timestamp (ISO-8601), status.
 - Set status: complete when your implementation is done.
 - Summarize the changes you made (files created/modified, commands run).
 - Do NOT include anything before the opening --- of the frontmatter.
 - ${ASCII_RULE}`;
 }
 
-function reviewPrompt(agent: AgentName, topic: string, decisions: string[], diff: string | null): string {
-  const other = agent === 'claude' ? 'Codex' : 'Claude';
+function reviewPrompt(self: Participant, other: Participant, topic: string, decisions: string[], diff: string | null): string {
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
     : '(No decisions recorded.)';
@@ -92,7 +126,7 @@ function reviewPrompt(agent: AgentName, topic: string, decisions: string[], diff
     }
   }
 
-  return `You are ${AGENT_NAMES[agent]}, reviewing an implementation by ${other} for: ${topic}
+  return `You are ${self.displayName}, reviewing an implementation by ${other.displayName} for: ${topic}
 
 ## Debate Decisions
 ${decisionsList}
@@ -108,7 +142,7 @@ Review the implementation diff against the debate decisions. Check:
 
 ## Rules
 - Respond with YAML frontmatter followed by your review.
-- Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
+- Required frontmatter fields: id, turn, from (must be "${self.id}"), timestamp (ISO-8601), status.
 - If the implementation is correct and complete, set status: decided and verdict: approve.
 - If fixes are needed, set status: decided and verdict: fix, then describe what needs to change. The implementing agent will get another turn.
 - The verdict field is REQUIRED when status is decided. Must be either "approve" or "fix".
@@ -117,20 +151,22 @@ Review the implementation diff against the debate decisions. Check:
 - ${ASCII_RULE}`;
 }
 
+// ── Main assembly ───────────────────────────────────────────────────
+
 /**
  * Assemble the full prompt for an agent invocation.
  * Uses a character budget to prevent exceeding model context windows.
  * Oldest turns are dropped first; their decisions are preserved in a summary.
  */
 export async function assemble(session: Session): Promise<string> {
-  const { topic, mode, next_agent, dir, phase } = session;
+  const { topic, mode, dir, phase } = session;
 
   if (mode !== 'planning' && mode !== 'edit') {
     throw new Error(`Unknown mode: "${mode}". Supported: edit, planning`);
   }
-  if (!AGENT_NAMES[next_agent]) {
-    throw new Error(`Unknown agent: "${next_agent}". Supported: claude, codex`);
-  }
+
+  // Resolve participants from roster
+  const { self, other } = resolveParticipants(session);
 
   // Read all existing turns
   const turnsDir = join(dir, 'turns');
@@ -161,11 +197,11 @@ export async function assemble(session: Session): Promise<string> {
   // Build fixed parts based on phase
   let systemPrompt: string;
   if (phase === 'implement') {
-    systemPrompt = implementPrompt(next_agent, topic, allDecisions);
+    systemPrompt = implementPrompt(self, topic, allDecisions);
   } else if (phase === 'review') {
-    systemPrompt = reviewPrompt(next_agent, topic, allDecisions, diff);
+    systemPrompt = reviewPrompt(self, other, topic, allDecisions, diff);
   } else {
-    systemPrompt = planPrompt(next_agent, topic);
+    systemPrompt = planPrompt(self, other, topic);
   }
 
   const sessionBrief = `## Session Brief\n**Topic:** ${topic}\n**Mode:** ${mode}\n**Phase:** ${phase}\n`;

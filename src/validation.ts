@@ -3,8 +3,8 @@ import matter from 'gray-matter';
 // ── Public types ──────────────────────────────────────────────────────
 
 export type TurnStatus = 'complete' | 'needs_human' | 'done' | 'decided' | 'error';
-export type AgentName = 'claude' | 'codex';
-export type TurnFrom = 'claude' | 'codex' | 'human' | 'system';
+/** TurnFrom is now a string -- participant IDs are dynamic (registry + roster). */
+export type TurnFrom = string;
 
 export type ReviewVerdict = 'approve' | 'fix';
 
@@ -29,7 +29,6 @@ export interface ValidationResult {
 // ── Constants ─────────────────────────────────────────────────────────
 
 const VALID_STATUS = /^(complete|needs_human|done|decided|error)$/;
-const VALID_FROM = /^(claude|codex|human|system)$/;
 const VALID_VERDICT = /^(approve|fix)$/;
 
 // Disable gray-matter's JavaScript/CoffeeScript engines to prevent RCE via agent output.
@@ -154,9 +153,9 @@ export function validate(raw: string, expectedFrom?: string): ValidationResult {
     errors.push(`Invalid status: "${data.status}". Must be: complete, needs_human, done, decided, or error`);
   }
 
-  // Validate from field
-  if (data.from && !VALID_FROM.test(String(data.from))) {
-    errors.push(`Invalid from: "${data.from}". Must be: claude, codex, human, or system`);
+  // Validate from field -- accept any non-empty string (participant IDs are dynamic)
+  if (data.from !== undefined && data.from !== null && String(data.from).trim() === '') {
+    errors.push(`Invalid from: "${data.from}". Must be a non-empty string`);
   }
 
   // Warn if agent claims to be someone else (orchestrator overrides, but log it)

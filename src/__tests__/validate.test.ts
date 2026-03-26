@@ -36,11 +36,11 @@ describe('validate', () => {
     assert.ok(result.errors.some(e => e.includes('Invalid status')));
   });
 
-  it('rejects invalid from', () => {
+  it('accepts any non-empty from (dynamic agent names)', () => {
     const raw = validTurn.replace('from: claude', 'from: gpt4');
     const result = validate(raw);
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some(e => e.includes('Invalid from')));
+    assert.equal(result.valid, true);
+    assert.equal(result.data!.from, 'gpt4');
   });
 
   it('accepts decided status', () => {
