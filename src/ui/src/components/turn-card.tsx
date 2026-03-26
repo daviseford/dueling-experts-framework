@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronsUpDown, Clock } from "lucide-react"
+import { ChevronRight, ChevronsUpDown, Clock, ListChecks } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 const LABEL_MAP: Record<string, string> = {
@@ -166,6 +166,26 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
               {turn.content}
             </pre>
           </div>
+          {turn.decisions?.length > 0 && (
+            <div className="border-t border-border/30 px-4 py-2.5">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <ListChecks className="h-3 w-3 text-muted-foreground/60" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Decisions
+                </span>
+              </div>
+              <ul className="space-y-1 pl-5">
+                {turn.decisions.map((d, i) => (
+                  <li
+                    key={i}
+                    className="list-disc text-[12px] leading-relaxed text-foreground/70 marker:text-muted-foreground/30"
+                  >
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex justify-center border-t border-border/20 py-1.5">
             <Button
               variant="ghost"

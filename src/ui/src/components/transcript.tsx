@@ -4,7 +4,14 @@ import { TurnCard } from "./turn-card"
 import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
+import { DecisionLog } from "./decision-log"
 import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
+
+interface DecisionEntry {
+  text: string
+  from: Turn["from"]
+  turn: number
+}
 
 interface TranscriptProps {
   turns: Turn[]
@@ -41,17 +48,17 @@ export function Transcript({
   const turnCount = turns.length
   const thinkingAgent = thinking?.agent ?? null
 
-  // Derive de-duplicated decisions from turns, preferring "decided" status turns
-  const decisions = useMemo(() => {
+  // Derive de-duplicated decisions with attribution from turns, preferring "decided" status turns
+  const decisionEntries = useMemo(() => {
     const seen = new Set<string>()
-    const result: string[] = []
+    const result: DecisionEntry[] = []
     // First pass: decided turns (final consensus)
     for (const t of turns) {
       if (t.status === "decided" && t.decisions?.length) {
         for (const d of t.decisions) {
           if (!seen.has(d)) {
             seen.add(d)
-            result.push(d)
+            result.push({ text: d, from: t.from, turn: t.turn })
           }
         }
       }
@@ -63,7 +70,7 @@ export function Transcript({
           for (const d of t.decisions) {
             if (!seen.has(d)) {
               seen.add(d)
-              result.push(d)
+              result.push({ text: d, from: t.from, turn: t.turn })
             }
           }
         }
@@ -71,6 +78,11 @@ export function Transcript({
     }
     return result
   }, [turns])
+
+  const summaryDecisions = useMemo(
+    () => decisionEntries.map((d) => d.text),
+    [decisionEntries]
+  )
 
   // Extract implementation summaries from implement-phase turns
   const implementations = useMemo(() => {
@@ -118,6 +130,9 @@ export function Transcript({
         {pendingInterjections.map((p) => (
           <PendingTurnCard key={p.id} content={p.content} />
         ))}
+        {sessionStatus !== "completed" && decisionEntries.length > 0 && (
+          <DecisionLog entries={decisionEntries} phase={phase} />
+        )}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />
         )}
@@ -129,7 +144,7 @@ export function Transcript({
             prNumber={prNumber}
             turnsPath={turnsPath}
             artifactsPath={artifactsPath}
-            decisions={decisions}
+            decisions={summaryDecisions}
             implementations={implementations}
           />
         )}
