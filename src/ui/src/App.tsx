@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Toaster } from "@/components/ui/sonner"
 import { useSessionList } from "@/hooks/use-explorer"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { endSession } from "@/lib/api"
 import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
@@ -8,22 +9,10 @@ import { SessionPanel } from "@/components/session-panel"
 import { EmptyState } from "@/components/empty-state"
 import { cn } from "@/lib/utils"
 import type { ViewMode } from "@/lib/types"
+
 const VIEW_MODE_KEY = "def-view-mode"
 const DISMISSED_KEY = "def-dismissed-sessions"
 const MIN_GRID_WIDTH = 768
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(query).matches : false
-  )
-  useEffect(() => {
-    const mql = window.matchMedia(query)
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
-    mql.addEventListener("change", handler)
-    return () => mql.removeEventListener("change", handler)
-  }, [query])
-  return matches
-}
 
 export default function App() {
   const {
@@ -38,7 +27,7 @@ export default function App() {
     [sessions, selectedSessionId]
   )
   const topic = selectedSession?.topic ?? ""
-  const sessionStatus = (selectedSession?.session_status ?? "active") as "active" | "paused" | "completed" | "interrupted"
+  const sessionStatus = selectedSession?.session_status ?? "active"
 
   const handleEndSession = useCallback(async () => {
     if (selectedSessionId) await endSession(selectedSessionId)

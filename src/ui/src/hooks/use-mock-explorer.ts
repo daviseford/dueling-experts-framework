@@ -67,6 +67,5 @@ export function useMockSessionList(): SessionListState {
     sessions: MOCK_SESSIONS,
     selectedSessionId,
     setSelectedSessionId,
-    owningSessionId: null,
   }
 }

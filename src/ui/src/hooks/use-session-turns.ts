@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchSessionTurns } from "@/lib/api"
-import type { Turn, ThinkingState, SessionPhase, PollingState, SessionSummary } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase, SessionStatus, PollingState, SessionSummary } from "@/lib/types"
 import { isMock } from "@/lib/env"
 
 const TURNS_POLL_INTERVAL = 3000
@@ -25,7 +25,7 @@ function formatDuration(ms: number): string {
 function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enabled = true): PollingState {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sid, setSid] = useState("")
-  const [sessionStatus, setSessionStatus] = useState<"active" | "paused" | "completed" | "interrupted">("active")
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("active")
   const [topic, setTopic] = useState("")
   const [turnCount, setTurnCount] = useState(0)
   const [thinking, setThinking] = useState<ThinkingState | null>(null)
@@ -150,10 +150,12 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
     // pollTurns is stable (empty deps) — only restart on sessionId or enabled change
   }, [sessionId, pollTurns, enabled])
 
-  // Elapsed time ticker
+  // Elapsed time ticker — skip updates for completed/interrupted sessions
   useEffect(() => {
     if (!enabled) return
     elapsedIntervalRef.current = setInterval(() => {
+      const status = lastSessionStatusRef.current
+      if (status === "completed" || status === "interrupted") return
       const t = thinkingRef.current
       if (t) {
         setThinkingElapsed(elapsedStr(t.since))
@@ -197,7 +199,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
   }, [])
 
   const session = sessions.find(s => s.id === sessionId)
-  const status = (session?.session_status ?? "completed") as PollingState["sessionStatus"]
+  const status = session?.session_status ?? "completed"
   const statusText = status === "completed" ? "Session completed" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
 
   return {
@@ -210,7 +212,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     thinkingElapsed: status === "active" ? "15s" : "",
     statusText,
     sessionTimer: "58m 0s",
-    phase: (session?.phase ?? "review") as PollingState["phase"],
+    phase: session?.phase ?? "review",
     branchName: session?.branch_name ?? null,
     prUrl: session?.pr_url ?? null,
     prNumber: sessionId === "mock-session-1" ? 42 : null,

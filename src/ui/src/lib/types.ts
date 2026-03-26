@@ -24,7 +24,7 @@ export type SessionPhase = "plan" | "debate" | "implement" | "review"
 export interface TurnsResponse {
   turns: Turn[]
   session_id: string
-  session_status: "active" | "paused" | "completed" | "interrupted"
+  session_status: SessionStatus
   phase: SessionPhase
   topic: string
   turn_count: number
@@ -42,12 +42,14 @@ export interface PendingInterjection {
   content: string
 }
 
+export type SessionStatus = "active" | "paused" | "completed" | "interrupted"
+
 export interface SessionSummary {
   id: string
   topic: string
   created: string
-  session_status: string
-  phase: string
+  session_status: SessionStatus
+  phase: SessionPhase
   current_turn: number
   mode: string
   branch_name: string | null
@@ -67,13 +69,12 @@ export interface SessionListState {
   sessions: SessionSummary[]
   selectedSessionId: string
   setSelectedSessionId: (id: string) => void
-  owningSessionId: string | null
 }
 
 export interface PollingState {
   turns: Turn[]
   sessionId: string
-  sessionStatus: "active" | "paused" | "completed" | "interrupted"
+  sessionStatus: SessionStatus
   topic: string
   turnCount: number
   thinking: ThinkingState | null

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ThemeToggle } from "./theme-toggle"
 import { LayoutGrid, Maximize2, Radio } from "lucide-react"
-import type { SessionSummary, ViewMode } from "@/lib/types"
+import type { SessionSummary, SessionStatus, ViewMode } from "@/lib/types"
 
 interface SessionHeaderProps {
   topic: string
@@ -22,7 +22,7 @@ interface SessionHeaderProps {
   sessions: SessionSummary[]
   viewMode?: ViewMode
   canShowGrid?: boolean
-  sessionStatus?: "active" | "paused" | "completed" | "interrupted"
+  sessionStatus?: SessionStatus
   onToggleViewMode?: () => void
   onEndSession?: () => void
 }

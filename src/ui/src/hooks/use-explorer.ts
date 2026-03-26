@@ -8,7 +8,6 @@ const SESSIONS_POLL_INTERVAL = 5000
 
 function useLiveSessionList(enabled = true): SessionListState {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
-  const [owningSessionId, setOwningSessionId] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState("")
 
   const sessionsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -27,7 +26,6 @@ function useLiveSessionList(enabled = true): SessionListState {
     try {
       const data = await fetchSessions()
       setSessions(data.sessions)
-      setOwningSessionId(data.owning_session_id)
 
       // Auto-select: prefer first active/paused, then first non-interrupted, then first session
       if (!selectedRef.current && data.sessions.length > 0) {
@@ -61,7 +59,6 @@ function useLiveSessionList(enabled = true): SessionListState {
     sessions,
     selectedSessionId,
     setSelectedSessionId,
-    owningSessionId,
   }
 }
 
