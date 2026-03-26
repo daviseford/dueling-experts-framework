@@ -55,6 +55,21 @@ export function estimateCost(modelName: string, usage: TokenUsage): number | nul
   return Math.round((inputCost + outputCost) * 10000) / 10000; // 4 decimal places
 }
 
+/**
+ * Merge two TokenUsage records by summing their token counts.
+ * Used to accumulate usage across retries within a single turn.
+ * Returns undefined if both inputs are undefined.
+ */
+export function mergeUsage(a: TokenUsage | undefined, b: TokenUsage | undefined): TokenUsage | undefined {
+  if (!a && !b) return undefined;
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    input_tokens: (a.input_tokens ?? 0) + (b.input_tokens ?? 0),
+    output_tokens: (a.output_tokens ?? 0) + (b.output_tokens ?? 0),
+  };
+}
+
 // ── Provider-specific token parsers ────────────────────────────────
 
 /**

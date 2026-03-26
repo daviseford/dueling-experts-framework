@@ -7,6 +7,8 @@ import yaml from 'js-yaml';
 import { recoverUsageState } from '../orchestrator.js';
 import type { Session } from '../session.js';
 import { buildDefaultRoster } from '../roster.js';
+import { mergeUsage, estimateCost, buildUsageArtifact } from '../cost.js';
+import type { TokenUsage, UsageEntry } from '../cost.js';
 
 function mockSession(dir: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -176,6 +178,32 @@ describe('recoverUsageState', () => {
     assert.equal(entries[0].cost_usd, 0.01);
   });
 
+  it('recovered usage reflects accumulated retries in turn frontmatter', async () => {
+    // Simulate a turn where usage.json was written with accumulated totals
+    // (as the orchestrator now does after validation/verdict retries).
+    // Initial invoke: 1000 in, 500 out. Validation retry: 800 in, 400 out.
+    // The turn should record the sum: 1800 in, 900 out.
+    const accumulatedIn = 1000 + 800;
+    const accumulatedOut = 500 + 400;
+    const cost = estimateCost('opus', { input_tokens: accumulatedIn, output_tokens: accumulatedOut });
+
+    const usageData = {
+      turns: [
+        { turn: 1, from: 'claude', model: 'opus', tokens_in: accumulatedIn, tokens_out: accumulatedOut, cost_usd: cost, duration_ms: 12000 },
+      ],
+      totals: { tokens_in: accumulatedIn, tokens_out: accumulatedOut, cost_usd: cost, duration_ms: 12000 },
+      updated_at: new Date().toISOString(),
+    };
+    await writeFile(join(artifactsDir, 'usage.json'), JSON.stringify(usageData), 'utf8');
+
+    const session = mockSession(tmpDir, { current_turn: 1 });
+    const entries = await recoverUsageState(session);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].tokens_in, accumulatedIn);
+    assert.equal(entries[0].tokens_out, accumulatedOut);
+    assert.equal(entries[0].cost_usd, cost);
+  });
+
   it('cumulative cost can be computed from recovered entries', async () => {
     const usageData = {
       turns: [
@@ -199,5 +227,66 @@ describe('recoverUsageState', () => {
     // Budget is $0.10, cumulative is $0.13 -- budget would be exceeded
     assert.ok(cumulativeCostUsd >= session.budget!);
     assert.equal(cumulativeCostUsd, 0.13);
+  });
+});
+
+describe('retry usage accumulation (orchestrator pattern)', () => {
+  it('mergeUsage chains correctly across initial + validation retry + verdict retry', () => {
+    // Simulates the orchestrator's turnUsage accumulation pattern:
+    // 1. Initial invoke returns usage
+    const initial: TokenUsage = { input_tokens: 5000, output_tokens: 2000 };
+    let turnUsage: TokenUsage | undefined = initial;
+
+    // 2. Validation retry adds more usage
+    const validationRetry: TokenUsage = { input_tokens: 5200, output_tokens: 2100 };
+    turnUsage = mergeUsage(turnUsage, validationRetry);
+
+    // 3. Verdict retry adds even more
+    const verdictRetry: TokenUsage = { input_tokens: 4800, output_tokens: 1900 };
+    turnUsage = mergeUsage(turnUsage, verdictRetry);
+
+    // Total should be the sum of all three
+    assert.ok(turnUsage);
+    assert.equal(turnUsage!.input_tokens, 5000 + 5200 + 4800);
+    assert.equal(turnUsage!.output_tokens, 2000 + 2100 + 1900);
+
+    // Cost should reflect the accumulated total, not just the initial invoke
+    const cost = estimateCost('opus', turnUsage!);
+    assert.ok(cost !== null);
+    assert.ok(cost! > estimateCost('opus', initial)!);
+  });
+
+  it('accumulated usage produces correct cost in usage artifact', () => {
+    // After accumulation, the orchestrator writes a UsageEntry with the merged totals
+    const turnUsage: TokenUsage = { input_tokens: 15000, output_tokens: 6000 };
+    const cost = estimateCost('opus', turnUsage);
+
+    const entry: UsageEntry = {
+      turn: 1,
+      from: 'claude',
+      model: 'opus',
+      tokens_in: turnUsage.input_tokens,
+      tokens_out: turnUsage.output_tokens,
+      cost_usd: cost,
+      duration_ms: 30000,
+    };
+
+    const artifact = buildUsageArtifact([entry]);
+    assert.equal(artifact.totals.tokens_in, 15000);
+    assert.equal(artifact.totals.tokens_out, 6000);
+    assert.equal(artifact.totals.cost_usd, cost);
+  });
+
+  it('budget enforcement sees accumulated cost, not just initial invoke cost', () => {
+    // If initial invoke cost $0.05 and retry cost $0.05, budget of $0.08 should be exceeded
+    const initial: TokenUsage = { input_tokens: 2000, output_tokens: 400 };
+    const retry: TokenUsage = { input_tokens: 2000, output_tokens: 400 };
+    const merged = mergeUsage(initial, retry)!;
+    const totalCost = estimateCost('opus', merged)!;
+    const initialCost = estimateCost('opus', initial)!;
+
+    // The initial cost alone would be under budget, but accumulated should be over
+    assert.ok(totalCost > initialCost);
+    assert.equal(totalCost, initialCost * 2);
   });
 });

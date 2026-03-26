@@ -15,7 +15,7 @@ import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
 import { getOtherParticipant, getImplementer, getReviewer } from './roster.js';
-import { estimateCost, buildUsageArtifact } from './cost.js';
+import { estimateCost, buildUsageArtifact, mergeUsage } from './cost.js';
 import type { TokenUsage, UsageEntry } from './cost.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -311,6 +311,8 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     const invokeStart: number = Date.now();
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
     let result: InvokeOnceResult = retryResult;
+    // Accumulate usage across all invocations in this turn (initial + retries)
+    let turnUsage: TokenUsage | undefined = retryResult.usage;
     if (retryResult.effectiveTier) currentTier = retryResult.effectiveTier;
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
@@ -368,6 +370,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
           ui.status('turn.retry', { turn: turnCount });
         }
         result = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'validation-retry', 'full');
+        turnUsage = mergeUsage(turnUsage, result.usage);
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
@@ -411,14 +414,6 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     canonicalData.model_tier = currentTier;
     canonicalData.model_name = resolveModelForParticipant(nextAgent, session, currentTier);
 
-    // Attach token usage and cost estimate if available
-    if (retryResult.usage) {
-      canonicalData.tokens_in = retryResult.usage?.input_tokens ?? null;
-      canonicalData.tokens_out = retryResult.usage?.output_tokens ?? null;
-      const modelName = canonicalData.model_name;
-      canonicalData.cost_usd = retryResult.usage ? estimateCost(modelName, retryResult.usage) : null;
-    }
-
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
     // - 'decided' with verdict passes through
@@ -432,8 +427,9 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
       } else {
         // decided without verdict — retry once
         ui.status('review.no.verdict', { turn: turnCount });
-        const retryResult = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
-        const retryValidation = retryResult.ok ? validate(retryResult.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
+        const verdictRetry = await invokeOnce(nextAgent, session, turnCount, tracer, attemptCounters, 'verdict-retry');
+        turnUsage = mergeUsage(turnUsage, verdictRetry.usage);
+        const retryValidation = verdictRetry.ok ? validate(verdictRetry.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
         const retryStatus = retryValidation.valid ? normalizeStatus(retryValidation.data!.status, turnCount, phase) : null;
         const retryIsValidReview = retryStatus === 'decided' && retryValidation.data?.verdict;
         const retryIsLegacyDone = retryValidation.valid && retryValidation.data!.status === 'done';
@@ -449,12 +445,22 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
         } else {
           // Still no verdict after retry — write error turn and pause/exit
           const reason = 'review decided without verdict after retry';
-          await writeErrorTurn(session, turnCount, nextAgent, reason, retryResult.ok ? retryResult.output : retryResult.reason, currentTier);
+          await writeErrorTurn(session, turnCount, nextAgent, reason, verdictRetry.ok ? verdictRetry.output : verdictRetry.reason, currentTier);
           const resumed: boolean = await pauseOrExit(turnCount, server ?? null);
           if (resumed) continue;
           break;
         }
       }
+    }
+
+    // Attach accumulated token usage and cost estimate from all invocations in this turn.
+    // This runs AFTER all retry paths (validation retry, verdict retry) so the totals
+    // reflect every invocation, not just the initial one.
+    if (turnUsage) {
+      canonicalData.tokens_in = turnUsage.input_tokens ?? null;
+      canonicalData.tokens_out = turnUsage.output_tokens ?? null;
+      const modelName = canonicalData.model_name;
+      canonicalData.cost_usd = estimateCost(modelName, turnUsage);
     }
 
     if (normalizedStatus !== validData.status) {

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateCost, parseClaudeUsage, parseCodexUsage, buildUsageArtifact, loadRates } from '../cost.js';
+import { estimateCost, parseClaudeUsage, parseCodexUsage, buildUsageArtifact, loadRates, mergeUsage } from '../cost.js';
 import type { TokenUsage, UsageEntry } from '../cost.js';
 
 describe('loadRates', () => {
@@ -80,6 +80,38 @@ describe('parseCodexUsage', () => {
   it('returns null when no token info', () => {
     const usage = parseCodexUsage('', '');
     assert.equal(usage, null);
+  });
+});
+
+describe('mergeUsage', () => {
+  it('returns undefined when both inputs are undefined', () => {
+    assert.equal(mergeUsage(undefined, undefined), undefined);
+  });
+
+  it('returns b when a is undefined', () => {
+    const b: TokenUsage = { input_tokens: 100, output_tokens: 50 };
+    assert.deepEqual(mergeUsage(undefined, b), b);
+  });
+
+  it('returns a when b is undefined', () => {
+    const a: TokenUsage = { input_tokens: 100, output_tokens: 50 };
+    assert.deepEqual(mergeUsage(a, undefined), a);
+  });
+
+  it('sums token counts from two invocations', () => {
+    const a: TokenUsage = { input_tokens: 1000, output_tokens: 500 };
+    const b: TokenUsage = { input_tokens: 2000, output_tokens: 800 };
+    const merged = mergeUsage(a, b)!;
+    assert.equal(merged.input_tokens, 3000);
+    assert.equal(merged.output_tokens, 1300);
+  });
+
+  it('treats null token counts as zero when merging', () => {
+    const a: TokenUsage = { input_tokens: 1000, output_tokens: null };
+    const b: TokenUsage = { input_tokens: null, output_tokens: 600 };
+    const merged = mergeUsage(a, b)!;
+    assert.equal(merged.input_tokens, 1000);
+    assert.equal(merged.output_tokens, 600);
   });
 });
 
