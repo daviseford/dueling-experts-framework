@@ -61,6 +61,30 @@ describe('extractFilePaths', () => {
     assert.ok(paths.includes('src/deliverable.ts'));
   });
 
+  it('extracts paths wrapped in parentheses', () => {
+    const decisions = [
+      'Update the config (src/config.ts) and tests',
+    ];
+    const paths = extractFilePaths(decisions);
+    assert.ok(paths.includes('src/config.ts'));
+  });
+
+  it('extracts paths wrapped in double quotes', () => {
+    const decisions = [
+      'Create "src/deliverable.ts" with extraction logic',
+    ];
+    const paths = extractFilePaths(decisions);
+    assert.ok(paths.includes('src/deliverable.ts'));
+  });
+
+  it('extracts paths wrapped in single quotes', () => {
+    const decisions = [
+      "Modify 'src/util.ts' to add the helper",
+    ];
+    const paths = extractFilePaths(decisions);
+    assert.ok(paths.includes('src/util.ts'));
+  });
+
   it('returns empty array for empty input', () => {
     assert.deepEqual(extractFilePaths([]), []);
   });

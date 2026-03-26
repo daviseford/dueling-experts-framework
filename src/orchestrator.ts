@@ -11,7 +11,7 @@ import { createWorktree, removeWorktree, captureDiff, commitChanges } from './wo
 import { pushAndCreatePr, hasBranchDelta } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
-import { extractFilePaths, verifyDeliverables } from './deliverable.js';
+import { extractFilePaths } from './deliverable.js';
 import * as ui from './ui.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -396,26 +396,12 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         bothEverDecided = claudeEverDecided && codexEverDecided;
 
         if (pendingPlanDecided && pendingPlanDecided !== nextAgent) {
-          // Both agents agreed — check deliverable gate before accepting consensus
-          const allTurnDecisions = await collectAllDecisions(session);
-          const mentionedPaths = extractFilePaths(allTurnDecisions);
-          if (mentionedPaths.length > 0) {
-            const { missing } = await verifyDeliverables(mentionedPaths, session.target_repo);
-            if (missing.length > 0) {
-              tracer.emit('deliverable.missing', { turn: turnCount, phase, data: { missing } });
-              ui.status('deliverable.missing', { turn: turnCount, missing });
-              pendingPlanDecided = null;
-              nextAgent = oppositeAgent;
-              continue;
-            }
-          }
-
-          // Consensus reached — all deliverables verified
+          // Both agents agreed — consensus reached
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           ui.status('consensus.reached', { turn: turnCount });
 
           // Generate plan artifact from plan-phase turns
-          await generatePlan(session);
+          await generatePlan(session, tracer);
 
           // Planning mode: no implementation, session ends here
           if (session.mode === 'planning') {
@@ -938,26 +924,12 @@ async function writeDiffArtifact(session: Session, turnCount: number, diff: stri
   await atomicWrite(join(artifactsDir, filename), diff + '\n');
 }
 
-async function collectAllDecisions(session: Session): Promise<string[]> {
-  const turnsDir = join(session.dir, 'turns');
-  const turnFiles = await listTurnFiles(turnsDir);
-  const decisions: string[] = [];
-  for (const file of turnFiles) {
-    const raw = await readFile(join(turnsDir, file), 'utf8');
-    const parsed = validate(raw);
-    if (parsed.valid && parsed.data?.decisions) {
-      decisions.push(...parsed.data.decisions);
-    }
-  }
-  return decisions;
-}
-
-async function generatePlan(session: Session): Promise<void> {
+async function generatePlan(session: Session, tracer: Tracer): Promise<void> {
   const turnsDir: string = join(session.dir, 'turns');
   const turnFiles: string[] = await listTurnFiles(turnsDir);
   if (turnFiles.length === 0) return;
 
-  const planTurns: { turn: number; from: string; decisions: string[]; content: string }[] = [];
+  const planTurns: { turn: number; from: string; status: string; decisions: string[]; content: string }[] = [];
   for (const file of turnFiles) {
     const raw: string = await readFile(join(turnsDir, file), 'utf8');
     const parsed = validate(raw);
@@ -968,6 +940,7 @@ async function generatePlan(session: Session): Promise<void> {
     planTurns.push({
       turn: parsed.data.turn,
       from: parsed.data.from,
+      status: parsed.data.status,
       decisions: parsed.data.decisions || [],
       content: parsed.content,
     });
@@ -985,6 +958,20 @@ async function generatePlan(session: Session): Promise<void> {
       lines.push(`- ${d}`);
     }
     lines.push('');
+  }
+
+  // Advisory deliverable report -- extract referenced file paths from consensus
+  // decisions only (status: decided), not the full append-only turn history.
+  // Existence is NOT checked here because generatePlan runs before worktree
+  // creation, so session.target_repo may not reflect the correct checkout
+  // (e.g. for PR topics the PR-head branch is only available post-worktree).
+  const consensusDecisions = planTurns.filter(t => t.status === 'decided').flatMap(t => t.decisions);
+  const mentionedPaths = extractFilePaths(consensusDecisions);
+  if (mentionedPaths.length > 0) {
+    lines.push('## Referenced Deliverables (Advisory)', '');
+    for (const p of mentionedPaths) lines.push(`- ${p}`);
+    lines.push('');
+    tracer.emit('deliverable.report', { turn: 0, phase: 'plan', data: { paths: mentionedPaths } });
   }
 
   lines.push('## Discussion Summary', '');
