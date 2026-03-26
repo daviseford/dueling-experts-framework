@@ -491,11 +491,15 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
   const metadata = await getSessionMetadata(sessionPath);
   const thinking = await readThinkingState(sessionRef!.dir);
 
+  // Resolve liveness — a paused/active session with a dead PID is interrupted
+  const liveness = await isSessionAlive(sessionRef!.dir);
+  const resolvedStatus = liveness.alive ? metadata.sessionStatus : liveness.status;
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
     session_id: sessionRef!.id,
-    session_status: metadata.sessionStatus,
+    session_status: resolvedStatus,
     phase: metadata.phase ?? 'plan',
     topic: sessionRef!.topic,
     turn_count: turns.length,
@@ -650,11 +654,15 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
   const metadata = await getSessionMetadata(sessionPath);
   const thinking = await readThinkingState(sessionDir);
 
+  // Resolve liveness — a paused/active session with a dead PID is interrupted
+  const liveness = await isSessionAlive(sessionDir);
+  const resolvedStatus = liveness.alive ? metadata.sessionStatus : liveness.status;
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     turns,
     session_id: sessionId,
-    session_status: metadata.sessionStatus,
+    session_status: resolvedStatus,
     phase: metadata.phase ?? 'plan',
     topic: metadata.topic ?? '(no topic)',
     turn_count: turns.length,

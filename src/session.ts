@@ -146,6 +146,11 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
 
     ui.status('shutdown.start', {});
     try {
+      // Mark session as completed FIRST — before any slow operations.
+      // If the force timer fires or cleanup hangs, the session status
+      // is already updated so it won't appear stuck as paused/active.
+      await update(sessionDir, { session_status: 'completed' });
+
       // Kill the running agent child process
       const child = session?._currentChild;
       if (child && !child.killed) {
@@ -167,8 +172,6 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
           ui.status('shutdown.worktree', { branch: session.branch_name! });
         } catch { /* best effort */ }
       }
-
-      await update(sessionDir, { session_status: 'completed' });
     } catch { /* best effort */ }
     process.exit(0);
   });
