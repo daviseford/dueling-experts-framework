@@ -43,7 +43,7 @@ const MIME_TYPES: Record<string, string> = {
   '.map': 'application/json',
 };
 export function getDefaultPort(): number {
-  return process.env.CI || process.env.DEF_NO_OPEN ? 0 : 18541;
+  return process.env.CI ? 0 : 18541;
 }
 let httpServer: import('node:http').Server | null = null;
 let sessionRef: Session | null = null;
