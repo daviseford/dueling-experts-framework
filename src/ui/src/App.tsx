@@ -140,8 +140,8 @@ export default function App() {
   }, [topic])
 
   const handleEndSession = useCallback(async () => {
-    await endSession()
-  }, [])
+    await endSession(selectedSessionId)
+  }, [selectedSessionId])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -178,7 +178,7 @@ export default function App() {
             onTurnOpenChange={handleTurnOpenChange}
             pendingInterjections={visiblePending}
           />
-          <InterjectionInput disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
+          <InterjectionInput sessionId={selectedSessionId} disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
         </>
       )}
       <StatusBar

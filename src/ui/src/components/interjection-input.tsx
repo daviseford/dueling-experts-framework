@@ -6,12 +6,13 @@ import { toast } from "sonner"
 import { sendInterjection } from "@/lib/api"
 
 interface InterjectionInputProps {
+  sessionId: string
   disabled: boolean
   isReadOnly?: boolean
   onSent?: (content: string) => void
 }
 
-export function InterjectionInput({ disabled, isReadOnly, onSent }: InterjectionInputProps) {
+export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: InterjectionInputProps) {
   const [value, setValue] = useState("")
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -23,7 +24,7 @@ export function InterjectionInput({ disabled, isReadOnly, onSent }: Interjection
 
     setSending(true)
     try {
-      await sendInterjection(content)
+      await sendInterjection(sessionId, content)
       onSent?.(content)
       setValue("")
       textareaRef.current?.focus()
@@ -32,7 +33,7 @@ export function InterjectionInput({ disabled, isReadOnly, onSent }: Interjection
     } finally {
       setSending(false)
     }
-  }, [value, sending, onSent])
+  }, [sessionId, value, sending, onSent])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
