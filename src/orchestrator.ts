@@ -389,9 +389,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         next_agent: oppositeAgent,
       });
 
-      // Check for consensus signaling — treat 'done' as 'decided' in edit mode
-      const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided')
+      // Check for consensus signaling — treat 'done' as 'decided' in edit mode.
+      // Also treat 'needs_human' as 'decided': plan-phase agents have read-only
+      // access, so needs_human typically means the agent wants to implement
+      // changes rather than genuinely needing human input.
+      const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided' || canonicalData.status === 'needs_human')
         ? 'decided' : canonicalData.status;
+
+      if (canonicalData.status === 'needs_human') {
+        ui.status('human.auto.decided', { turn: turnCount, agent: nextAgent });
+      }
 
       if (effectiveStatus === 'decided') {
         // Track per-agent decided for fast-model heuristic
@@ -473,28 +480,6 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         if (pendingPlanDecided && effectiveStatus === 'complete') {
           ui.status('consensus.contested', { turn: turnCount, agent: nextAgent });
           pendingPlanDecided = null;
-        }
-
-        if (effectiveStatus === 'needs_human') {
-          if (server) {
-            isPaused = true;
-            await updateSession(session.dir, { session_status: 'paused' });
-            ui.status('human.paused', { turn: turnCount });
-
-            const humanContent: string = await waitForHuman();
-            isPaused = false;
-            turnCount++;
-            await writeHumanTurn(session, turnCount, humanContent);
-            await updateSession(session.dir, {
-              current_turn: turnCount,
-              session_status: 'active',
-              next_agent: nextAgent, // Same agent resumes
-            });
-            continue;
-          }
-
-          ui.status('human.exiting', { turn: turnCount });
-          break;
         }
 
         nextAgent = oppositeAgent;

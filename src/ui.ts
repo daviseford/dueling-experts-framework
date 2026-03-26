@@ -70,6 +70,7 @@ interface StatusPayloads {
   'review.no.verdict':  { turn: number };
   'human.paused':       { turn: number };
   'human.exiting':      { turn: number };
+  'human.auto.decided': { turn: number; agent: string };
   'human.resumed':      { turn: number };
   'interjection':       { turn: number };
   'interjection.dropped': { turn: number; count: number };
@@ -292,6 +293,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'human.exiting': {
       const { turn } = d as StatusPayloads['human.exiting'];
       return `${turnPrefix(turn)} ${c.yellow(SYM.info)} Agent needs human input. Exiting (no UI).`;
+    }
+    case 'human.auto.decided': {
+      const { turn, agent } = d as StatusPayloads['human.auto.decided'];
+      return `${turnPrefix(turn)} ${c.yellow(SYM.arrow)} ${c.bold(agent)} requested human input during plan phase -- auto-advancing as decided.`;
     }
     case 'human.resumed': {
       const { turn } = d as StatusPayloads['human.resumed'];
