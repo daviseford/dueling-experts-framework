@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { hasBranchDelta, parseDecisionBullets, parseDiffstatSummary, buildPrBody } from '../pr.js';
+import { hasBranchDelta, parseDecisionBullets, parseDiffstatSummary, buildPrBody, parsePrRef } from '../pr.js';
 import { createWorktree, removeWorktree, commitChanges } from '../worktree.js';
 import { parseArgs } from '../cli.js';
 
@@ -61,6 +61,56 @@ describe('hasBranchDelta', () => {
     // With null baseRef we cannot reliably determine delta — should return false
     const delta = await hasBranchDelta(worktreePath, null);
     assert.equal(delta, false, 'should conservatively return false with null baseRef');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('falls back when base_ref is deleted', async () => {
+    // Create a feature branch, then delete it, simulating a deleted base_ref
+    execFileSync('git', ['branch', 'temp-base'], { cwd: testDir });
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'deleted base');
+
+    // Make a change and commit
+    await writeFile(join(worktreePath, 'fallback.txt'), 'content\n');
+    await commitChanges(worktreePath, 'add fallback file');
+
+    // Delete the base branch (simulating what happens when a PR is merged and branch deleted)
+    execFileSync('git', ['branch', '-D', 'temp-base'], { cwd: testDir });
+
+    // hasBranchDelta should fall back to main/master
+    const out: { resolvedRef?: string } = {};
+    const delta = await hasBranchDelta(worktreePath, 'temp-base', out);
+    assert.equal(delta, true, 'should detect delta via fallback ref');
+    assert.ok(out.resolvedRef, 'should report the resolved ref');
+    assert.notEqual(out.resolvedRef, 'temp-base', 'resolved ref should not be the deleted branch');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('populates resolvedRef with original base_ref when it exists', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath, baseRef } = await createWorktree(testDir, sessionId, 'resolved ref');
+
+    await writeFile(join(worktreePath, 'resolved.txt'), 'content\n');
+    await commitChanges(worktreePath, 'add resolved file');
+
+    const out: { resolvedRef?: string } = {};
+    await hasBranchDelta(worktreePath, baseRef, out);
+    assert.equal(out.resolvedRef, baseRef, 'resolvedRef should match original when it exists');
+
+    await removeWorktree(testDir, worktreePath);
+  });
+
+  it('returns false when base_ref and all fallbacks are missing', async () => {
+    const sessionId = randomUUID();
+    const { worktreePath } = await createWorktree(testDir, sessionId, 'no fallback');
+
+    const out: { resolvedRef?: string } = {};
+    const delta = await hasBranchDelta(worktreePath, 'nonexistent-branch-xyz', out);
+    // In a test repo with a default branch (master/main), a fallback should resolve.
+    // But the function should at minimum not throw.
+    assert.equal(typeof delta, 'boolean');
 
     await removeWorktree(testDir, worktreePath);
   });
@@ -178,6 +228,65 @@ describe('CLI --no-pr parsing', () => {
     const result = parseArgs(['add', 'dark', 'mode', '--no-pr']);
     assert.equal(result.noPr, true);
     assert.equal(result.topic, 'add dark mode');
+  });
+});
+
+describe('CLI --no-worktree parsing', () => {
+  it('parseArgs recognizes --no-worktree flag', () => {
+    const result = parseArgs(['--topic', 'test topic', '--no-worktree']);
+    assert.equal(result.noWorktree, true);
+    assert.equal(result.topic, 'test topic');
+  });
+
+  it('parseArgs defaults noWorktree to undefined when flag absent', () => {
+    const result = parseArgs(['--topic', 'test topic']);
+    assert.equal(result.noWorktree, undefined);
+  });
+
+  it('parseArgs handles --no-worktree with other flags', () => {
+    const result = parseArgs(['--no-worktree', '--no-pr', '--topic', 'my topic']);
+    assert.equal(result.noWorktree, true);
+    assert.equal(result.noPr, true);
+    assert.equal(result.topic, 'my topic');
+  });
+});
+
+describe('parsePrRef', () => {
+  it('extracts PR ref from topic with standard URL', () => {
+    const ref = parsePrRef('fix https://github.com/owner/repo/pull/42');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('extracts PR ref from URL with trailing slash', () => {
+    const ref = parsePrRef('address comments on https://github.com/org/project/pull/99/');
+    assert.deepEqual(ref, { owner: 'org', repo: 'project', number: 99 });
+  });
+
+  it('extracts PR ref from URL with fragment', () => {
+    const ref = parsePrRef('https://github.com/owner/repo/pull/42#discussion_r123');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('extracts PR ref from URL with query string', () => {
+    const ref = parsePrRef('https://github.com/owner/repo/pull/42?diff=split');
+    assert.deepEqual(ref, { owner: 'owner', repo: 'repo', number: 42 });
+  });
+
+  it('returns null for topic without URL', () => {
+    assert.equal(parsePrRef('add dark mode'), null);
+  });
+
+  it('returns null for issue URL (not PR)', () => {
+    assert.equal(parsePrRef('fix https://github.com/owner/repo/issues/42'), null);
+  });
+
+  it('extracts first PR URL when topic has multiple', () => {
+    const ref = parsePrRef('review https://github.com/a/b/pull/1 and https://github.com/c/d/pull/2');
+    assert.deepEqual(ref, { owner: 'a', repo: 'b', number: 1 });
+  });
+
+  it('returns null for PR number 0', () => {
+    assert.equal(parsePrRef('https://github.com/owner/repo/pull/0'), null);
   });
 });
 

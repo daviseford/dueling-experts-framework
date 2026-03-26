@@ -70,6 +70,7 @@ interface StatusPayloads {
   'review.no.verdict':  { turn: number };
   'human.paused':       { turn: number };
   'human.exiting':      { turn: number };
+  'human.auto.decided': { turn: number; agent: string };
   'human.resumed':      { turn: number };
   'interjection':       { turn: number };
   'interjection.dropped': { turn: number; count: number };
@@ -87,12 +88,17 @@ interface StatusPayloads {
   'invoke.retry':       { turn: number; agent: string; reason: string };
   'invoke.escalate':    { turn: number; reason: string };
   'server.url':         { url: string };
+  'server.shared':      { port: number };
   'shutdown.start':     {};
   'shutdown.saved':     {};
   'shutdown.worktree':  { branch: string };
+  'base.fallback':      { original: string; resolved: string };
+  'base.unresolvable':  { original: string };
+  'branch.switched':    { expected: string; actual: string };
   'push.failed':        { branch: string; error: string };
   'pr.failed':          { branch: string; error: string };
   'pr.parse.failed':    { output: string };
+  'pr.lookup.failed':   { owner: string; repo: string; number: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -289,6 +295,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       const { turn } = d as StatusPayloads['human.exiting'];
       return `${turnPrefix(turn)} ${c.yellow(SYM.info)} Agent needs human input. Exiting (no UI).`;
     }
+    case 'human.auto.decided': {
+      const { turn, agent } = d as StatusPayloads['human.auto.decided'];
+      return `${turnPrefix(turn)} ${c.yellow(SYM.arrow)} ${c.bold(agent)} requested human input during plan phase -- auto-advancing as decided.`;
+    }
     case 'human.resumed': {
       const { turn } = d as StatusPayloads['human.resumed'];
       return `${turnPrefix(turn)} ${c.green(SYM.check)} Human input received.`;
@@ -363,6 +373,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       const { url } = d as StatusPayloads['server.url'];
       return `  ${c.cyan(SYM.info)} Watcher UI: ${c.cyan(c.bold(url))}`;
     }
+    case 'server.shared': {
+      const { port } = d as StatusPayloads['server.shared'];
+      return `  ${c.cyan(SYM.info)} Shared server detected on port ${c.bold(String(port))}, running headless`;
+    }
 
     // Shutdown
     case 'shutdown.start':
@@ -372,6 +386,20 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'shutdown.worktree': {
       const { branch } = d as StatusPayloads['shutdown.worktree'];
       return `  ${c.dim(SYM.check)} Worktree cleaned up. Branch preserved: ${c.cyan(branch)}`;
+    }
+
+    // Base ref resolution
+    case 'base.fallback': {
+      const { original, resolved } = d as StatusPayloads['base.fallback'];
+      return `  ${c.yellow(SYM.warn)} Base ref ${c.cyan(original)} not found -- falling back to ${c.cyan(resolved)}`;
+    }
+    case 'base.unresolvable': {
+      const { original } = d as StatusPayloads['base.unresolvable'];
+      return `  ${c.yellow(SYM.warn)} Base ref ${c.cyan(original)} not found and no fallback resolved -- skipping PR.`;
+    }
+    case 'branch.switched': {
+      const { expected, actual } = d as StatusPayloads['branch.switched'];
+      return `  ${c.yellow(SYM.warn)} Agent switched from branch ${c.cyan(expected)} to ${c.cyan(actual)} -- changes may not be on the DEF branch.`;
     }
 
     // PR sub-events (from pr.ts)
@@ -386,6 +414,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'pr.parse.failed': {
       const { output } = d as StatusPayloads['pr.parse.failed'];
       return `  ${c.yellow(SYM.warn)} Could not parse PR URL from gh output: ${output}`;
+    }
+    case 'pr.lookup.failed': {
+      const { owner, repo, number: num } = d as StatusPayloads['pr.lookup.failed'];
+      return `  ${c.yellow(SYM.warn)} Could not look up PR ${owner}/${repo}#${num} — falling back to current branch.`;
     }
 
     default:

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { TurnCard } from "./turn-card"
+import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
-import type { Turn, ThinkingState, SessionPhase } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
 
 interface TranscriptProps {
   turns: Turn[]
@@ -18,6 +19,7 @@ interface TranscriptProps {
   artifactsPath: string | null
   openMap: Record<string, boolean>
   onTurnOpenChange: (id: string, open: boolean) => void
+  pendingInterjections: PendingInterjection[]
 }
 
 export function Transcript({
@@ -33,6 +35,7 @@ export function Transcript({
   artifactsPath,
   openMap,
   onTurnOpenChange,
+  pendingInterjections,
 }: TranscriptProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const turnCount = turns.length
@@ -69,10 +72,37 @@ export function Transcript({
     return result
   }, [turns])
 
-  // Only auto-scroll on new turns, thinking agent change, or session completion
+  // Extract implementation summaries from implement-phase turns
+  const implementations = useMemo(() => {
+    return turns
+      .filter((t) => t.phase === "implement" && t.status !== "error" && t.content)
+      .map((t) => {
+        // Take the first non-empty, non-heading, non-fence line as a summary
+        const lines = t.content.split(/\r?\n/)
+        const bullets: string[] = []
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith("---") || trimmed.startsWith("```") || trimmed.startsWith("#")) continue
+          // Collect bullet points or first paragraph lines
+          if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            bullets.push(trimmed.replace(/^[-*]\s+/, ""))
+          } else if (bullets.length === 0) {
+            bullets.push(trimmed)
+          }
+          if (bullets.length >= 5) break
+        }
+        return bullets
+      })
+      .flat()
+      .slice(0, 8)
+  }, [turns])
+
+  const pendingCount = pendingInterjections.length
+
+  // Only auto-scroll on new turns, thinking agent change, session completion, or new pending
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
-  }, [turnCount, thinkingAgent, sessionStatus])
+  }, [turnCount, thinkingAgent, sessionStatus, pendingCount])
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -84,6 +114,9 @@ export function Transcript({
             open={openMap[turn.id] ?? true}
             onOpenChange={(open) => onTurnOpenChange(turn.id, open)}
           />
+        ))}
+        {pendingInterjections.map((p) => (
+          <PendingTurnCard key={p.id} content={p.content} />
         ))}
         {thinking && (
           <ThinkingIndicator thinking={thinking} elapsed={thinkingElapsed} phase={phase} />
@@ -97,6 +130,7 @@ export function Transcript({
             turnsPath={turnsPath}
             artifactsPath={artifactsPath}
             decisions={decisions}
+            implementations={implementations}
           />
         )}
         <div ref={bottomRef} />

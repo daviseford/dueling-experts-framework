@@ -1,5 +1,95 @@
 # Changelog
 
+## [0.0.8](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.7...def-v0.0.8) (2026-03-26)
+
+
+### Features
+
+* add file-based IPC poll loop to orchestrator ([4f89e2f](https://github.com/daviseford/dueling-experts-framework/commit/4f89e2fab30fcda2454c20373b1a1adfa2295948))
+* add file-based IPC primitives and session liveness helper ([2b3580c](https://github.com/daviseford/dueling-experts-framework/commit/2b3580cb89981f1efce49f67b5f5618b2a6ba30e))
+* complete session explorer plan (Unit 11 + hook cleanup) ([f0ac4e2](https://github.com/daviseford/dueling-experts-framework/commit/f0ac4e2054892394ca85cd5859fce92b8afb7bf8))
+* def explorer command, empty state, startExplorer entry point ([d20df10](https://github.com/daviseford/dueling-experts-framework/commit/d20df10d96767f53794df0fdf936eb8114cba1f0))
+* def explorer command, empty state, startExplorer server entry point ([5ea921c](https://github.com/daviseford/dueling-experts-framework/commit/5ea921c26b9177d3374ea217d08896e16f62fc89))
+* detect shared server and run headless when one exists ([18322e5](https://github.com/daviseford/dueling-experts-framework/commit/18322e5cdefee25b2dcef1ed71b6f48fe993548c))
+* explorer detects shared server, auto-select prefers active sessions ([6c9908a](https://github.com/daviseford/dueling-experts-framework/commit/6c9908ae522623db25931d80f63f763b7466023f))
+* improve session UX — liveness detection, tab persistence, model display ([#68](https://github.com/daviseford/dueling-experts-framework/issues/68)) ([c2a237d](https://github.com/daviseford/dueling-experts-framework/commit/c2a237dae21157366764a811155f1da53906c3e2))
+* multi-session server API and idle timeout ([04b0c3d](https://github.com/daviseford/dueling-experts-framework/commit/04b0c3d222e222fd314191e46c082183c8a1db5b))
+* multi-session server API and idle timeout ([76209bb](https://github.com/daviseford/dueling-experts-framework/commit/76209bba0d326afacba6df8170f9d1cd590e01d3))
+* route interjections and end-session by session ID ([03810e8](https://github.com/daviseford/dueling-experts-framework/commit/03810e8a0058bf89a75f41a520e248762cb41c16))
+* send session_id with interjection and end-session requests ([95a1395](https://github.com/daviseford/dueling-experts-framework/commit/95a13956687f906630c0c3bf903bbf5bef413910))
+* session explorer frontend — tab bar, explorer hook, view-only controls ([3845380](https://github.com/daviseford/dueling-experts-framework/commit/3845380b77b6fc6c1ed66602fb44f1bfc6df6abf))
+* session explorer frontend — tab bar, explorer hook, view-only controls ([7aa0269](https://github.com/daviseford/dueling-experts-framework/commit/7aa02697cbda58c8811e7a3b28605408618511db))
+* session explorer Phase 1 — registry, heartbeat, liveness, explorer stub ([ebb7fd1](https://github.com/daviseford/dueling-experts-framework/commit/ebb7fd12585ff2b9f2e679c415ab0df01d4a12a5))
+* session explorer Phase 1 — registry, heartbeat, liveness, explorer stub ([e22a7cc](https://github.com/daviseford/dueling-experts-framework/commit/e22a7cc4dbf40e9eac28ffb989adecb3ad124a34))
+* session-aware idle timeout checks for active sessions ([6415b79](https://github.com/daviseford/dueling-experts-framework/commit/6415b7951cc5bac1cb00be1adf3ee722a2668f4e))
+* shared single-server architecture with file-based IPC ([f2f1e97](https://github.com/daviseford/dueling-experts-framework/commit/f2f1e97616613c1cc58ac42421fb1c78d39fa6ad))
+* wire empty state, replace deprecated polling hooks with mock explorer ([1e9713b](https://github.com/daviseford/dueling-experts-framework/commit/1e9713bd268e11c5ed0c0a0714ed58bbde7807e1))
+
+
+### Bug Fixes
+
+* DEF_NO_OPEN should not affect port selection ([ba1baf7](https://github.com/daviseford/dueling-experts-framework/commit/ba1baf70e2c51f621cdbf6577779e422ad60c3b1))
+* DEF_NO_OPEN should not affect port selection, only browser opening ([1534e60](https://github.com/daviseford/dueling-experts-framework/commit/1534e60f82c02b70e3647e2e32692f36c0c55dfa))
+* evaluate default port lazily to respect DEF_NO_OPEN in tests ([6dad2e6](https://github.com/daviseford/dueling-experts-framework/commit/6dad2e683f4320afe521ea9df47ebf865c99b13a))
+* evict stale server + add --no-worktree flag ([#64](https://github.com/daviseford/dueling-experts-framework/issues/64)) ([114617c](https://github.com/daviseford/dueling-experts-framework/commit/114617c1cd2482993505f519ef585a27e035be3c))
+* explorer UX — fixed port, single browser tab, active-only sessions ([bf15d70](https://github.com/daviseford/dueling-experts-framework/commit/bf15d70f92603e51b608a7a578df410b83965cb3))
+* explorer UX — fixed port, single tab, active-only sessions ([3e9ace9](https://github.com/daviseford/dueling-experts-framework/commit/3e9ace927a8c1f49f4bca2299ba3b9c8d25d11ad))
+* handle malformed IPC files, add endSession error handling, fix port default ([a8f0afc](https://github.com/daviseford/dueling-experts-framework/commit/a8f0afc1e98aea8602165ab43eac56dd50d61f18))
+* lazy default port evaluation for test compatibility ([e6141a5](https://github.com/daviseford/dueling-experts-framework/commit/e6141a5ea1596191d1865ff2d2e7efa3bdc6c0a1))
+* probe timeout, poll leak, UUID regex, stop cleanup, test robustness ([873e7e7](https://github.com/daviseford/dueling-experts-framework/commit/873e7e7b18fea665354d7021998d869e969c6944))
+* resolve PR base branch from topic URL ([af1b264](https://github.com/daviseford/dueling-experts-framework/commit/af1b26465bd6508cd4b7fae1abfa633c00ddb301))
+* resolve PR base branch from topic URL ([9c4467c](https://github.com/daviseford/dueling-experts-framework/commit/9c4467c1e0eb711822fd207cab7d2be3ecb07ead))
+* resolve session liveness in turns endpoints and prioritize status update on SIGINT ([#69](https://github.com/daviseford/dueling-experts-framework/issues/69)) ([71a26b8](https://github.com/daviseford/dueling-experts-framework/commit/71a26b849c1a21c9ad458c814ebd3c0c2df8e804))
+* review findings — eviction, port handling, dead code cleanup ([e4d9919](https://github.com/daviseford/dueling-experts-framework/commit/e4d9919eb1342fb30b7a0f0793cbc41c6a4d3ab1))
+
+## [0.0.7](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.6...def-v0.0.7) (2026-03-25)
+
+
+### Features
+
+* add ASCII-safe punctuation rule to prompt templates ([#30](https://github.com/daviseford/dueling-experts-framework/issues/30)) ([b988406](https://github.com/daviseford/dueling-experts-framework/commit/b988406bfa878ea53790b1d42cc8106c77c5496d))
+* add session history browsing (def history, def show) ([8a8612c](https://github.com/daviseford/dueling-experts-framework/commit/8a8612c69b6b181512779071145102d6e3a2951a))
+* pending interjection UI + session ID in nav bar ([cf3877d](https://github.com/daviseford/dueling-experts-framework/commit/cf3877d56ed1b6ec9760884b03dac52054708e09))
+* show pending interjections inline in transcript ([0489979](https://github.com/daviseford/dueling-experts-framework/commit/0489979624433f7bfb640c5ac098364140c699c4))
+* show session ID in the top nav bar ([f9525f3](https://github.com/daviseford/dueling-experts-framework/commit/f9525f36730556cae333e630a7adb100c87a7013))
+* use Sonnet for review-phase turns (three-tier model system) ([#49](https://github.com/daviseford/dueling-experts-framework/issues/49)) ([b71d696](https://github.com/daviseford/dueling-experts-framework/commit/b71d6966c92966ab87b8402336bd01fc88fc778c))
+
+
+### Bug Fixes
+
+* address remaining PR [#28](https://github.com/daviseford/dueling-experts-framework/issues/28) review feedback ([0c4db02](https://github.com/daviseford/dueling-experts-framework/commit/0c4db029d05d9f50fc1c904847ce29a23f51d9ad))
+* address review findings for pending interjection UI ([20ec75b](https://github.com/daviseford/dueling-experts-framework/commit/20ec75bb9cf045fb81e59b3bb54f1bd8d7d3d55a))
+* address session history review feedback ([28b10b2](https://github.com/daviseford/dueling-experts-framework/commit/28b10b278a0378dc793a69dd2d165dd4a2ffeb70))
+* rescue agent branch switches and handle deleted base_ref in PR creation ([#51](https://github.com/daviseford/dueling-experts-framework/issues/51)) ([91db86d](https://github.com/daviseford/dueling-experts-framework/commit/91db86d58f3906dd86827e05450166f5096e5393))
+* restore CI/DEF_NO_OPEN guard in start() and validate dates early ([166e9d6](https://github.com/daviseford/dueling-experts-framework/commit/166e9d6e18d42940c4b3e7b7f029c3f2921de560))
+
+## [0.0.6](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.5...def-v0.0.6) (2026-03-25)
+
+
+### Features
+
+* show model name on turn cards and add Key Implementations to session summary ([#46](https://github.com/daviseford/dueling-experts-framework/issues/46)) ([a44487e](https://github.com/daviseford/dueling-experts-framework/commit/a44487ebdf62b51467f02ca84aeab467e3bdc791))
+
+## [0.0.5](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.4...def-v0.0.5) (2026-03-25)
+
+
+### Bug Fixes
+
+* replace unsupported o4-mini with gpt-5.1-codex-mini for Codex fast tier ([#42](https://github.com/daviseford/dueling-experts-framework/issues/42)) ([1318b62](https://github.com/daviseford/dueling-experts-framework/commit/1318b629956ec5b40abe20b802f5e6fc2e30a52d))
+
+## [0.0.4](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.3...def-v0.0.4) (2026-03-25)
+
+
+### Features
+
+* grant plan/review agents read-only tool access ([#40](https://github.com/daviseford/dueling-experts-framework/issues/40)) ([7ac9c11](https://github.com/daviseford/dueling-experts-framework/commit/7ac9c117dcb471447ea1b29d8dff1a52b16dbec4))
+* optimize Codex invocation with --ephemeral and read-only reviewArgs ([#41](https://github.com/daviseford/dueling-experts-framework/issues/41)) ([7972b7e](https://github.com/daviseford/dueling-experts-framework/commit/7972b7e217535f756304a6afb7a750fdbc3c4a3f))
+
+
+### Bug Fixes
+
+* add reviewArgs for gh CLI access and fix process tree kill on Windows ([#37](https://github.com/daviseford/dueling-experts-framework/issues/37)) ([7331ead](https://github.com/daviseford/dueling-experts-framework/commit/7331ead94dbdeb92f9c09cc1ef68e82a9e0e9a08))
+
 ## [0.0.3](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.2...def-v0.0.3) (2026-03-25)
 
 

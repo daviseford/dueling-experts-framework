@@ -17,23 +17,34 @@ export async function createWorktree(
   targetRepo: string,
   sessionId: string,
   topic: string,
+  baseOverride?: string,
 ): Promise<WorktreeResult> {
   // Resolve the git toplevel (don't assume targetRepo is the root)
   const gitRoot = await git(targetRepo, ['rev-parse', '--show-toplevel']);
 
-  // Capture the current branch before creating the worktree.
-  // This becomes the PR base ref so we target the branch the user started from.
+  const shortId = sessionId.slice(0, 8);
+  const slug = slugifyTopic(topic) || 'session';
+  const branchName = `def/${shortId}-${slug}`;
+  const worktreePath = join(gitRoot, '.def', 'worktrees', sessionId);
+
+  if (baseOverride) {
+    // Fetch the specified branch and branch from it
+    try {
+      await git(gitRoot, ['fetch', 'origin', baseOverride]);
+      await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName, `origin/${baseOverride}`]);
+      return { worktreePath, branchName, baseRef: baseOverride };
+    } catch {
+      // Fetch or worktree creation failed — fall through to default behavior
+    }
+  }
+
+  // Default: capture the current branch as the PR base ref
   let baseRef: string | null = null;
   try {
     baseRef = await git(targetRepo, ['symbolic-ref', '--short', 'HEAD']);
   } catch {
     // Detached HEAD — leave null, gh will use repo default
   }
-
-  const shortId = sessionId.slice(0, 8);
-  const slug = slugifyTopic(topic) || 'session';
-  const branchName = `def/${shortId}-${slug}`;
-  const worktreePath = join(gitRoot, '.def', 'worktrees', sessionId);
 
   await git(gitRoot, ['worktree', 'add', worktreePath, '-b', branchName]);
 
@@ -120,6 +131,77 @@ export async function commitChanges(worktreePath: string, message: string): Prom
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Get the current branch name in a worktree.
+ * Returns null if HEAD is detached or the command fails.
+ */
+export async function currentBranch(worktreePath: string): Promise<string | null> {
+  try {
+    return await git(worktreePath, ['symbolic-ref', '--short', 'HEAD']);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rescue commits when an agent switched branches inside a worktree.
+ *
+ * The agent may have checked out a different branch (e.g. the target PR's
+ * branch) and committed there instead of on the DEF branch. This function:
+ * 1. Stashes any uncommitted work on the switched branch
+ * 2. Checks out the DEF branch
+ * 3. Cherry-picks commits from the switched branch that aren't on the DEF branch
+ * 4. Pops any stashed work
+ *
+ * Best-effort: silently handles failures so the session can still finalize.
+ */
+export async function rescueBranchSwitch(
+  worktreePath: string,
+  defBranch: string,
+  actualBranch: string,
+): Promise<void> {
+  try {
+    // 1. Stash uncommitted changes on the switched branch
+    let hasStash = false;
+    try {
+      const status = await git(worktreePath, ['status', '--porcelain']);
+      if (status) {
+        await git(worktreePath, ['stash', 'push', '-m', 'def-rescue']);
+        hasStash = true;
+      }
+    } catch { /* no stash needed */ }
+
+    // 2. Find commits unique to the switched branch (relative to DEF branch)
+    let cherryCommits: string[] = [];
+    try {
+      const base = await git(worktreePath, ['merge-base', defBranch, actualBranch]);
+      const log = await git(worktreePath, ['log', '--reverse', '--format=%H', `${base}..${actualBranch}`]);
+      cherryCommits = log.split('\n').filter(Boolean);
+    } catch { /* no commits to rescue */ }
+
+    // 3. Switch back to the DEF branch
+    await git(worktreePath, ['checkout', defBranch]);
+
+    // 4. Cherry-pick commits from the switched branch
+    for (const sha of cherryCommits) {
+      try {
+        await git(worktreePath, ['cherry-pick', sha]);
+      } catch {
+        // Conflict — abort this cherry-pick and skip
+        try { await git(worktreePath, ['cherry-pick', '--abort']); } catch { /* */ }
+      }
+    }
+
+    // 5. Pop stashed changes if any
+    if (hasStash) {
+      try { await git(worktreePath, ['stash', 'pop']); } catch { /* conflict — leave in stash */ }
+    }
+  } catch {
+    // Last resort: just try to get back on the DEF branch
+    try { await git(worktreePath, ['checkout', defBranch]); } catch { /* give up */ }
   }
 }
 

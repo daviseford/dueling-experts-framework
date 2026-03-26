@@ -6,10 +6,13 @@ import { toast } from "sonner"
 import { sendInterjection } from "@/lib/api"
 
 interface InterjectionInputProps {
+  sessionId: string
   disabled: boolean
+  isReadOnly?: boolean
+  onSent?: (content: string) => void
 }
 
-export function InterjectionInput({ disabled }: InterjectionInputProps) {
+export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: InterjectionInputProps) {
   const [value, setValue] = useState("")
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -21,7 +24,8 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
 
     setSending(true)
     try {
-      await sendInterjection(content)
+      await sendInterjection(sessionId, content)
+      onSent?.(content)
       setValue("")
       textareaRef.current?.focus()
     } catch (err) {
@@ -29,7 +33,7 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
     } finally {
       setSending(false)
     }
-  }, [value, sending])
+  }, [sessionId, value, sending, onSent])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -40,6 +44,8 @@ export function InterjectionInput({ disabled }: InterjectionInputProps) {
     },
     [doSend]
   )
+
+  if (isReadOnly) return null
 
   return (
     <div className="flex gap-2.5 border-t border-border/30 bg-card/80 px-5 py-3">

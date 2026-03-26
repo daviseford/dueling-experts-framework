@@ -21,6 +21,9 @@ interface TurnContent {
 
 const AGENT_NAMES: Record<AgentName, string> = { claude: 'Claude', codex: 'Codex' };
 
+/** Shared rule appended to all prompt templates to prevent encoding issues. */
+const ASCII_RULE = 'Use ASCII-safe punctuation only. Use - or -- instead of em-dashes or en-dashes. Do not use Unicode special characters.';
+
 // Budget: ~100K tokens × 4 chars/token = 400K chars.
 // Must stay within Haiku's 200K-token context window when fast-tier is active.
 // Code-heavy content may compress to ~3 chars/token (~133K tokens). Reserve headroom
@@ -34,20 +37,21 @@ You are collaborating on: ${topic}
 
 ## Rules
 - Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status (complete | needs_human | done | decided).
-- Optional frontmatter: decisions (array of strings — key decisions made in this turn).
+- Optional frontmatter: decisions (array of strings -- key decisions made in this turn).
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
-- Challenge the other agent's assumptions. Don't just agree — push for better solutions.
-- If you need human input to proceed, set status: needs_human and explain what you need in the body.
-- If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn — the other agent must have a chance to respond.
+- Challenge the other agent's assumptions. Don't just agree -- push for better solutions.
+- You have read-only tool access (Read, Glob, Grep, git). You CANNOT modify files -- that happens in the implementation phase. Do not request human help because of this limitation. When the plan is ready to implement, set status: decided.
+- If the plan is complete and BOTH agents have contributed, set status: done. Do NOT set done on your first turn -- the other agent must have a chance to respond.
 - If you believe you and the other agent have reached consensus on all key decisions, set status: decided. The other agent will then confirm or contest.
 - Always use status: complete unless the conversation is truly finished after multiple turns.
-- Do NOT include anything before the opening --- of the frontmatter.`;
+- Do NOT include anything before the opening --- of the frontmatter.
+- ${ASCII_RULE}`;
 }
 
 function implementPrompt(agent: AgentName, topic: string, decisions: string[]): string {
   const decisionsList = decisions.length > 0
     ? decisions.map((d, i) => `${i + 1}. ${d}`).join('\n')
-    : '(No decisions recorded — implement based on the debate context above.)';
+    : '(No decisions recorded -- implement based on the debate context above.)';
 
   return `You are ${AGENT_NAMES[agent]}, implementing the decisions from a debate on: ${topic}
 
@@ -55,16 +59,17 @@ function implementPrompt(agent: AgentName, topic: string, decisions: string[]): 
 ${decisionsList}
 
 ## Your Task
-Implement the decisions above. You have full tool access — you can read, write, and edit files, and run shell commands directly. The working directory is the project root.
+Implement the decisions above. You have full tool access -- you can read, write, and edit files, and run shell commands directly. The working directory is the project root.
 
-Make the changes directly. Do not describe what you would do — actually do it.
+Make the changes directly. Do not describe what you would do -- actually do it.
 
 ## Rules
 - Respond with YAML frontmatter followed by a brief markdown summary of what you implemented.
 - Required frontmatter fields: id, turn, from (must be "${agent}"), timestamp (ISO-8601), status.
 - Set status: complete when your implementation is done.
 - Summarize the changes you made (files created/modified, commands run).
-- Do NOT include anything before the opening --- of the frontmatter.`;
+- Do NOT include anything before the opening --- of the frontmatter.
+- ${ASCII_RULE}`;
 }
 
 function reviewPrompt(agent: AgentName, topic: string, decisions: string[], diff: string | null): string {
@@ -108,7 +113,8 @@ Review the implementation diff against the debate decisions. Check:
 - If fixes are needed, set status: decided and verdict: fix, then describe what needs to change. The implementing agent will get another turn.
 - The verdict field is REQUIRED when status is decided. Must be either "approve" or "fix".
 - Be specific about what's wrong and how to fix it.
-- Do NOT include anything before the opening --- of the frontmatter.`;
+- Do NOT include anything before the opening --- of the frontmatter.
+- ${ASCII_RULE}`;
 }
 
 /**
@@ -234,7 +240,7 @@ function buildTruncationNotice(truncated: TurnContent[], decisions: string[]): s
   const first = truncated[0].turn ?? '?';
   const last = truncated[truncated.length - 1].turn ?? '?';
   const lines = [
-    `> **[Context truncated]** Turns ${first}–${last} omitted (${truncated.length} turn(s), ${decisions.length} decision(s) preserved).`,
+    `> **[Context truncated]** Turns ${first}-${last} omitted (${truncated.length} turn(s), ${decisions.length} decision(s) preserved).`,
   ];
 
   if (decisions.length > 0) {

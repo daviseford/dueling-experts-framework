@@ -16,6 +16,10 @@ npm run build:ui                      # Build UI
 
 Run a single test file: `tsx --test src/__tests__/validate.test.ts`
 
+## Important: "Agents" Means the Programmatic Agents
+
+This repo IS a multi-agent orchestrator (DEF). When discussing agents, reviewers, or tool access in this codebase, we are **always** referring to the programmatically spawned agents defined in `src/agent.ts` — NOT Claude Code itself. Changes to agent capabilities (e.g., adding tools, modifying permissions) must be made in the source code (`src/agent.ts`, `src/context.ts`, etc.), **never** by editing Claude Code settings files.
+
 ## Key Constraints
 
 - **Backend is TypeScript (ESM).** Node.js 20+, run via `tsx`, no build step. Type-check with `tsc --noEmit`.
@@ -26,3 +30,4 @@ Run a single test file: `tsx --test src/__tests__/validate.test.ts`
 - **Conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
 - **Never commit to `main`/`master`/`dev`/`stage`** — use feature branches.
 - **No session resumption.** Sessions are not recoverable — each `def` invocation starts fresh.
+- **All def sessions are equal.** There are no special sessions - the initial session that happens to launch the explorer is not special. All sessions are treated equally.

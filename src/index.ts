@@ -3,9 +3,28 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { create, installShutdownHandler } from './session.js';
 import type { Session, AgentName } from './session.js';
+import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import * as ui from './ui.js';
+
+// Subcommand routing — check before parseArgs
+const subcmd = process.argv[2];
+if (subcmd === 'history') {
+  const mod = await import('./history-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+if (subcmd === 'show') {
+  const mod = await import('./show-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
+if (subcmd === 'explorer') {
+  const mod = await import('./explorer-cmd.js');
+  await mod.run(process.argv.slice(3));
+  process.exit(0);
+}
 
 const VALID_MODES = ['edit', 'planning'];
 const VALID_AGENTS = ['claude', 'codex'];
@@ -23,7 +42,10 @@ if (opts.version) {
 
 if (!opts.topic) {
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast]');
+  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]');
+  console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
+  console.error('       def show <session-id-or-prefix>');
+  console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
   process.exit(1);
 }
 
@@ -72,6 +94,9 @@ try {
   process.exit(1);
 }
 
+// Register repo in global known-repos (fire-and-forget)
+registerRepo(targetRepo).catch(() => {});
+
 ui.intro({
   id: session.id,
   topic: session.topic,
@@ -85,25 +110,54 @@ ui.intro({
 
 installShutdownHandler(session.dir, targetRepo, session);
 
-// Start server
+// Probe for an existing shared server before starting our own
 let server: typeof import('./server.js') | null = null;
+let ownsServer = false;
 try {
   server = await import('./server.js');
+
+  const defaultPort = server.getDefaultPort();
+  if (defaultPort === 0) {
+    // CI or DEF_NO_OPEN — skip probe, start our own server
+    ownsServer = true;
+  } else {
+    const probe = await server.probeExistingServer(defaultPort);
+
+    if (probe.action === 'join') {
+      // A shared DEF server with active sessions exists — run headless
+      ui.status('server.shared', { port: defaultPort });
+      server = null;
+      ownsServer = false;
+    } else {
+      // 'replace' or 'bind-new' — start our own server
+      // For 'replace', the probe already sent end-session to the stale server
+      ownsServer = true;
+    }
+  }
 } catch {
-  // Headless mode
+  // Headless mode — server module unavailable
+}
+
+// Start the server if we own it
+if (server && ownsServer) {
+  // server.start() is called by the orchestrator via the server reference
 }
 
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast });
+  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast, noWorktree: opts.noWorktree });
 } catch (err: unknown) {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
-  if (server) {
-    // Give the UI time to poll the completed status before shutting down
-    await new Promise((r) => setTimeout(r, 5000));
-    server.stop();
+  if (server && ownsServer) {
+    // Keep server alive for multi-session browsing after session completes.
+    // Server shuts down after idle timeout (default 5 minutes).
+    try {
+      await server.beginIdleShutdown();
+    } catch {
+      server.stop();
+    }
   }
   process.exit(process.exitCode || 0);
 }

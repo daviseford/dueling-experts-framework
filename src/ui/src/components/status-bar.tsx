@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { ThemeToggle } from "./theme-toggle"
 import { cn } from "@/lib/utils"
 import { ChevronsDownUp, ChevronsUpDown, Clock, Hash, Radio } from "lucide-react"
 
@@ -84,7 +83,6 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
         </Button>
       )}
 
-      <ThemeToggle />
     </div>
   )
 }

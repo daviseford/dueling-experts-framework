@@ -1,3 +1,5 @@
+process.env.DEF_NO_OPEN = '1';
+process.env.CI = '1';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, rm, writeFile, readFile } from 'node:fs/promises';
@@ -160,6 +162,8 @@ describe('/api/turns response shape', () => {
 
     // Core fields
     assert.ok(Array.isArray(json.turns));
+    assert.ok(typeof json.session_id === 'string');
+    assert.ok(json.session_id.length > 0);
     assert.equal(json.session_status, 'completed');
     assert.equal(json.topic, 'test topic');
     assert.equal(typeof json.turn_count, 'number');

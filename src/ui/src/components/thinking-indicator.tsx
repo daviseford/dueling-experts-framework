@@ -73,6 +73,11 @@ export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicato
         <span className="thinking-glow text-[13px] text-muted-foreground">
           {PHASE_LABEL[phase] || "Thinking"}
         </span>
+        {thinking.model && (
+          <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70">
+            {thinking.model}
+          </span>
+        )}
         <span className="font-mono text-[11px] text-muted-foreground/60">
           {elapsed}
         </span>

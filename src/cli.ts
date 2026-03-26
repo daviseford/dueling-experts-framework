@@ -7,6 +7,7 @@ export interface ParsedArgs {
   reviewTurns?: number;
   noPr?: boolean;
   noFast?: boolean;
+  noWorktree?: boolean;
   version?: boolean;
 }
 
@@ -38,6 +39,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--no-fast':
         result.noFast = true;
+        break;
+      case '--no-worktree':
+        result.noWorktree = true;
         break;
       case '--version':
       case '-v':

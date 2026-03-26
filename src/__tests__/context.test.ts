@@ -84,6 +84,41 @@ describe('assemble', () => {
     assert.ok(!prompt.includes('[Context truncated]'));
   });
 
+  it('includes ASCII enforcement rule in plan prompt', async () => {
+    const session = makeSession({
+      topic: 'ASCII test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
+  });
+
+  it('includes ASCII enforcement rule in implement prompt', async () => {
+    const session = makeSession({
+      topic: 'ASCII test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      phase: 'implement' as any,
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
+  });
+
+  it('includes ASCII enforcement rule in review prompt', async () => {
+    const session = makeSession({
+      topic: 'ASCII test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      phase: 'review' as any,
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
+  });
+
   it('rejects unknown mode', async () => {
     const session = makeSession({ topic: 'T', mode: 'debate', next_agent: 'claude', dir: sessionDir });
     await assert.rejects(() => assemble(session), /Unknown mode/);

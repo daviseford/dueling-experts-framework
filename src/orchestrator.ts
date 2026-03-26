@@ -3,12 +3,14 @@ import { join } from 'node:path';
 import yaml from 'js-yaml';
 import { validate } from './validation.js';
 import type { TurnData, TurnStatus, ReviewVerdict } from './validation.js';
-import { invoke } from './agent.js';
+import { invoke, resolveModelName } from './agent.js';
+import type { ModelTier } from './agent.js';
 import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, AgentName, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
-import { createWorktree, removeWorktree, captureDiff, commitChanges } from './worktree.js';
-import { pushAndCreatePr, hasBranchDelta } from './pr.js';
+import { readInterjections, checkEndRequest } from './ipc.js';
+import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
+import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import { extractFilePaths } from './deliverable.js';
@@ -27,7 +29,7 @@ interface InvokeOnceResult {
 export interface Controller {
   readonly isPaused: boolean;
   readonly endRequested: boolean;
-  readonly thinking: { agent: AgentName; since: string } | null;
+  readonly thinking: { agent: AgentName; since: string; model: string } | null;
   readonly phase: string;
   interject(content: string): void;
   requestEnd(): void;
@@ -42,6 +44,7 @@ interface RunOptions {
   server?: ServerModule | null;
   noPr?: boolean;
   noFast?: boolean;
+  noWorktree?: boolean;
 }
 
 export interface RecoveredState {
@@ -61,7 +64,8 @@ interface CanonicalTurnData {
   verdict?: 'approve' | 'fix';
   duration_ms?: number;
   decisions?: string[];
-  model_tier?: 'full' | 'fast';
+  model_tier?: ModelTier;
+  model_name?: string;
 }
 
 interface DecisionEntry {
@@ -74,15 +78,16 @@ interface DecisionEntry {
 
 /**
  * Select model tier for the current turn based on phase and consensus signals.
- * Returns 'fast' for confirmation/consensus turns in the plan phase, 'full' otherwise.
+ * Returns 'mid' for review, 'fast' for consensus turns in plan, 'full' otherwise.
  */
 export function selectModelTier(
   phase: SessionPhase,
   noFast: boolean,
   pendingPlanDecided: AgentName | null,
   bothEverDecided: boolean,
-): 'full' | 'fast' {
+): ModelTier {
   if (noFast) return 'full';
+  if (phase === 'review') return 'mid';
   if (phase !== 'plan') return 'full';
   if (bothEverDecided) return 'fast';
   if (pendingPlanDecided) return 'fast';
@@ -95,7 +100,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -180,11 +185,12 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
 
   let thinkingAgent: AgentName | null = null;
   let thinkingSince: string | null = null;
+  let thinkingModel: string = '';
 
   const controller: Controller = {
     get isPaused() { return isPaused; },
     get endRequested() { return endRequested; },
-    get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince! } : null; },
+    get thinking() { return thinkingAgent ? { agent: thinkingAgent, since: thinkingSince!, model: thinkingModel } : null; },
     get phase() { return phase; },
     interject(content: string): void {
       if (isPaused && humanResponseResolve) {
@@ -208,6 +214,55 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     await server.start(session, controller);
   }
 
+  // Heartbeat writer — writes heartbeat.json every 10s for liveness detection
+  const heartbeatInterval = setInterval(() => {
+    const payload = JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n';
+    atomicWrite(join(session.dir, 'heartbeat.json'), payload).catch(() => {});
+  }, 10_000);
+  // Write initial heartbeat immediately
+  atomicWrite(join(session.dir, 'heartbeat.json'), JSON.stringify({ heartbeat_at: new Date().toISOString() }) + '\n').catch(() => {});
+
+  // File-based IPC poll loop — picks up interjections and end-requested flags
+  // written by the shared server (coexists with in-memory controller methods).
+  let ipcPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pollStopped = false;
+
+  function schedulePoll(): void {
+    if (pollStopped) return;
+    const delay = isPaused ? 500 : 1000;
+    ipcPollTimeout = setTimeout(async () => {
+      try {
+        // Read pending interjections from the session's interjections/ directory
+        const contents = await readInterjections(session.dir);
+        for (const content of contents) {
+          if (isPaused && humanResponseResolve) {
+            humanResponseResolve(content);
+            humanResponseResolve = null;
+            isPaused = false;
+          } else {
+            interjectionQueue.push(content);
+          }
+        }
+
+        // Check for end-session request
+        const shouldEnd = await checkEndRequest(session.dir);
+        if (shouldEnd) {
+          endRequested = true;
+          if (session._currentChild) {
+            killChildProcess(session._currentChild);
+          }
+        }
+
+      } catch {
+        // IPC poll errors are non-fatal — the next poll will retry
+      }
+      schedulePoll();
+    }, delay);
+  }
+  schedulePoll();
+
+  try {
+
   while (turnCount < session.max_turns && !endRequested) {
     turnCount++;
 
@@ -227,6 +282,8 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     // Invoke agent with one retry on failure
     thinkingAgent = nextAgent;
     thinkingSince = new Date().toISOString();
+    thinkingModel = resolveModelName(nextAgent, currentTier);
+    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: thinkingAgent, since: thinkingSince, model: thinkingModel }) + '\n').catch(() => {});
     const invokeStart: number = Date.now();
     const retryResult = await invokeWithRetry(nextAgent, session, turnCount, tracer, attemptCounters, () => endRequested, currentTier);
     let result: InvokeOnceResult = retryResult;
@@ -234,6 +291,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     const durationMs: number = Date.now() - invokeStart;
     thinkingAgent = null;
     thinkingSince = null;
+    atomicWrite(join(session.dir, 'thinking.json'), JSON.stringify({ agent: null, since: null, model: null }) + '\n').catch(() => {});
 
     if (endRequested) {
       ui.status('end.requested', { turn: turnCount });
@@ -278,9 +336,9 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
           content: result.output.trim(),
         };
       } else {
-        // Validation retry always uses the full model — if the fast model produced
+        // Validation retry always uses the full model — if a non-full model produced
         // invalid frontmatter, escalating to full is the right fallback.
-        if (currentTier === 'fast') {
+        if (currentTier !== 'full') {
           ui.status('tier.escalation', { turn: turnCount });
         } else {
           ui.status('turn.retry', { turn: turnCount });
@@ -289,7 +347,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         validation = result.ok ? validate(result.output, nextAgent) : { valid: false, errors: ['retry failed'], data: null, content: '' };
 
         // If retry succeeded with full model, update the tier for this turn's metadata
-        if (validation.valid && currentTier === 'fast') {
+        if (validation.valid && currentTier !== 'full') {
           currentTier = 'full';
         }
 
@@ -327,6 +385,7 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
       canonicalData.decisions = validData.decisions;
     }
     canonicalData.model_tier = currentTier;
+    canonicalData.model_name = resolveModelName(nextAgent, currentTier);
 
     // Review-phase verdict handling:
     // - Legacy 'done' maps to decided + verdict:approve (compat shim)
@@ -385,9 +444,16 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         next_agent: oppositeAgent,
       });
 
-      // Check for consensus signaling — treat 'done' as 'decided' in edit mode
-      const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided')
+      // Check for consensus signaling — treat 'done' as 'decided' in edit mode.
+      // Also treat 'needs_human' as 'decided': plan-phase agents have read-only
+      // access, so needs_human typically means the agent wants to implement
+      // changes rather than genuinely needing human input.
+      const effectiveStatus = (canonicalData.status === 'done' || canonicalData.status === 'decided' || canonicalData.status === 'needs_human')
         ? 'decided' : canonicalData.status;
+
+      if (canonicalData.status === 'needs_human') {
+        ui.status('human.auto.decided', { turn: turnCount, agent: nextAgent });
+      }
 
       if (effectiveStatus === 'decided') {
         // Track per-agent decided for fast-model heuristic
@@ -409,13 +475,20 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
             break;
           }
 
-          // Create worktree for isolated implementation.
-          // Worktree is required — agents get full tool access and must not
-          // operate on the user's main checkout.
-          if (session.mode === 'edit') {
+          // Create worktree for isolated implementation (unless --no-worktree).
+          // Without a worktree, agents operate directly on the user's checkout.
+          if (session.mode === 'edit' && !noWorktree) {
             try {
+              // Resolve base branch from PR URL in topic (if any)
+              let baseOverride: string | undefined;
+              const prRef = parsePrRef(session.topic);
+              if (prRef) {
+                const headBranch = await lookupPrHeadBranch(prRef);
+                if (headBranch) baseOverride = headBranch;
+              }
+
               const { worktreePath, branchName, baseRef } = await createWorktree(
-                session.target_repo, session.id, session.topic,
+                session.target_repo, session.id, session.topic, baseOverride,
               );
               session.original_repo = session.target_repo;
               session.worktree_path = worktreePath;
@@ -461,28 +534,6 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
         if (pendingPlanDecided && effectiveStatus === 'complete') {
           ui.status('consensus.contested', { turn: turnCount, agent: nextAgent });
           pendingPlanDecided = null;
-        }
-
-        if (effectiveStatus === 'needs_human') {
-          if (server) {
-            isPaused = true;
-            await updateSession(session.dir, { session_status: 'paused' });
-            ui.status('human.paused', { turn: turnCount });
-
-            const humanContent: string = await waitForHuman();
-            isPaused = false;
-            turnCount++;
-            await writeHumanTurn(session, turnCount, humanContent);
-            await updateSession(session.dir, {
-              current_turn: turnCount,
-              session_status: 'active',
-              next_agent: nextAgent, // Same agent resumes
-            });
-            continue;
-          }
-
-          ui.status('human.exiting', { turn: turnCount });
-          break;
         }
 
         nextAgent = oppositeAgent;
@@ -588,7 +639,14 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   await generateDecisions(session);
 
   // Commit any remaining uncommitted changes before push/PR (safety net).
-  if (session.worktree_path) {
+  // First, detect if the agent switched branches inside the worktree.
+  // If so, rescue commits onto the DEF branch so the PR captures them.
+  if (session.worktree_path && session.branch_name) {
+    const actual = await currentBranch(session.worktree_path);
+    if (actual && actual !== session.branch_name) {
+      ui.status('branch.switched', { expected: session.branch_name, actual });
+      await rescueBranchSwitch(session.worktree_path, session.branch_name, actual);
+    }
     await commitChanges(session.worktree_path, 'def: final changes').catch(() => {});
   }
 
@@ -596,12 +654,15 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
   // Worktree cleanup is in a finally-style path so it always happens.
   try {
     if (session.worktree_path && session.branch_name && session.mode === 'edit' && !noPr) {
-      const delta = await hasBranchDelta(session.worktree_path, session.base_ref);
+      const deltaOut: { resolvedRef?: string } = {};
+      const delta = await hasBranchDelta(session.worktree_path, session.base_ref, deltaOut);
+      // Use the resolved ref (may differ from session.base_ref if original was deleted)
+      const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,
-          baseRef: session.base_ref,
+          baseRef: effectiveBase,
           title: `def: ${session.topic}`,
           sessionDir: session.dir,
           topic: session.topic,
@@ -646,6 +707,12 @@ export async function run(session: Session, { server, noPr, noFast }: RunOptions
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
   });
+
+  } finally {
+    clearInterval(heartbeatInterval);
+    pollStopped = true;
+    if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
+  }
 
   // --- Helper closures ---
 
@@ -786,7 +853,7 @@ export function normalizeStatus(agentStatus: TurnStatus | string, turnCount: num
 
 // --- Agent invocation helpers ---
 
-async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: 'full' | 'fast'): Promise<InvokeOnceResult> {
+async function invokeOnce(agentName: AgentName, session: Session, turnCount?: number, tracer?: Tracer, attemptCounters?: Map<string, number>, label?: string, tier?: ModelTier): Promise<InvokeOnceResult> {
   let attemptIdx = 0;
   if (turnCount !== undefined && attemptCounters) {
     const key = `${turnCount}-${agentName}`;
@@ -840,15 +907,15 @@ async function invokeOnce(agentName: AgentName, session: Session, turnCount?: nu
   return { ok: !failed, output: result.output, rawOutput: result.output, reason };
 }
 
-async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: 'full' | 'fast'): Promise<InvokeOnceResult & { effectiveTier?: 'full' | 'fast' }> {
+async function invokeWithRetry(agentName: AgentName, session: Session, turnCount: number, tracer: Tracer, attemptCounters: Map<string, number>, shouldAbort?: () => boolean, tier?: ModelTier): Promise<InvokeOnceResult & { effectiveTier?: ModelTier }> {
   let activity = ui.startActivity(turnCount, agentName, undefined, tier);
   let result: InvokeOnceResult = await invokeOnce(agentName, session, turnCount, tracer, attemptCounters, undefined, tier);
   activity.stop();
   let effectiveTier = tier;
   if (!result.ok && !shouldAbort?.()) {
-    // Escalate fast→full on invocation failure (same pattern as validation retry)
-    const retryTier = tier === 'fast' ? 'full' : tier;
-    if (tier === 'fast') {
+    // Escalate non-full→full on invocation failure (same pattern as validation retry)
+    const retryTier: ModelTier = tier !== 'full' ? 'full' : tier;
+    if (tier !== 'full') {
       ui.status('invoke.escalate', { turn: turnCount, reason: result.reason });
     } else {
       ui.status('invoke.retry', { turn: turnCount, agent: agentName, reason: result.reason });
@@ -886,7 +953,7 @@ async function savePromptForTurn(session: Session, canonicalId: string): Promise
   }
 }
 
-async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: 'full' | 'fast'): Promise<void> {
+async function writeErrorTurn(session: Session, turnCount: number, agent: AgentName, reason: string, rawOutput: string, modelTier?: ModelTier): Promise<void> {
   const id = `turn-${String(turnCount).padStart(4, '0')}-${agent}`;
   const data: CanonicalTurnData = {
     id,
@@ -896,7 +963,10 @@ async function writeErrorTurn(session: Session, turnCount: number, agent: AgentN
     status: 'error',
     phase: session.phase,
   };
-  if (modelTier) data.model_tier = modelTier;
+  if (modelTier) {
+    data.model_tier = modelTier;
+    data.model_name = resolveModelName(agent, modelTier);
+  }
   // Sanitize rawOutput to prevent code fence escape
   const safeOutput = (rawOutput || '(empty)').replace(/```/g, '` ` `');
   const body = `## Error\n\n**Reason:** ${reason}\n\n### Raw Output\n\n\`\`\`\n${safeOutput}\n\`\`\``;
