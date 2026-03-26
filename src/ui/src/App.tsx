@@ -6,6 +6,24 @@ import { SessionHeader } from "@/components/session-header"
 import { SessionTabBar } from "@/components/session-tab-bar"
 import { SessionPanel } from "@/components/session-panel"
 import { EmptyState } from "@/components/empty-state"
+import { cn } from "@/lib/utils"
+
+type ViewMode = "single" | "grid"
+const VIEW_MODE_KEY = "def-view-mode"
+const MIN_GRID_WIDTH = 768
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false
+  )
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
+    mql.addEventListener("change", handler)
+    return () => mql.removeEventListener("change", handler)
+  }, [query])
+  return matches
+}
 
 export default function App() {
   const {
@@ -16,6 +34,17 @@ export default function App() {
 
   // Get topic for the selected session (used for document.title in single mode)
   const { topic } = useSessionTurns(selectedSessionId, sessions)
+
+  // View mode state with localStorage persistence
+  const [viewModePreference, setViewModePreference] = useState<ViewMode>(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_MODE_KEY)
+      return stored === "grid" ? "grid" : "single"
+    } catch {
+      return "single"
+    }
+  })
+  const isWideEnough = useMediaQuery(`(min-width: ${MIN_GRID_WIDTH}px)`)
 
   // Dismissed sessions (hidden from tab bar, persisted to localStorage)
   const DISMISSED_KEY = "def-dismissed-sessions"
@@ -31,6 +60,18 @@ export default function App() {
     () => sessions.filter((s) => !dismissedIds.has(s.id)),
     [sessions, dismissedIds]
   )
+
+  // Effective view mode: preference AND viewport >= 768px AND >= 2 visible sessions
+  const canShowGrid = isWideEnough && visibleSessions.length >= 2
+  const effectiveViewMode: ViewMode = canShowGrid && viewModePreference === "grid" ? "grid" : "single"
+  const isGrid = effectiveViewMode === "grid"
+
+  const handleToggleViewMode = useCallback(() => {
+    const next: ViewMode = viewModePreference === "grid" ? "single" : "grid"
+    setViewModePreference(next)
+    try { localStorage.setItem(VIEW_MODE_KEY, next) } catch { /* quota */ }
+  }, [viewModePreference])
+
   const handleDismissSession = useCallback((id: string) => {
     setDismissedIds((prev) => {
       const next = new Set(prev).add(id)
@@ -46,15 +87,27 @@ export default function App() {
     }
   }, [sessions, selectedSessionId, dismissedIds, setSelectedSessionId])
 
+  // Grid sessions: first 4 visible sessions
+  const gridSessions = useMemo(
+    () => visibleSessions.slice(0, 4),
+    [visibleSessions]
+  )
+  const gridCount = gridSessions.length
+
   // Document title
   useEffect(() => {
-    if (topic) {
+    if (isGrid) {
+      document.title = `DEF \u2014 ${gridCount} session${gridCount !== 1 ? "s" : ""}`
+    } else if (topic) {
       const short = topic.length > 30 ? topic.slice(0, 30) + "\u2026" : topic
       document.title = `DEF - ${short}`
     }
-  }, [topic])
+  }, [topic, isGrid, gridCount])
 
   const hasAnySessions = sessions.length > 0
+
+  // Tab bar: hidden in grid mode OR when <= 1 session
+  const showTabBar = !isGrid && visibleSessions.length > 1
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -62,15 +115,47 @@ export default function App() {
         topic={topic}
         sessionId={selectedSessionId}
         sessions={visibleSessions}
+        viewMode={effectiveViewMode}
+        canShowGrid={canShowGrid}
+        onToggleViewMode={handleToggleViewMode}
       />
-      <SessionTabBar
-        sessions={visibleSessions}
-        selectedSessionId={selectedSessionId}
-        onSelectSession={setSelectedSessionId}
-        onDismissSession={handleDismissSession}
-      />
+      {showTabBar && (
+        <SessionTabBar
+          sessions={visibleSessions}
+          selectedSessionId={selectedSessionId}
+          onSelectSession={setSelectedSessionId}
+          onDismissSession={handleDismissSession}
+        />
+      )}
       {!hasAnySessions ? (
         <EmptyState />
+      ) : isGrid ? (
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 gap-1",
+            gridCount <= 1 && "grid-cols-1",
+            gridCount >= 2 && "grid-cols-2",
+            gridCount >= 2 && "grid-rows-[1fr_1fr]",
+          )}
+        >
+          {gridSessions.map((s, i) => (
+            <SessionPanel
+              key={s.id}
+              sessionId={s.id}
+              sessions={sessions}
+              showPanelHeader
+              showMaximize
+              showDismiss
+              onMaximize={() => {
+                setSelectedSessionId(s.id)
+                setViewModePreference("single")
+                try { localStorage.setItem(VIEW_MODE_KEY, "single") } catch { /* quota */ }
+              }}
+              onDismiss={() => handleDismissSession(s.id)}
+              className={cn(gridCount === 3 && i === 2 && "col-span-2")}
+            />
+          ))}
+        </div>
       ) : (
         <SessionPanel
           key={selectedSessionId}

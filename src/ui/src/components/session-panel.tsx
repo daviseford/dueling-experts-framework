@@ -28,6 +28,7 @@ interface SessionPanelProps {
   showMaximize?: boolean
   showDismiss?: boolean
   showPanelHeader?: boolean
+  className?: string
   onMaximize?: () => void
   onDismiss?: () => void
 }
@@ -38,6 +39,7 @@ export function SessionPanel({
   showMaximize,
   showDismiss,
   showPanelHeader,
+  className,
   onMaximize,
   onDismiss,
 }: SessionPanelProps) {
@@ -149,7 +151,7 @@ export function SessionPanel({
   }, [sessionId])
 
   return (
-    <div className={cn("flex flex-col overflow-hidden", showPanelHeader && "border border-border/30 rounded-lg")}>
+    <div className={cn("flex min-h-0 flex-col overflow-hidden", showPanelHeader && "border border-border/30 rounded-lg", className)}>
       {showPanelHeader && (
         <div className="flex items-center gap-2 border-b border-border/30 bg-card/80 px-3 py-1.5">
           <span className="flex-1 truncate text-xs font-medium text-foreground/80">{topic || "Loading..."}</span>

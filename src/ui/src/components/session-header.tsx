@@ -1,6 +1,7 @@
-import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Radio } from "lucide-react"
+import { ThemeToggle } from "./theme-toggle"
+import { LayoutGrid, Maximize2, Radio } from "lucide-react"
 import type { SessionSummary } from "@/lib/types"
 
 interface SessionHeaderProps {
@@ -8,10 +9,11 @@ interface SessionHeaderProps {
   sessionId: string
   sessions: SessionSummary[]
   viewMode?: "single" | "grid"
+  canShowGrid?: boolean
   onToggleViewMode?: () => void
 }
 
-export function SessionHeader({ topic, sessionId, sessions, viewMode, onToggleViewMode }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGrid, onToggleViewMode }: SessionHeaderProps) {
   const isGrid = viewMode === "grid"
   const sessionCount = sessions.length
 
@@ -47,7 +49,18 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, onToggleVi
         )}
       </div>
       <div className="flex items-center gap-2">
-        {/* View mode toggle and ThemeToggle will be added in Unit 3 */}
+        {canShowGrid && onToggleViewMode && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onToggleViewMode}
+            title={isGrid ? "Single session view" : "Grid view"}
+          >
+            {isGrid ? <Maximize2 className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+          </Button>
+        )}
+        <ThemeToggle />
       </div>
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent" />
     </header>
