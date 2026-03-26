@@ -60,12 +60,12 @@ function debugLog(msg: string): void {
 }
 
 /**
- * Try to shut down a stale DEF server on the given port.
- * Returns true if the port should now be free.
+ * Probe an existing server on the given port to decide whether to join it,
+ * replace it (stale), or bind a new server.
  */
-async function evictStaleServer(port: number): Promise<boolean> {
+export async function probeExistingServer(port: number): Promise<{ action: 'join' | 'replace' | 'bind-new' }> {
   const http = await import('node:http');
-  return new Promise<boolean>((resolve) => {
+  return new Promise<{ action: 'join' | 'replace' | 'bind-new' }>((resolve) => {
     const req = http.request({
       hostname: '127.0.0.1',
       port,
@@ -78,81 +78,64 @@ async function evictStaleServer(port: number): Promise<boolean> {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          // It's a DEF server if it has a sessions array
-          if (Array.isArray(json.sessions)) {
-            debugLog(`Stale DEF server detected on port ${port}, stopping it`);
-            // Send end-session to trigger shutdown
-            const endReq = http.request({
-              hostname: '127.0.0.1',
-              port,
-              path: '/api/end-session',
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              timeout: 1000,
-            }, () => {
-              // Give it a moment to shut down
-              setTimeout(() => resolve(true), 500);
-            });
-            endReq.on('error', () => resolve(true));
-            endReq.end('{}');
+          // Must be a DEF server (has server: 'def' field)
+          if (json.server !== 'def') {
+            debugLog(`Port ${port} is in use by a non-DEF service`);
+            resolve({ action: 'bind-new' });
             return;
           }
-        } catch { /* not a DEF server */ }
-        debugLog(`Port ${port} is in use by a non-DEF service`);
-        resolve(false);
+
+          const sessions: Array<{ is_active?: boolean }> = Array.isArray(json.sessions) ? json.sessions : [];
+          const hasActiveSessions = sessions.some(s => s.is_active === true);
+
+          if (hasActiveSessions) {
+            debugLog(`Active DEF server with live sessions on port ${port}, joining`);
+            resolve({ action: 'join' });
+            return;
+          }
+
+          // DEF server but no active sessions — stale, replace it
+          debugLog(`Stale DEF server on port ${port} (no active sessions), replacing`);
+          const endReq = http.request({
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/end-session',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 1000,
+          }, () => {
+            setTimeout(() => resolve({ action: 'replace' }), 500);
+          });
+          endReq.on('error', () => resolve({ action: 'replace' }));
+          endReq.end('{}');
+        } catch {
+          debugLog(`Port ${port} responded with non-JSON, treating as non-DEF`);
+          resolve({ action: 'bind-new' });
+        }
       });
     });
     req.on('error', () => {
-      debugLog(`Port ${port} in use but not responding to HTTP`);
-      resolve(false);
+      debugLog(`Port ${port} not responding, binding new server`);
+      resolve({ action: 'bind-new' });
     });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('timeout', () => {
+      req.destroy();
+      debugLog(`Port ${port} timed out, binding new server`);
+      resolve({ action: 'bind-new' });
+    });
     req.end();
   });
 }
 
 /**
- * Listen on the preferred port. If taken by a stale DEF server, evict it and retry.
- * Falls back to a random port as a last resort.
+ * Listen on the preferred port, falling back to a random port on EADDRINUSE.
+ * Probe/eviction decisions happen before this is called.
  */
 function listenWithFallback(server: import('node:http').Server, preferredPort: number): Promise<number> {
   return new Promise<number>((resolve, reject) => {
-    let evicted = false;
-    const onError = async (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE' && preferredPort !== 0 && !evicted) {
-        evicted = true;
-        debugLog(`Port ${preferredPort} in use, attempting eviction`);
-        server.removeListener('error', onError);
-        const freed = await evictStaleServer(preferredPort);
-        if (freed) {
-          debugLog(`Retrying port ${preferredPort} after eviction`);
-          // Retry preferred port
-          server.on('error', (retryErr: NodeJS.ErrnoException) => {
-            if (retryErr.code === 'EADDRINUSE') {
-              debugLog(`Port ${preferredPort} still taken, falling back to random`);
-              server.listen(0, '127.0.0.1', () => {
-                const addr = server.address();
-                resolve(typeof addr === 'object' && addr ? addr.port : 0);
-              });
-            } else {
-              reject(retryErr);
-            }
-          });
-          server.listen(preferredPort, '127.0.0.1', () => {
-            const addr = server.address();
-            debugLog(`Bound to port ${preferredPort} after eviction`);
-            resolve(typeof addr === 'object' && addr ? addr.port : 0);
-          });
-        } else {
-          debugLog(`Eviction failed, falling back to random port`);
-          server.listen(0, '127.0.0.1', () => {
-            const addr = server.address();
-            resolve(typeof addr === 'object' && addr ? addr.port : 0);
-          });
-        }
-      } else if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
-        // Already tried eviction, fall back to random
-        debugLog(`Falling back to random port`);
+    const onError = (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && preferredPort !== 0) {
+        debugLog(`Port ${preferredPort} in use, falling back to random`);
         server.removeListener('error', onError);
         server.listen(0, '127.0.0.1', () => {
           const addr = server.address();

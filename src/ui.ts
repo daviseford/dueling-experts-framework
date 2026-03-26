@@ -86,6 +86,7 @@ interface StatusPayloads {
   'invoke.retry':       { turn: number; agent: string; reason: string };
   'invoke.escalate':    { turn: number; reason: string };
   'server.url':         { url: string };
+  'server.shared':      { port: number };
   'shutdown.start':     {};
   'shutdown.saved':     {};
   'shutdown.worktree':  { branch: string };
@@ -361,6 +362,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'server.url': {
       const { url } = d as StatusPayloads['server.url'];
       return `  ${c.cyan(SYM.info)} Watcher UI: ${c.cyan(c.bold(url))}`;
+    }
+    case 'server.shared': {
+      const { port } = d as StatusPayloads['server.shared'];
+      return `  ${c.cyan(SYM.info)} Shared server detected on port ${c.bold(String(port))}, running headless`;
     }
 
     // Shutdown

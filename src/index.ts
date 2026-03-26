@@ -110,12 +110,32 @@ ui.intro({
 
 installShutdownHandler(session.dir, targetRepo, session);
 
-// Start server
+// Probe for an existing shared server before starting our own
 let server: typeof import('./server.js') | null = null;
+let ownsServer = false;
 try {
   server = await import('./server.js');
+
+  const defaultPort = 18541;
+  const probe = await server.probeExistingServer(defaultPort);
+
+  if (probe.action === 'join') {
+    // A shared DEF server with active sessions exists — run headless
+    ui.status('server.shared', { port: defaultPort });
+    server = null;
+    ownsServer = false;
+  } else {
+    // 'replace' or 'bind-new' — start our own server
+    // For 'replace', the probe already sent end-session to the stale server
+    ownsServer = true;
+  }
 } catch {
-  // Headless mode
+  // Headless mode — server module unavailable
+}
+
+// Start the server if we own it
+if (server && ownsServer) {
+  // server.start() is called by the orchestrator via the server reference
 }
 
 // Run the turn loop
@@ -125,7 +145,7 @@ try {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
-  if (server) {
+  if (server && ownsServer) {
     // Keep server alive for multi-session browsing after session completes.
     // Server shuts down after idle timeout (default 5 minutes).
     try {
