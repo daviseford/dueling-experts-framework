@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -6,10 +7,12 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { getPhaseToken } from "@/lib/phase-tokens"
-import { MarkdownContent, extractPreview } from "@/components/markdown-content"
+import { extractPreview } from "@/lib/extract-preview"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronsUpDown, Clock, ListChecks } from "lucide-react"
 import type { Turn } from "@/lib/types"
+
+const MarkdownContent = lazy(() => import("@/components/markdown-content"))
 
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
@@ -35,18 +38,6 @@ const BADGE_STYLES: Record<string, string> = {
 const MID_BADGE_STYLE = "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/25"
 const FAST_BADGE_STYLE = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
 
-/** Shorten long model identifiers for display */
-function shortModelName(name: string): string {
-  // claude-sonnet-4-5-20250514 -> sonnet-4.5
-  const m = name.match(/^claude-(sonnet|opus|haiku)-(\d+)-(\d+)/)
-  if (m) return `${m[1]}-${m[2]}.${m[3]}`
-  // gpt-5.4 etc. are already short
-  if (name.length <= 12) return name
-  // codex-mini-latest -> codex-mini
-  const dash = name.lastIndexOf("-")
-  if (dash > 8) return name.slice(0, dash)
-  return name
-}
 
 function formatTimestamp(ts: string): string {
   if (!ts) return ""
@@ -147,7 +138,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                       : "bg-muted/50 text-muted-foreground border-border/50"
                   )}
                 >
-                  {shortModelName(turn.model_name)}
+                  {turn.model_name}
                 </Badge>
               )}
               {turn.duration_ms != null && (
@@ -165,7 +156,9 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t border-border/40 px-4 py-3">
-            <MarkdownContent content={turn.content} />
+            <Suspense fallback={<pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/85">{turn.content}</pre>}>
+              <MarkdownContent content={turn.content} />
+            </Suspense>
           </div>
           {turn.decisions?.length > 0 && (
             <div className="border-t border-border/30 px-4 py-2.5">

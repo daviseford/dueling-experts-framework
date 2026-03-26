@@ -14,7 +14,7 @@ function stripFrontmatter(text: string): string {
   return trimmed.slice(end + 4).trimStart()
 }
 
-export function MarkdownContent({ content }: MarkdownContentProps) {
+export default function MarkdownContent({ content }: MarkdownContentProps) {
   const body = stripFrontmatter(content)
 
   return (
@@ -22,80 +22,4 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
       <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
     </div>
   )
-}
-
-/**
- * Extract a clean preview string from markdown content.
- * Prefers the first meaningful paragraph or heading.
- * Strips markdown syntax for a plain-text preview.
- */
-export function extractPreview(content: string, maxLen = 120): string {
-  if (!content) return ""
-
-  const body = stripFrontmatter(content)
-  const lines = body.split(/\r?\n/)
-
-  let preview = ""
-  let inFencedBlock = false
-  let prevLineBlank = false
-
-  for (const raw of lines) {
-    const line = raw.trim()
-
-    // Track fenced code blocks (``` or ~~~, optionally followed by a language tag)
-    if (/^(`{3,}|~{3,})/.test(line)) {
-      inFencedBlock = !inFencedBlock
-      prevLineBlank = false
-      continue
-    }
-
-    // Skip all lines inside fenced code blocks
-    if (inFencedBlock) {
-      prevLineBlank = false
-      continue
-    }
-
-    // Skip empty lines (but track for indented code block detection)
-    if (!line) {
-      prevLineBlank = true
-      continue
-    }
-
-    // Skip indented code blocks (4+ spaces or tab after a blank line)
-    if (prevLineBlank && /^( {4,}|\t)/.test(raw)) {
-      continue
-    }
-
-    prevLineBlank = false
-
-    // Skip horizontal rules, HTML comments
-    if (line === "---" || line === "***" || line === "___") continue
-    if (line.startsWith("<!--")) continue
-    // Skip pure image/link lines
-    if (/^!\[/.test(line) && line.endsWith(")")) continue
-
-    // Strip heading markers
-    let clean = line.replace(/^#{1,6}\s+/, "")
-    // Strip bold/italic
-    clean = clean.replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
-    clean = clean.replace(/_{1,3}([^_]+)_{1,3}/g, "$1")
-    // Strip inline code
-    clean = clean.replace(/`([^`]+)`/g, "$1")
-    // Strip links, keep text
-    clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    // Strip list markers
-    clean = clean.replace(/^[-*+]\s+/, "")
-    clean = clean.replace(/^\d+\.\s+/, "")
-    // Strip remaining markdown artifacts
-    clean = clean.replace(/[~]{2}([^~]+)[~]{2}/g, "$1")
-
-    if (clean.length > 0) {
-      preview = clean
-      break
-    }
-  }
-
-  if (!preview) return ""
-  if (preview.length > maxLen) return preview.slice(0, maxLen) + "..."
-  return preview
 }
