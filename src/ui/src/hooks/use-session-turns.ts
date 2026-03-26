@@ -47,13 +47,17 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
   const sessionCreatedRef = useRef<string>("")
   const fetchingTurnsRef = useRef(false)
   const sessionIdRef = useRef(sessionId)
+  const sessionsRef = useRef(sessions)
   // Track session_status from TurnsResponse for stop-polling decisions
   const lastSessionStatusRef = useRef<string>("active")
 
-  // Keep sessionIdRef in sync
+  // Keep refs in sync
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
 
   // Reset state when sessionId changes
   useEffect(() => {
@@ -71,12 +75,16 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
     const currentSid = sessionIdRef.current
     if (!currentSid || fetchingTurnsRef.current) return
     fetchingTurnsRef.current = true
+    let stale = false
 
     try {
       const data = await fetchSessionTurns(currentSid)
 
-      // Discard if sessionId changed during fetch
-      if (sessionIdRef.current !== currentSid) return
+      // Discard if sessionId changed during fetch — don't reschedule
+      if (sessionIdRef.current !== currentSid) {
+        stale = true
+        return
+      }
 
       if (data.session_id) setSid(data.session_id)
       if (data.topic) setTopic(data.topic)
@@ -108,8 +116,8 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
         setThinkingElapsed("")
       }
 
-      // Track session created time for timer
-      const selectedSession = sessions.find(s => s.id === currentSid)
+      // Track session created time for timer (use ref to avoid callback dependency on sessions)
+      const selectedSession = sessionsRef.current.find(s => s.id === currentSid)
       if (selectedSession?.created) {
         sessionCreatedRef.current = selectedSession.created
       }
@@ -122,21 +130,24 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
       // Silently retry
     } finally {
       fetchingTurnsRef.current = false
+      // Don't reschedule if the fetch was for a stale sessionId
+      if (stale) return
       // Stop polling based on TurnsResponse session_status (fresher than sessions prop)
       const isComplete = lastSessionStatusRef.current === "completed" || lastSessionStatusRef.current === "interrupted"
       if (!isComplete) {
         turnsTimeoutRef.current = setTimeout(pollTurns, TURNS_POLL_INTERVAL)
       }
     }
-  }, [sessions])
+  }, [])
 
-  // Start turns polling
+  // Start turns polling when sessionId changes
   useEffect(() => {
     if (!enabled || !sessionId) return
     pollTurns()
     return () => {
       if (turnsTimeoutRef.current) clearTimeout(turnsTimeoutRef.current)
     }
+    // pollTurns is stable (empty deps) — only restart on sessionId or enabled change
   }, [sessionId, pollTurns, enabled])
 
   // Elapsed time ticker

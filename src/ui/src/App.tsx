@@ -140,7 +140,7 @@ export default function App() {
             "grid min-h-0 flex-1 gap-1",
             gridCount <= 1 && "grid-cols-1",
             gridCount >= 2 && "grid-cols-2",
-            gridCount >= 2 && "grid-rows-[1fr_1fr]",
+            gridCount >= 3 && "grid-rows-[1fr_1fr]",
           )}
         >
           {gridSessions.map((s, i) => (
