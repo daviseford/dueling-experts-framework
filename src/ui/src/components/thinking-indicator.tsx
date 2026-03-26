@@ -1,18 +1,12 @@
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { getPhaseToken } from "@/lib/phase-tokens"
 import type { ThinkingState, SessionPhase } from "@/lib/types"
 
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
   codex: "CODEX",
-}
-
-const PHASE_LABEL: Record<string, string> = {
-  plan: "Planning",
-  debate: "Planning",
-  implement: "Implementing",
-  review: "Reviewing",
 }
 
 const ACCENT_COLORS: Record<string, string> = {
@@ -71,7 +65,7 @@ export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicato
           {label}
         </Badge>
         <span className="thinking-glow text-[13px] text-muted-foreground">
-          {PHASE_LABEL[phase] || "Thinking"}
+          {getPhaseToken(phase).thinkingLabel}
         </span>
         {thinking.model && (
           <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70">
