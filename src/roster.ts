@@ -1,5 +1,7 @@
 // ── Participant type and roster utilities ──────────────────────────
 
+import { listProviders } from './agent.js';
+
 /**
  * A logical participant in a DEF session.
  * Binds a unique identity (id, displayName, role, persona) to a physical
@@ -58,15 +60,16 @@ export function buildRoster(agents: string[], implModel: string, displayNames?: 
 /**
  * Build a default two-agent roster for backward compatibility.
  * Called when no --agents flag is provided.
+ * Derives the second agent from the provider registry -- the first registered
+ * provider that is not the firstAgent. Falls back to firstAgent (self-debate)
+ * if only one provider is registered.
  */
 export function buildDefaultRoster(firstAgent: string, implModel: string, displayNames?: Record<string, string>): Participant[] {
   const agents = [firstAgent];
-  // Derive the second agent: the default pair is claude + codex
-  const DEFAULT_PAIR = ['claude', 'codex'];
-  const otherAgent = DEFAULT_PAIR.find(a => a !== firstAgent) ?? 'codex';
+  const registered = listProviders();
+  const otherAgent = registered.find(a => a !== firstAgent) ?? firstAgent;
   agents.push(otherAgent);
 
-  // Ensure firstAgent is first in the array
   return buildRoster(agents, implModel, displayNames);
 }
 

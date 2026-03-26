@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchSessionTurns } from "@/lib/api"
-import type { Turn, ThinkingState, SessionPhase, SessionStatus, PollingState, SessionSummary } from "@/lib/types"
+import type { Turn, ThinkingState, SessionPhase, SessionStatus, PollingState, SessionSummary, UsageTotals } from "@/lib/types"
 import { isMock } from "@/lib/env"
 
 const TURNS_POLL_INTERVAL = 3000
@@ -39,6 +39,7 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
   const [turnsPath, setTurnsPath] = useState<string | null>(null)
   const [artifactsPath, setArtifactsPath] = useState<string | null>(null)
   const [artifactNames, setArtifactNames] = useState<string[]>([])
+  const [usage, setUsage] = useState<UsageTotals | null>(null)
 
   const turnsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -109,6 +110,7 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
       setTurnsPath(data.turns_path ?? null)
       setArtifactsPath(data.artifacts_path ?? null)
       setArtifactNames(data.artifact_names ?? [])
+      setUsage(data.usage ?? null)
 
       setThinking(data.thinking)
       thinkingRef.current = data.thinking
@@ -189,6 +191,7 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
     turnsPath,
     artifactsPath,
     artifactNames,
+    usage,
   }
 }
 
@@ -221,6 +224,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     turnsPath: `.def/sessions/${sessionId}/turns`,
     artifactsPath: `.def/sessions/${sessionId}/artifacts`,
     artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifact_names : [],
+    usage: null,
   }
 }
 

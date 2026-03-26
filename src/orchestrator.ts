@@ -160,6 +160,14 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     if (bothEverDecided) {
       for (const p of session.roster) decidedParticipants.add(p.id);
     }
+
+    // Recover cost/usage state so --budget enforcement survives restarts.
+    // Try artifacts/usage.json first (fast path), then fall back to turn frontmatter.
+    const recoveredUsage = await recoverUsageState(session);
+    for (const entry of recoveredUsage) {
+      usageEntries.push(entry);
+      cumulativeCostUsd += entry.cost_usd ?? 0;
+    }
   }
 
   // Apply pending review decision from recovery before entering the loop.
@@ -868,6 +876,57 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
   const bothEverDecided = rosterIds.every(id => decidedParticipants.has(id));
 
   return { pendingPlanDecided, pendingReviewDecided, reviewLoopCount, bothEverDecided };
+}
+
+/**
+ * Recover usage/cost state from prior turns so --budget enforcement survives restarts.
+ * Fast path: read artifacts/usage.json if it exists (written atomically each turn).
+ * Fallback: scan turn frontmatter for tokens_in/tokens_out/cost_usd fields.
+ */
+export async function recoverUsageState(session: Session): Promise<UsageEntry[]> {
+  // Fast path: usage.json artifact contains the complete usage ledger
+  try {
+    const usagePath = join(session.dir, 'artifacts', 'usage.json');
+    const raw = await readFile(usagePath, 'utf8');
+    const artifact = JSON.parse(raw);
+    if (Array.isArray(artifact.turns) && artifact.turns.length > 0) {
+      return artifact.turns as UsageEntry[];
+    }
+  } catch {
+    // No usage.json or invalid — fall through to turn scan
+  }
+
+  // Fallback: scan turn frontmatter
+  const turnsDir = join(session.dir, 'turns');
+  const turnFiles = await listTurnFiles(turnsDir);
+  const entries: UsageEntry[] = [];
+
+  for (const file of turnFiles) {
+    try {
+      const raw = await readFile(join(turnsDir, file), 'utf8');
+      const parsed = validate(raw);
+      if (!parsed.valid || !parsed.data) continue;
+      const extra = parsed.data as Record<string, unknown>;
+      const tokensIn = extra.tokens_in as number | null | undefined;
+      const tokensOut = extra.tokens_out as number | null | undefined;
+      const costUsd = extra.cost_usd as number | null | undefined;
+      if (tokensIn != null || costUsd != null) {
+        entries.push({
+          turn: parsed.data.turn,
+          from: parsed.data.from,
+          model: (extra.model_name as string) ?? '',
+          tokens_in: tokensIn ?? null,
+          tokens_out: tokensOut ?? null,
+          cost_usd: costUsd ?? null,
+          duration_ms: (extra.duration_ms as number) ?? 0,
+        });
+      }
+    } catch {
+      // Skip unreadable turn files
+    }
+  }
+
+  return entries;
 }
 
 // --- Status normalization ---

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { getPhaseToken } from "@/lib/phase-tokens"
 import { extractPreview } from "@/lib/extract-preview"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronsUpDown, Clock, ListChecks } from "lucide-react"
+import { ChevronRight, ChevronsUpDown, Clock, DollarSign, ListChecks } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 const MarkdownContent = lazy(() => import("@/components/markdown-content"))
@@ -145,6 +145,12 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                 <span className="hidden shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70 @md:flex md:flex">
                   <Clock className="h-3 w-3" />
                   {formatDuration(turn.duration_ms)}
+                </span>
+              )}
+              {turn.cost_usd != null && turn.cost_usd > 0 && (
+                <span className="hidden shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70 @md:flex md:flex">
+                  <DollarSign className="h-3 w-3" />
+                  {turn.cost_usd < 0.01 ? "<0.01" : turn.cost_usd.toFixed(2)}
                 </span>
               )}
               <span className="flex-1" />

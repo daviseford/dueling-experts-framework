@@ -58,6 +58,7 @@ export function SessionPanel({
     prNumber,
     turnsPath,
     artifactsPath,
+    usage,
   } = useSessionTurns(sessionId, sessions)
 
   const isReadOnly = sessionStatus !== "active"
@@ -214,6 +215,7 @@ export function SessionPanel({
         sessionTimer={sessionTimer}
         allCollapsed={allCollapsed}
         onToggleAll={handleToggleAll}
+        costUsd={usage?.cost_usd ?? null}
       />
     </div>
   )

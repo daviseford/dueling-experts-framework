@@ -460,4 +460,5 @@ export const MOCK_RESPONSE: TurnsResponse = {
   turns_path: ".def/sessions/mock-session-id/turns",
   artifacts_path: ".def/sessions/mock-session-id/artifacts",
   artifact_names: ["decisions.md", "diff-0008.patch", "pr-body.md"],
+  usage: null,
 }
