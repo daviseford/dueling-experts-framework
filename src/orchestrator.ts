@@ -39,12 +39,15 @@ export interface Controller {
 }
 
 export interface ServerModule {
-  start(session: Session, controller: Controller): Promise<void>;
+  start(session: Session, controller: Controller, opts?: { openBrowser?: boolean }): Promise<void>;
   stop(): void;
+  probeExistingServer(port: number): Promise<{ action: 'join' | 'replace' | 'bind-new' }>;
+  getDefaultPort(): number;
 }
 
 interface RunOptions {
   server?: ServerModule | null;
+  ownsServer?: boolean;
   noPr?: boolean;
   noFast?: boolean;
   noWorktree?: boolean;
@@ -106,7 +109,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, ownsServer, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -229,8 +232,41 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     },
   };
 
-  if (server) {
+  if (server && ownsServer) {
     await server.start(session, controller);
+  }
+
+  // Adoption probe — when we have the server module but don't own the server,
+  // poll to detect if the owning server dies so we can adopt it.
+  let adoptionProbeInterval: ReturnType<typeof setInterval> | null = null;
+  let adopted = false;
+  if (server && !ownsServer) {
+    const probePort = server.getDefaultPort();
+    if (probePort > 0) {
+      adoptionProbeInterval = setInterval(async () => {
+        if (adopted) return;
+        try {
+          const probe = await server.probeExistingServer(probePort);
+          if (probe.action === 'bind-new' || probe.action === 'replace') {
+            // The owning server is gone — adopt it
+            adopted = true;
+            if (adoptionProbeInterval) {
+              clearInterval(adoptionProbeInterval);
+              adoptionProbeInterval = null;
+            }
+            try {
+              await server.start(session, controller, { openBrowser: false });
+              ui.status('server.adopted', { port: probePort });
+            } catch {
+              // Adoption failed (e.g. another session won the race) — not fatal
+            }
+          }
+          // If probe.action === 'join', keep polling — another session is serving
+        } catch {
+          // Probe error — retry next interval
+        }
+      }, 5000);
+    }
   }
 
   // Heartbeat writer — writes heartbeat.json every 10s for liveness detection
@@ -767,6 +803,10 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     clearInterval(heartbeatInterval);
     pollStopped = true;
     if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
+    if (adoptionProbeInterval) {
+      clearInterval(adoptionProbeInterval);
+      adoptionProbeInterval = null;
+    }
   }
 
   // --- Helper closures ---

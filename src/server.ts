@@ -179,7 +179,11 @@ function openBrowserOnce(url: string): void {
 /**
  * Start the HTTP server for the watcher UI.
  */
-export async function start(session: Session, controller: Controller): Promise<void> {
+export interface StartOptions {
+  openBrowser?: boolean;
+}
+
+export async function start(session: Session, controller: Controller, opts?: StartOptions): Promise<void> {
   debugLog(`start() called, httpServer=${!!httpServer}, session=${session.id}`);
   if (httpServer) {
     throw new Error('Server is already running');
@@ -199,7 +203,9 @@ export async function start(session: Session, controller: Controller): Promise<v
   session.port = port;
   const url = `http://localhost:${port}`;
   ui.status('server.url', { url });
-  openBrowserOnce(url);
+  if (opts?.openBrowser !== false) {
+    openBrowserOnce(url);
+  }
 }
 
 /**
