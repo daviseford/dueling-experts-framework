@@ -173,6 +173,17 @@
   animation: scan 2.5s ease-in-out infinite;
 }
 
+/* ── Reduced motion ────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-glow,
+  .animate-slide-up,
+  .animate-fade-in,
+  .animate-scan {
+    animation: none !important;
+  }
+}
+
 /* ── Markdown prose (turn card content) ─────────────────────────── */
 
 .def-prose {
@@ -265,12 +276,12 @@
 }
 
 .def-prose a {
-  color: oklch(0.6 0.15 240);
+  color: var(--prose-link, oklch(0.6 0.15 240));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .dark .def-prose a {
-  color: oklch(0.7 0.15 240);
+  --prose-link: oklch(0.7 0.15 240);
 }
 
 .def-prose table {
@@ -298,6 +309,13 @@
 
 /* ── Scrollbar ──────────────────────────────────────────────────── */
 
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.5 0 0 / 20%) transparent;
+}
+
+/* Chromium / Safari */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -319,5 +337,5 @@
 /* ── Selection ──────────────────────────────────────────────────── */
 
 ::selection {
-  background: oklch(0.65 0.15 180 / 25%);
+  background: oklch(from var(--ring) l c h / 25%);
 }

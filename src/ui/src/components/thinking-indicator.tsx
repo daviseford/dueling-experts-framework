@@ -2,27 +2,8 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { getPhaseToken } from "@/lib/phase-tokens"
+import { getAgentToken } from "@/lib/agent-tokens"
 import type { ThinkingState, SessionPhase } from "@/lib/types"
-
-const LABEL_MAP: Record<string, string> = {
-  claude: "CLAUDE",
-  codex: "CODEX",
-}
-
-const ACCENT_COLORS: Record<string, string> = {
-  claude: "border-l-blue-500",
-  codex: "border-l-emerald-500",
-}
-
-const BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
-  codex: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
-}
-
-const SPINNER_COLORS: Record<string, string> = {
-  claude: "text-blue-600 dark:text-blue-400",
-  codex: "text-emerald-600 dark:text-emerald-400",
-}
 
 interface ThinkingIndicatorProps {
   thinking: ThinkingState
@@ -31,38 +12,34 @@ interface ThinkingIndicatorProps {
 }
 
 export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicatorProps) {
-  const label = LABEL_MAP[thinking.agent] || thinking.agent.toUpperCase()
+  const token = getAgentToken(thinking.agent)
 
   return (
     <div
+      data-testid="thinking-indicator"
       className={cn(
         "relative overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 ring-border/10",
-        ACCENT_COLORS[thinking.agent] || "border-l-muted-foreground"
+        token.borderClass
       )}
     >
       <div
         className={cn(
-          "pointer-events-none absolute inset-0 animate-scan",
-          thinking.agent === "claude"
-            ? "bg-gradient-to-r from-transparent via-blue-500/8 to-transparent"
-            : "bg-gradient-to-r from-transparent via-emerald-500/8 to-transparent"
+          "pointer-events-none absolute inset-0 animate-scan bg-gradient-to-r",
+          token.scanGradient
         )}
       />
       <div className="relative flex items-center gap-2.5 px-4 py-3">
         <Spinner
-          className={cn(
-            "h-3.5 w-3.5",
-            SPINNER_COLORS[thinking.agent] || "text-muted-foreground"
-          )}
+          className={cn("h-3.5 w-3.5", token.spinnerClass)}
         />
         <Badge
           variant="outline"
           className={cn(
             "font-mono text-[10px] font-semibold tracking-wider",
-            BADGE_STYLES[thinking.agent]
+            token.badgeClass
           )}
         >
-          {label}
+          {token.label}
         </Badge>
         <span className="thinking-glow text-[13px] text-muted-foreground">
           {getPhaseToken(phase).thinkingLabel}

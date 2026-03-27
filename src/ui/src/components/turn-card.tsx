@@ -7,33 +7,13 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { getPhaseToken } from "@/lib/phase-tokens"
+import { getAgentToken } from "@/lib/agent-tokens"
 import { extractPreview } from "@/lib/extract-preview"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronsUpDown, Clock, DollarSign, ListChecks } from "lucide-react"
 import type { Turn } from "@/lib/types"
 
 const MarkdownContent = lazy(() => import("@/components/markdown-content"))
-
-const LABEL_MAP: Record<string, string> = {
-  claude: "CLAUDE",
-  codex: "CODEX",
-  human: "USER",
-  system: "SYSTEM",
-}
-
-const ACCENT_COLORS: Record<string, string> = {
-  claude: "border-l-blue-500",
-  codex: "border-l-emerald-500",
-  human: "border-l-violet-400",
-  system: "border-l-amber-500",
-}
-
-const BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
-  codex: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
-  human: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/25",
-  system: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
-}
 
 const MID_BADGE_STYLE = "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/25"
 const FAST_BADGE_STYLE = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
@@ -71,17 +51,19 @@ interface TurnCardProps {
 
 export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
   const isError = turn.status === "error"
-  const label = LABEL_MAP[turn.from] || turn.from.toUpperCase()
+  const agentToken = getAgentToken(turn.from)
+  const label = agentToken.label
   const phaseToken = getPhaseToken(turn.phase)
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <div
+        {...(isError ? { "data-testid": "turn-card-error" } : {})}
         className={cn(
           "overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 shadow-sm transition-all duration-200 hover:shadow-md",
           isError
             ? "border-l-red-500 ring-red-500/20"
-            : cn(ACCENT_COLORS[turn.from] || "border-l-muted-foreground", "ring-border/10 hover:ring-border/20")
+            : cn(agentToken.borderClass, "ring-border/10 hover:ring-border/20")
         )}
       >
         <CollapsibleTrigger asChild>
@@ -98,7 +80,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                   "font-mono text-[10px] font-semibold tracking-wider",
                   isError
                     ? "border-red-500/25 bg-red-500/15 text-red-600 dark:text-red-400"
-                    : BADGE_STYLES[turn.from]
+                    : agentToken.badgeClass
                 )}
               >
                 {label}

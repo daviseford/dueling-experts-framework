@@ -35,7 +35,8 @@ function formatCost(usd: number): string {
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll, costUsd }: StatusBarProps) {
   return (
-    <div className="flex items-center gap-3 border-t border-border/30 bg-card/80 px-5 py-2.5">
+    <div data-testid="status-bar" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/30 bg-card/80 px-5 py-2.5">
+      {/* Primary row: status badge always first */}
       <Badge
         variant="outline"
         className={cn(
@@ -53,7 +54,7 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
         {statusText}
       </Badge>
 
-      <Separator orientation="vertical" className="h-4" />
+      <Separator orientation="vertical" className="hidden h-4 sm:block" />
 
       <div className="flex items-center gap-1.5 text-sm text-foreground/70">
         <Hash className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -61,8 +62,9 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
         <span className="text-muted-foreground/50">turns</span>
       </div>
 
-      <Separator orientation="vertical" className="h-4" />
+      <Separator orientation="vertical" className="hidden h-4 sm:block" />
 
+      {/* Timer and cost wrap on narrow screens instead of being hidden */}
       <div className="flex items-center gap-1.5 text-sm text-foreground/70">
         <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
         <span className="font-mono font-medium">{sessionTimer}</span>
@@ -70,7 +72,7 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
 
       {costUsd != null && costUsd > 0 && (
         <>
-          <Separator orientation="vertical" className="h-4" />
+          <Separator orientation="vertical" className="hidden h-4 sm:block" />
           <div className="flex items-center gap-1.5 text-sm text-foreground/70">
             <DollarSign className="h-3.5 w-3.5 text-muted-foreground/60" />
             <span className="font-mono font-medium">{formatCost(costUsd)}</span>
@@ -78,13 +80,14 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
         </>
       )}
 
+      {/* Toggle stays right-aligned on the first row */}
       <span className="flex-1" />
 
       {turnCount > 1 && (
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
+          className="order-last h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
           onClick={onToggleAll}
         >
           {allCollapsed ? (

@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
+import { mockScenario } from "@/lib/env"
 import type { SessionListState, SessionSummary } from "@/lib/types"
 
-const MOCK_SESSIONS: SessionSummary[] = [
+const DEFAULT_SESSIONS: SessionSummary[] = [
   {
     id: "mock-session-1",
     topic: "Add rate limiting middleware to the API gateway",
@@ -56,15 +57,81 @@ const MOCK_SESSIONS: SessionSummary[] = [
   },
 ]
 
+/** Scenario-specific session overrides */
+function getScenarioSessions(): SessionSummary[] {
+  switch (mockScenario) {
+    case "empty":
+      return [{
+        id: "mock-session-empty",
+        topic: "New session with no turns yet",
+        created: new Date().toISOString(),
+        session_status: "active",
+        phase: "plan",
+        current_turn: 0,
+        mode: "edit",
+        branch_name: null,
+        pr_url: null,
+        dir: ".def/sessions/mock-session-empty",
+        repo: "my-project",
+      }]
+    case "loading":
+      return [{
+        id: "mock-session-loading",
+        topic: "Session loading initial data",
+        created: new Date().toISOString(),
+        session_status: "active",
+        phase: "plan",
+        current_turn: 3,
+        mode: "edit",
+        branch_name: null,
+        pr_url: null,
+        dir: ".def/sessions/mock-session-loading",
+        repo: "my-project",
+      }]
+    case "thinking":
+      return [{
+        id: "mock-session-thinking",
+        topic: "Active session with agent thinking",
+        created: new Date(Date.now() - 30 * 60_000).toISOString(),
+        session_status: "active",
+        phase: "implement",
+        current_turn: 4,
+        mode: "edit",
+        branch_name: "def/thinking-test",
+        pr_url: null,
+        dir: ".def/sessions/mock-session-thinking",
+        repo: "my-project",
+      }]
+    case "paused":
+      return [{
+        id: "mock-session-paused",
+        topic: "Paused session waiting for human input",
+        created: new Date(Date.now() - 20 * 60_000).toISOString(),
+        session_status: "paused",
+        phase: "plan",
+        current_turn: 2,
+        mode: "edit",
+        branch_name: null,
+        pr_url: null,
+        dir: ".def/sessions/mock-session-paused",
+        repo: "my-project",
+      }]
+    default:
+      return DEFAULT_SESSIONS
+  }
+}
+
 export function useMockSessionList(): SessionListState {
-  const [selectedSessionId, setSelectedSessionIdRaw] = useState("mock-session-1")
+  // Memoize so we return the same array reference across renders
+  const scenarioSessions = useMemo(() => getScenarioSessions(), [])
+  const [selectedSessionId, setSelectedSessionIdRaw] = useState(scenarioSessions[0].id)
 
   const setSelectedSessionId = useCallback((id: string) => {
     setSelectedSessionIdRaw(id)
   }, [])
 
   return {
-    sessions: MOCK_SESSIONS,
+    sessions: scenarioSessions,
     selectedSessionId,
     setSelectedSessionId,
   }

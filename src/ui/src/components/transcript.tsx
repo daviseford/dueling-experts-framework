@@ -5,6 +5,8 @@ import { PendingTurnCard } from "./pending-turn-card"
 import { ThinkingIndicator } from "./thinking-indicator"
 import { SessionSummary } from "./session-summary"
 import { DecisionLog } from "./decision-log"
+import { SkeletonTurnCard } from "./skeleton-turn-card"
+import { MessageSquare } from "lucide-react"
 import type { Turn, ThinkingState, SessionPhase, PendingInterjection } from "@/lib/types"
 
 interface DecisionEntry {
@@ -19,6 +21,7 @@ interface TranscriptProps {
   thinkingElapsed: string
   phase: SessionPhase
   sessionStatus: "active" | "paused" | "completed" | "interrupted"
+  statusText: string
   branchName: string | null
   prUrl: string | null
   prNumber: number | null
@@ -35,6 +38,7 @@ export function Transcript({
   thinkingElapsed,
   phase,
   sessionStatus,
+  statusText,
   branchName,
   prUrl,
   prNumber,
@@ -116,9 +120,25 @@ export function Transcript({
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
   }, [turnCount, thinkingAgent, sessionStatus, pendingCount])
 
+  const isLoading = turns.length === 0 && statusText === "Loading..."
+  const isEmpty = turns.length === 0 && !isLoading && !thinking && (sessionStatus === "active" || sessionStatus === "paused")
+
   return (
     <ScrollArea className="min-h-0 min-w-0 flex-1">
       <div className="min-w-0 space-y-3 overflow-hidden px-5 py-4">
+        {isLoading && (
+          <>
+            <SkeletonTurnCard index={0} />
+            <SkeletonTurnCard index={1} />
+            <SkeletonTurnCard index={2} />
+          </>
+        )}
+        {isEmpty && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground/60">Waiting for agents to start...</p>
+          </div>
+        )}
         {turns.map((turn) => (
           <TurnCard
             key={turn.id}

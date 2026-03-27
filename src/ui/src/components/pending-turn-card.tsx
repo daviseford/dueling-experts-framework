@@ -1,22 +1,29 @@
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
+import { getAgentToken } from "@/lib/agent-tokens"
 
 interface PendingTurnCardProps {
   content: string
 }
 
 export function PendingTurnCard({ content }: PendingTurnCardProps) {
+  const token = getAgentToken("human")
+
   return (
-    <div className="animate-fade-in overflow-hidden rounded-lg border-l-[3px] border-l-violet-400 bg-card/60 opacity-60 ring-1 ring-border/10">
+    <div className={cn(
+      "animate-fade-in overflow-hidden rounded-lg border-l-[3px] bg-card/60 opacity-75 ring-1 ring-border/10",
+      token.borderClass
+    )}>
       <div className="flex items-center gap-2 px-3 py-2">
-        <Spinner className="h-3 w-3 text-violet-500" />
+        <Spinner className={cn("h-3 w-3", token.spinnerClass)} />
         <Badge
           variant="outline"
-          className="font-mono text-[10px] font-semibold tracking-wider bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/25"
+          className={cn("font-mono text-[10px] font-semibold tracking-wider", token.badgeClass)}
         >
-          USER
+          {token.label}
         </Badge>
-        <span className="thinking-glow text-[11px] text-muted-foreground">
+        <span className="thinking-glow text-[11px] font-medium text-muted-foreground">
           Queued
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">

@@ -124,11 +124,15 @@ export function SessionPanel({
 
   useEffect(() => {
     setOpenMap((prev) => {
+      let changed = false
       const next = { ...prev }
       for (const t of turns) {
-        if (!(t.id in next)) next[t.id] = true
+        if (!(t.id in next)) {
+          next[t.id] = true
+          changed = true
+        }
       }
-      return next
+      return changed ? next : prev
     })
   }, [turns])
 
@@ -198,6 +202,7 @@ export function SessionPanel({
         thinkingElapsed={thinkingElapsed}
         phase={phase}
         sessionStatus={sessionStatus}
+        statusText={statusText}
         branchName={branchName}
         prUrl={prUrl}
         prNumber={prNumber}

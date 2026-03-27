@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -91,6 +91,38 @@ export function SessionTabBar({
     scrollRef.current?.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" })
   }
 
+  // Roving tabindex: only the selected tab is in the tab order; arrow keys move focus
+  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent, sessionIndex: number) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      onSelectSession(sessions[sessionIndex].id)
+      return
+    }
+
+    let nextIndex: number | null = null
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault()
+      nextIndex = (sessionIndex + 1) % sessions.length
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault()
+      nextIndex = (sessionIndex - 1 + sessions.length) % sessions.length
+    } else if (e.key === "Home") {
+      e.preventDefault()
+      nextIndex = 0
+    } else if (e.key === "End") {
+      e.preventDefault()
+      nextIndex = sessions.length - 1
+    }
+
+    if (nextIndex !== null) {
+      const nextSession = sessions[nextIndex]
+      onSelectSession(nextSession.id)
+      tabRefs.current.get(nextSession.id)?.focus()
+    }
+  }, [sessions, onSelectSession])
+
   if (sessions.length <= 1) return null
 
   return (
@@ -107,17 +139,24 @@ export function SessionTabBar({
       )}
       <div
         ref={scrollRef}
+        role="tablist"
+        aria-label="Sessions"
         className="flex w-full overflow-x-auto scrollbar-none"
       >
-        {sessions.map((s) => {
+        {sessions.map((s, index) => {
           const isSelected = s.id === selectedSessionId
           const dead = isDead(s.session_status)
           return (
-            <button
+            <div
               key={s.id}
+              ref={(el) => { if (el) tabRefs.current.set(s.id, el); else tabRefs.current.delete(s.id) }}
+              role="tab"
+              tabIndex={isSelected ? 0 : -1}
+              aria-selected={isSelected}
               onClick={() => onSelectSession(s.id)}
+              onKeyDown={(e) => handleTabKeyDown(e, index)}
               className={cn(
-                "group relative flex w-[240px] shrink-0 flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
+                "group relative flex min-w-[180px] max-w-[240px] shrink-0 flex-1 cursor-pointer flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
                 STATUS_BORDER[s.session_status] || "border-l-zinc-400",
                 isSelected
                   ? "bg-background shadow-[inset_0_-2px_0_0] shadow-teal-500"
@@ -141,24 +180,17 @@ export function SessionTabBar({
 
                 {/* Dismiss button */}
                 {onDismissSession && (
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     aria-label={`Dismiss ${s.topic}`}
                     className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation()
                       onDismissSession(s.id)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation()
-                        onDismissSession(s.id)
-                      }
-                    }}
                   >
                     <X className="h-3 w-3" />
-                  </span>
+                  </button>
                 )}
               </div>
 
@@ -182,7 +214,7 @@ export function SessionTabBar({
                   {elapsed(s.created)}
                 </span>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>

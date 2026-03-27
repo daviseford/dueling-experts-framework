@@ -17,11 +17,8 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "narrow-viewport",
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 375, height: 667 },
-      },
+      name: "mobile",
+      use: { viewport: { width: 375, height: 667 } },
     },
   ],
   webServer: {
