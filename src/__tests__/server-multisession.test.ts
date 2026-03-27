@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { start, startExplorer, stop } from '../server.js';
+import { start, startExplorer, stop, probeExistingServer, _testGetOpenBrowserCallCount, _testResetBrowserState } from '../server.js';
 import { buildDefaultRoster } from '../roster.js';
 
 function httpGet(port: number, path: string): Promise<{ status: number; body: string }> {
@@ -453,7 +453,6 @@ describe('server adoption', () => {
   let testRepo: string;
   let port: number;
   const sessionId = randomUUID();
-  let browserOpenCalled = false;
 
   before(async () => {
     testRepo = join(tmpdir(), `def-adoption-${randomUUID()}`);
@@ -495,12 +494,13 @@ describe('server adoption', () => {
       requestEnd() {},
     };
 
+    // Reset browser state before adoption-style start
+    _testResetBrowserState();
+
     // Start with openBrowser: false to simulate adoption behavior
     await start(mockSession, mockController, { openBrowser: false });
     const updated = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
     port = updated.port;
-    // If we got here without error, start() succeeded with openBrowser: false
-    browserOpenCalled = false; // openBrowserOnce was suppressed
   });
 
   after(async () => {
@@ -509,15 +509,17 @@ describe('server adoption', () => {
   });
 
   it('adoption does not open browser when openBrowser is false', async () => {
-    // The server started successfully with openBrowser: false
-    // Verify the server is functional by hitting the sessions endpoint
+    // Verify openBrowserOnce was never called during adoption-style start
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 0,
+      'openBrowserOnce should not have been called with openBrowser: false',
+    );
+
+    // Verify the server is functional
     const { status, body } = await httpGet(port, '/api/sessions');
     assert.equal(status, 200);
     const json = JSON.parse(body);
     assert.equal(json.server, 'def');
-    // browserOpened is a process-local flag; in tests with DEF_NO_OPEN=1
-    // it wouldn't open anyway, but this verifies the code path works
-    assert.equal(browserOpenCalled, false, 'browser should not open during adoption');
   });
 
   it('server functions normally after adoption-style start', async () => {
@@ -527,9 +529,66 @@ describe('server adoption', () => {
     assert.equal(json.session_id, sessionId);
     assert.ok(Array.isArray(json.turns));
   });
+
+  it('default start (without openBrowser: false) would call openBrowserOnce', async () => {
+    // Stop the adoption server so we can start a fresh one
+    stop();
+
+    const sessionId2 = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId2, { topic: 'Browser test' });
+    const owningDir2 = join(sessionsDir, sessionId2);
+
+    const mockSession2 = {
+      id: sessionId2,
+      topic: 'Browser test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir2,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController2 = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Reset and start with default options (openBrowser not explicitly false)
+    _testResetBrowserState();
+    await start(mockSession2, mockController2);
+
+    // Verify openBrowserOnce WAS called this time (positive control)
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 1,
+      'openBrowserOnce should have been called exactly once with default options',
+    );
+
+    const updated = JSON.parse(await readFile(join(owningDir2, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
 });
 
-describe('probe join->bind-new transition', () => {
+describe('probe join->bind-new transition and adoption', () => {
   let testRepo: string;
   let port: number;
   const sessionId = randomUUID();
@@ -580,14 +639,11 @@ describe('probe join->bind-new transition', () => {
   });
 
   after(async () => {
-    // Ensure stopped in case test didn't stop it
     try { stop(); } catch { /* already stopped */ }
     await rm(testRepo, { recursive: true, force: true });
   });
 
-  it('probe returns join when server has active sessions, then bind-new after stop', async () => {
-    const { probeExistingServer } = await import('../server.js');
-
+  it('probe returns join while server is active, then bind-new after stop', async () => {
     // While server is running with active sessions, probe should return 'join'
     const result1 = await probeExistingServer(port);
     assert.equal(result1.action, 'join', 'should return join while server is active');
@@ -598,5 +654,70 @@ describe('probe join->bind-new transition', () => {
     // After server is stopped, probe should return 'bind-new' (connection refused)
     const result2 = await probeExistingServer(port);
     assert.equal(result2.action, 'bind-new', 'should return bind-new after server stops');
+  });
+
+  it('adopter starts on freed port with browser suppressed after join->bind-new', async () => {
+    // Server was stopped in prior test. Port should be free.
+    // Simulate what the orchestrator adoption loop does:
+    // 1. probe returns bind-new
+    // 2. start() with openBrowser: false
+    // 3. server binds on the original port
+    const probe = await probeExistingServer(port);
+    assert.equal(probe.action, 'bind-new', 'precondition: port is free');
+
+    const sessionId2 = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId2, { topic: 'Adopter test' });
+    const owningDir2 = join(sessionsDir, sessionId2);
+
+    const adoptSession = {
+      id: sessionId2,
+      topic: 'Adopter test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir2,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const adoptController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Reset browser state and adopt with browser suppression
+    _testResetBrowserState();
+    await start(adoptSession, adoptController, { openBrowser: false });
+
+    // Verify browser was not opened
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 0,
+      'adoption should not call openBrowserOnce',
+    );
+
+    // Verify the adopter's server is functional on the port
+    const { status, body } = await httpGet(adoptSession.port!, '/api/sessions');
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.server, 'def');
   });
 });

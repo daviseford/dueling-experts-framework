@@ -247,8 +247,8 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
         if (adopted) return;
         try {
           const probe = await server.probeExistingServer(probePort);
-          if (probe.action === 'bind-new' || probe.action === 'replace') {
-            // The owning server is gone — adopt it
+          if (probe.action === 'bind-new') {
+            // The owning server is gone and the port is free — adopt it
             adopted = true;
             if (adoptionProbeInterval) {
               clearInterval(adoptionProbeInterval);
@@ -261,7 +261,8 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
               // Adoption failed (e.g. another session won the race) — not fatal
             }
           }
-          // If probe.action === 'join', keep polling — another session is serving
+          // 'join' — another session is serving, keep polling
+          // 'replace' — stale server still holds port, keep polling until it releases
         } catch {
           // Probe error — retry next interval
         }

@@ -53,6 +53,7 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
 let idleResolve: (() => void) | null = null;
 let browserOpened = false;
+let _openBrowserCallCount = 0;
 
 function debugLog(msg: string): void {
   if (process.env.DEF_DEBUG) console.error(`[server] ${msg}`);
@@ -167,6 +168,7 @@ function listenWithFallback(server: import('node:http').Server, preferredPort: n
  * Open the browser once per process. Subsequent calls are no-ops.
  */
 function openBrowserOnce(url: string): void {
+  _openBrowserCallCount++;
   if (browserOpened || process.env.CI || process.env.DEF_NO_OPEN) return;
   browserOpened = true;
   const openCmd = process.platform === 'win32' ? 'start'
@@ -895,3 +897,11 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on('error', reject);
   });
 }
+
+// -- Test-only exports for observing internal state --
+
+/** @internal Returns how many times openBrowserOnce was called since last reset. */
+export function _testGetOpenBrowserCallCount(): number { return _openBrowserCallCount; }
+
+/** @internal Resets the openBrowserOnce call counter and browserOpened flag. */
+export function _testResetBrowserState(): void { _openBrowserCallCount = 0; browserOpened = false; }
