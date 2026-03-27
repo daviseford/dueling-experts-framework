@@ -15,7 +15,7 @@ export interface PreflightOptions {
   /** Whether --no-pr was passed (skips gh/remote checks). */
   noPr: boolean;
   /** Session mode ('edit' or 'planning'). */
-  mode: string;
+  mode: 'edit' | 'planning';
 }
 
 /** Function signature for checking whether a command is available. */
@@ -54,7 +54,8 @@ export async function collectPreflightErrors(
   }
 
   // 3. For edit mode with PR creation, check gh auth and remote
-  if (opts.mode === 'edit' && !opts.noPr) {
+  //    Skip if not in a git repo -- the git-repo error above is sufficient.
+  if (inGitRepo && opts.mode === 'edit' && !opts.noPr) {
     const hasRemote = await checkCmd('git', ['remote', 'get-url', 'origin']);
     if (!hasRemote) {
       errors.push(

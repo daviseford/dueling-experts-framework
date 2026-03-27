@@ -53,8 +53,18 @@ describe('parseArgs', () => {
   it('throws on unknown flag with helpful message', () => {
     assert.throws(
       () => parseArgs(['--unknown-flag']),
-      { message: /Run 'def --help' for options/ },
+      { message: /Run 'def' with no arguments for usage/ },
     );
+  });
+
+  it('parses --help flag', () => {
+    const opts = parseArgs(['--help']);
+    assert.equal(opts.help, true);
+  });
+
+  it('parses -h flag', () => {
+    const opts = parseArgs(['-h']);
+    assert.equal(opts.help, true);
   });
 
   it('allows positional args without -- prefix', () => {

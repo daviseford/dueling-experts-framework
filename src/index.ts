@@ -5,7 +5,7 @@ import { create, installShutdownHandler } from './session.js';
 import type { Session } from './session.js';
 import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
-import { parseArgs } from './cli.js';
+import { parseArgs, type ParsedArgs } from './cli.js';
 import { listProviders, getProvider } from './agent.js';
 import { preflight } from './preflight.js';
 import * as ui from './ui.js';
@@ -32,12 +32,22 @@ const VALID_MODES = ['edit', 'planning'];
 
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
-let opts;
+let opts: ParsedArgs;
 try {
   opts = parseArgs(args);
 } catch (err: unknown) {
   console.error(`Error: ${(err as Error).message}`);
   process.exit(1);
+}
+
+if (opts.help) {
+  const providers = listProviders().join(', ');
+  console.log('Usage: def <topic>');
+  console.log(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
+  console.log('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
+  console.log('       def show <session-id-or-prefix>');
+  console.log('       def explorer [--idle-timeout <seconds>] [--port <number>]');
+  process.exit(0);
 }
 
 if (opts.version) {
@@ -129,11 +139,16 @@ const preflightAgents = agentsList
   : [...new Set([firstAgent, registeredProviders.find(a => a !== firstAgent) ?? firstAgent])];
 
 // Preflight: validate CLIs, git state, and GitHub auth before spending credits
-await preflight({
-  agents: preflightAgents,
-  noPr: !!opts.noPr,
-  mode: opts.mode || 'edit',
-});
+try {
+  await preflight({
+    agents: preflightAgents,
+    noPr: !!opts.noPr,
+    mode: opts.mode || 'edit',
+  });
+} catch (err: unknown) {
+  console.error(`Preflight error: ${(err as Error).message}`);
+  process.exit(1);
+}
 
 // Create new session
 let session: Session;
