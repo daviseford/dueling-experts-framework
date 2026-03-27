@@ -14,33 +14,20 @@ describe('parseArgs', () => {
     assert.equal(opts.agents, 'claude,claude');
   });
 
-  it('parses --budget flag as a float', () => {
-    const opts = parseArgs(['--topic', 'test', '--budget', '5.50']);
-    assert.equal(opts.budget, 5.50);
-  });
-
-  it('parses --budget with integer value', () => {
-    const opts = parseArgs(['--topic', 'test', '--budget', '10']);
-    assert.equal(opts.budget, 10);
-  });
-
   it('parses all new flags together', () => {
     const opts = parseArgs([
       '--topic', 'refactor auth',
       '--agents', 'claude,claude',
-      '--budget', '2.00',
       '--no-fast',
     ]);
     assert.equal(opts.topic, 'refactor auth');
     assert.equal(opts.agents, 'claude,claude');
-    assert.equal(opts.budget, 2.00);
     assert.equal(opts.noFast, true);
   });
 
-  it('does not set agents or budget when not provided', () => {
+  it('does not set agents when not provided', () => {
     const opts = parseArgs(['--topic', 'test']);
     assert.equal(opts.agents, undefined);
-    assert.equal(opts.budget, undefined);
   });
 
   it('throws on unknown -- flags', () => {

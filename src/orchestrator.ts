@@ -161,7 +161,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
       for (const p of session.roster) decidedParticipants.add(p.id);
     }
 
-    // Recover cost/usage state so --budget enforcement survives restarts.
+    // Recover cost/usage state so cumulative cost tracking survives restarts.
     // Try artifacts/usage.json first (fast path), then fall back to turn frontmatter.
     const recoveredUsage = await recoverUsageState(session);
     for (const entry of recoveredUsage) {
@@ -292,12 +292,6 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     // In review phase, only the reviewer takes turns (roster lookup)
     if (phase === 'review') {
       nextAgent = getReviewer(session.roster).id;
-    }
-
-    // Budget enforcement -- check before invoking
-    if (session.budget && cumulativeCostUsd >= session.budget) {
-      ui.status('end.requested', { turn: turnCount });
-      break;
     }
 
     // Select model tier for this turn (may be upgraded to 'full' on validation retry)
@@ -638,7 +632,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
           break;
         }
 
-        // verdict === 'fix' — check review loop budget
+        // verdict === 'fix' -- check review loop limit
         if (reviewLoopCount >= session.review_turns) {
           ui.status('review.limit', { turn: turnCount, max: session.review_turns });
           break;
@@ -881,7 +875,7 @@ export async function recoverEphemeralState(session: Session): Promise<Recovered
 }
 
 /**
- * Recover usage/cost state from prior turns so --budget enforcement survives restarts.
+ * Recover usage/cost state from prior turns so cumulative cost tracking survives restarts.
  * Fast path: read artifacts/usage.json if it exists (written atomically each turn).
  * Fallback: scan turn frontmatter for tokens_in/tokens_out/cost_usd fields.
  */

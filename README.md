@@ -42,7 +42,6 @@ This creates a `.def/` session directory in the target repo, starts the agent lo
 --first <agent>               Which agent goes first: claude or codex (default: claude)
 --impl-model <agent>          Which agent implements: claude or codex (default: claude)
 --review-turns <number>       Max review/fix cycles, 1-50 (default: 6)
---budget <number>              Budget cap in USD (no default -- uncapped)
 --no-pr                       Skip automatic PR creation (keeps changes local)
 --no-fast                     Disable fast-mode agent tiering
 --no-worktree                 Skip worktree creation (run in-place)
@@ -71,11 +70,11 @@ In the default `edit` mode, DEF will:
 
 1. **Validate prerequisites** -- checks that agent CLIs, git, and `gh` are installed and authenticated before spending any API credits.
 2. **Create a git worktree** on a new branch (`def/<id>-<topic-slug>`) so your working tree stays clean.
-3. **Run the agent debate loop**, which uses paid API calls to Claude and Codex. Each turn costs roughly $0.50-$2.00 depending on prompt size and model.
+3. **Run the agent debate loop**, which uses paid API calls to Claude and Codex. Each turn costs roughly $0.50-$2.00 depending on prompt size and model. Per-turn and session costs are tracked and visible in the watcher UI.
 4. **Commit changes** to the worktree branch after implementation.
 5. **Push the branch and open a draft PR** on GitHub via `gh`.
 
-Use `--budget <usd>` to cap spending, `--no-pr` to skip push/PR creation, or `--mode planning` for debate-only sessions with no repo changes.
+Use `--no-pr` to skip push/PR creation, or `--mode planning` for debate-only sessions with no repo changes.
 
 ## How It Works
 

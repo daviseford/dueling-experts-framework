@@ -12,8 +12,6 @@ export interface ParsedArgs {
   help?: boolean;
   /** Comma-separated agent list (e.g., 'claude,codex' or 'claude,claude'). */
   agents?: string;
-  /** Budget cap in USD. */
-  budget?: number;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -58,9 +56,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--agents':
         result.agents = argv[++i];
-        break;
-      case '--budget':
-        result.budget = parseFloat(argv[++i]);
         break;
       default:
         if (argv[i].startsWith('--')) {

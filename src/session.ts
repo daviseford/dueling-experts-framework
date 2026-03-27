@@ -40,8 +40,6 @@ export interface Session {
   heartbeat_at?: string;
   /** Ordered list of participants in this session. */
   roster: Participant[];
-  /** Optional budget cap in USD. */
-  budget?: number;
   _currentChild?: ChildProcess | null;
 }
 
@@ -55,8 +53,6 @@ export interface CreateSessionOptions {
   targetRepo: string;
   /** Explicit agent list (e.g., ['claude', 'claude'] for self-debate). */
   agents?: string[];
-  /** Budget cap in USD. */
-  budget?: number;
   /** Display names for providers (from registry). */
   displayNames?: Record<string, string>;
 }
@@ -67,7 +63,7 @@ export interface CreateSessionOptions {
  * Create a new session directory and session.json.
  * Each session is independent — multiple sessions can run concurrently.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo, agents, budget, displayNames }: CreateSessionOptions): Promise<Session> {
+export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo, agents, displayNames }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
 
   // Ensure .def/ exists
@@ -111,7 +107,6 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     pr_url: null,
     pr_number: null,
     roster,
-    budget: budget ?? undefined,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);

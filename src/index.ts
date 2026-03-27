@@ -43,7 +43,7 @@ try {
 if (opts.help) {
   const providers = listProviders().join(', ');
   console.log('Usage: def <topic>');
-  console.log(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
+  console.log(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
   console.log('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.log('       def show <session-id-or-prefix>');
   console.log('       def explorer [--idle-timeout <seconds>] [--port <number>]');
@@ -60,7 +60,7 @@ if (opts.version) {
 if (!opts.topic) {
   const providers = listProviders().join(', ');
   console.error('Usage: def <topic>');
-  console.error(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
+  console.error(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
   console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
@@ -113,13 +113,6 @@ if (opts.reviewTurns !== undefined) {
     process.exit(1);
   }
 }
-if (opts.budget !== undefined) {
-  if (isNaN(opts.budget) || opts.budget <= 0) {
-    console.error('Error: --budget must be a positive number (USD)');
-    process.exit(1);
-  }
-}
-
 // Build display name map from registry
 const displayNames: Record<string, string> = {};
 for (const name of registeredProviders) {
@@ -162,7 +155,6 @@ try {
     reviewTurns: opts.reviewTurns || 6,
     targetRepo,
     agents: agentsList,
-    budget: opts.budget,
     displayNames,
   });
 } catch (err: unknown) {
@@ -183,11 +175,6 @@ ui.intro({
   review_turns: session.review_turns,
   dir: session.dir,
   noPr: opts.noPr,
-});
-
-ui.status('cost.estimate', {
-  maxTurns: session.max_turns,
-  budget: session.budget,
 });
 
 installShutdownHandler(session.dir, targetRepo, session);
