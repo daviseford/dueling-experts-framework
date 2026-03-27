@@ -631,6 +631,14 @@ export const MOCK_TURNS_BY_SESSION: Record<string, Turn[]> = {
   "mock-session-4": MOCK_TURNS_SESSION_4,
 }
 
+/** Per-session mock metadata (prNumber, artifactNames) keyed by session ID. */
+export const MOCK_SESSION_META: Record<string, { prNumber: number | null; artifactNames: string[] }> = {
+  "mock-session-1": { prNumber: 42, artifactNames: ["decisions.md", "diff-0008.patch", "pr-body.md"] },
+  "mock-session-2": { prNumber: null, artifactNames: ["pool-config.md"] },
+  "mock-session-3": { prNumber: null, artifactNames: [] },
+  "mock-session-4": { prNumber: null, artifactNames: [] },
+}
+
 export const MOCK_RESPONSE: TurnsResponse = {
   turns: MOCK_TURNS,
   session_id: "mock-session-id",

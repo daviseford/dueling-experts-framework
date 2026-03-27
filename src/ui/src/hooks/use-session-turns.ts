@@ -198,7 +198,7 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
 
 interface MockData {
   turnsBySession: Record<string, Turn[]>
-  artifactNames: string[]
+  sessionMeta: Record<string, { prNumber: number | null; artifactNames: string[] }>
 }
 
 function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {
@@ -208,7 +208,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
   useEffect(() => {
     import("@/mocks/mock-session").then(m => setMockData({
       turnsBySession: m.MOCK_TURNS_BY_SESSION,
-      artifactNames: m.MOCK_RESPONSE.artifact_names,
+      sessionMeta: m.MOCK_SESSION_META,
     }))
   }, [])
 
@@ -231,10 +231,10 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     phase: session?.phase ?? "review",
     branchName: session?.branch_name ?? null,
     prUrl: session?.pr_url ?? null,
-    prNumber: sessionId === "mock-session-1" && mockData ? 42 : null,
+    prNumber: mockData?.sessionMeta[sessionId]?.prNumber ?? null,
     turnsPath: `.def/sessions/${sessionId}/turns`,
     artifactsPath: `.def/sessions/${sessionId}/artifacts`,
-    artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifactNames : [],
+    artifactNames: mockData?.sessionMeta[sessionId]?.artifactNames ?? [],
     usage: null,
   }
 }

@@ -14,14 +14,13 @@ Guide for agents adding or extending Playwright end-to-end tests in this codebas
 | Spec file | Tests | What it covers |
 |-----------|-------|----------------|
 | `session-tabs.spec.ts` | 3 | Tab rendering, tab switching, session dismissal |
-| `session-panel.spec.ts` | 3 | Completed session transcript, active session interjection input, paused session pause banner |
+| `session-panel.spec.ts` | 3 | Completed session transcript + decisions + branch/PR summary, active session interjection input, paused session pause banner |
 | `view-mode.spec.ts` | 3 | Grid mode toggle, narrow viewport single-panel lock, theme toggle |
 
 ### Not yet covered
 
 - Interjection submission (would need mock API intercept or form validation test)
 - Turn card expand/collapse behavior
-- Decision log rendering
 - Markdown content rendering (code blocks, tables)
 - Empty state (no sessions)
 - Grid panel maximize/dismiss
@@ -95,7 +94,7 @@ The UI has a built-in mock mode that replaces all API calls with static data:
 - **Activation:** `VITE_MOCK=true` env var (set by `.env.mock`) or `?mock` query param
 - **Vite script:** `npm run dev:mock` runs `vite --mode mock`, which loads `.env.mock`
 - **Mock data lives in:**
-  - `src/ui/src/mocks/mock-session.ts` -- per-session turn data for all 4 mock sessions, keyed by session ID in `MOCK_TURNS_BY_SESSION`
+  - `src/ui/src/mocks/mock-session.ts` -- per-session turn data in `MOCK_TURNS_BY_SESSION` and per-session metadata (prNumber, artifactNames) in `MOCK_SESSION_META`
   - `src/ui/src/hooks/use-mock-explorer.ts` -- 4 sessions with varied statuses (completed, active, paused)
 - **Detection:** `src/ui/src/lib/env.ts` exports `isMock` which hooks check to decide data source
 

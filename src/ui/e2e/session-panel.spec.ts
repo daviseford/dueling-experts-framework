@@ -5,13 +5,25 @@ test.describe("session panel", () => {
     await page.goto("/")
   })
 
-  test("completed session shows transcript and decisions", async ({ page }) => {
+  test("completed session shows transcript, decisions, and summary", async ({ page }) => {
     // mock-session-1 is selected by default (completed)
     // Status bar should show completed status
     await expect(page.getByText("Session completed").first()).toBeVisible()
 
     // Turn count should be visible in the status bar
     await expect(page.getByText("turns").first()).toBeVisible()
+
+    // Transcript should contain known content from mock-session-1 turn 1
+    await expect(page.getByText("Rate Limiting Middleware").first()).toBeVisible()
+
+    // Session summary should show branch name
+    await expect(page.getByText("def/a1b2c3d4-rate-limiting-middleware")).toBeVisible()
+
+    // Session summary should show PR link
+    await expect(page.getByText("PR #42")).toBeVisible()
+
+    // Session summary should show a known decision from the decided turns
+    await expect(page.getByText("Use sliding window counter").first()).toBeVisible()
   })
 
   test("active session shows active status and interjection input", async ({ page }) => {
