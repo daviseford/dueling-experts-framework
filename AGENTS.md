@@ -144,5 +144,7 @@ npm test                                              # Run tests (tsx)
 npm run typecheck                                     # Type-check (tsc --noEmit)
 npm run dev:ui                                        # Dev UI (hot reload)
 npm run build:ui                                      # Build UI
+cd src/ui && npm run test:e2e                         # Run Playwright e2e tests (mock mode)
+cd src/ui && npm run test:e2e:ui                      # Playwright e2e (interactive UI mode)
 npm install                                           # Full install (triggers UI build via "prepare")
 ```

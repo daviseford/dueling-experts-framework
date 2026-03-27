@@ -1,4 +1,4 @@
-import type { Turn, TurnsResponse } from "@/lib/types"
+import type { Turn } from "@/lib/types"
 
 const BASE_TIME = new Date("2026-03-24T14:00:00.000Z").getTime()
 
@@ -637,21 +637,4 @@ export const MOCK_SESSION_META: Record<string, { prNumber: number | null; artifa
   "mock-session-2": { prNumber: null, artifactNames: ["pool-config.md"] },
   "mock-session-3": { prNumber: null, artifactNames: [] },
   "mock-session-4": { prNumber: null, artifactNames: [] },
-}
-
-export const MOCK_RESPONSE: TurnsResponse = {
-  turns: MOCK_TURNS,
-  session_id: "mock-session-id",
-  session_status: "completed",
-  phase: "review",
-  topic: "Add rate limiting middleware to the API gateway",
-  turn_count: 11,
-  thinking: null,
-  branch_name: "def/a1b2c3d4-rate-limiting-middleware",
-  pr_url: "https://github.com/example/repo/pull/42",
-  pr_number: 42,
-  turns_path: ".def/sessions/mock-session-id/turns",
-  artifacts_path: ".def/sessions/mock-session-id/artifacts",
-  artifact_names: ["decisions.md", "diff-0008.patch", "pr-body.md"],
-  usage: null,
 }
