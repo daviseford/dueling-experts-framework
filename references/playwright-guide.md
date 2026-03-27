@@ -6,24 +6,21 @@ Guide for agents adding or extending Playwright end-to-end tests in this codebas
 
 - **`@playwright/test`** is installed as a devDependency in `src/ui/package.json`.
 - **`src/ui/playwright.config.ts`** is tracked and configures Chromium-only testing.
-- **`src/ui/e2e/`** contains 3 spec files with 9 tests (16 run across 2 projects, 2 skipped by design).
+- **`src/ui/e2e/`** contains 8 spec files covering accessibility, mobile, states, transcript, tabs, panels, view mode, and visual snapshots.
 - **All tests run against mock mode** (`dev:mock`) -- no live backend required.
 
 ### Test inventory
 
-| Spec file | Tests | What it covers |
-|-----------|-------|----------------|
-| `session-tabs.spec.ts` | 3 | Tab rendering, tab switching, session dismissal |
-| `session-panel.spec.ts` | 3 | Completed session transcript + decisions + branch/PR summary, active session interjection input, paused session pause banner |
-| `view-mode.spec.ts` | 3 | Grid mode toggle, narrow viewport single-panel lock, theme toggle |
-
-### Not yet covered
-
-- Interjection submission (would need mock API intercept or form validation test)
-- Turn card expand/collapse behavior
-- Markdown content rendering (code blocks, tables)
-- Empty state (no sessions)
-- Grid panel maximize/dismiss
+| Spec file | What it covers |
+|-----------|----------------|
+| `accessibility.spec.ts` | ARIA roles, keyboard navigation, roving tabindex, dismiss button accessibility |
+| `mobile.spec.ts` | Mobile viewport status bar rendering and responsiveness |
+| `session-panel.spec.ts` | Completed session transcript + decisions + branch/PR summary, active session interjection input, paused session pause banner |
+| `session-tabs.spec.ts` | Tab rendering, tab switching, session dismissal |
+| `states.spec.ts` | Empty, loading, paused, and thinking mock scenarios |
+| `transcript.spec.ts` | Turn card rendering, expand/collapse, agent badges, phase tokens |
+| `view-mode.spec.ts` | Grid mode toggle, narrow viewport single-panel lock, theme toggle |
+| `visual.spec.ts` | Golden screenshot comparisons for desktop (light/dark) and mobile |
 
 ## Configuration
 
@@ -49,15 +46,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "narrow-viewport",
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 375, height: 667 },
-      },
+      name: "mobile",
+      use: { viewport: { width: 375, height: 667 } },
     },
   ],
   webServer: {
-    command: "npm run dev:mock -- --port 4173",
+    command: "npm run dev:mock -- --port 4173 --strictPort",
     port: 4173,
     reuseExistingServer: !process.env.CI,
   },
@@ -67,7 +61,7 @@ export default defineConfig({
 Key points:
 - **Port 4173** avoids collision with Vite's default dev port (5173).
 - **`reuseExistingServer: !process.env.CI`** -- locally reuses a running dev server, CI always starts fresh.
-- **Two projects:** `desktop-chromium` (default Desktop Chrome viewport) and `narrow-viewport` (375x667). Chromium only.
+- **Two projects:** `desktop-chromium` (default Desktop Chrome viewport) and `mobile` (375x667). Chromium only.
 - **`webServer.command`** uses `dev:mock` so Vite serves with `VITE_MOCK=true`. No real backend needed.
 - Traces captured on first retry for debugging CI failures.
 
@@ -117,9 +111,14 @@ This means Playwright tests do not need network interception or API mocking -- t
 
 Existing specs follow the pattern `src/ui/e2e/<feature>.spec.ts`:
 ```
-src/ui/e2e/session-tabs.spec.ts
+src/ui/e2e/accessibility.spec.ts
+src/ui/e2e/mobile.spec.ts
 src/ui/e2e/session-panel.spec.ts
+src/ui/e2e/session-tabs.spec.ts
+src/ui/e2e/states.spec.ts
+src/ui/e2e/transcript.spec.ts
 src/ui/e2e/view-mode.spec.ts
+src/ui/e2e/visual.spec.ts
 ```
 
 ### Basic test structure
@@ -158,7 +157,7 @@ Use `testInfo.project.name` to skip tests that only apply to a specific viewport
 
 ```ts
 test("desktop can toggle to grid mode", async ({ page }, testInfo) => {
-  if (testInfo.project.name === "narrow-viewport") {
+  if (testInfo.project.name === "mobile") {
     test.skip()
   }
   // ... desktop-only assertions

@@ -7,7 +7,7 @@ test.describe("view mode", () => {
 
   test("desktop can toggle to grid mode and render multiple panels", async ({ page }, testInfo) => {
     // Only run in desktop-chromium project (needs >= 768px viewport)
-    if (testInfo.project.name === "narrow-viewport") {
+    if (testInfo.project.name === "mobile") {
       test.skip()
     }
 
@@ -25,7 +25,7 @@ test.describe("view mode", () => {
 
   test("narrow viewport stays in single-panel mode", async ({ page }, testInfo) => {
     // This test only runs in the narrow-viewport project (375px wide)
-    if (testInfo.project.name !== "narrow-viewport") {
+    if (testInfo.project.name !== "mobile") {
       test.skip()
     }
 

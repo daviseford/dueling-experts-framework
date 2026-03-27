@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repo.
 
 ## What This Is
 
-DEF (Dueling Experts Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **debate → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection. On completion, a draft PR is automatically created via the GitHub CLI.
+DEF (Dueling Experts Framework) — a CLI that orchestrates turn-based conversations between Claude Code and Codex CLIs. Sessions progress through three phases: **plan → implement → review**. A localhost HTTP server serves a React watcher UI for observation and human interjection. On completion, a draft PR is automatically created via the GitHub CLI.
 
 ## Files That Matter
 
@@ -52,11 +52,11 @@ Session directories live at `.def/sessions/<uuid>/` with:
 
 Sessions are single-use — there is no resume or recovery mechanism. Each `def` invocation creates a new session. SIGINT marks the session as `completed` and cleans up.
 
-### Debate Phase
-Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The debate turn budget keeps ticking during contested consensus (no reset).
+### Plan Phase
+Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The plan turn budget keeps ticking during contested consensus (no reset).
 
 ### Implement Phase
-After consensus, the agent specified by `--impl-model` (default: `claude`) receives the debate decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
+After consensus, the agent specified by `--impl-model` (default: `claude`) receives the plan decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
 
 ### Review Phase
 The non-implementing agent reviews the implementation. It can approve (`status: done`) or request fixes (`status: complete` with feedback). Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
@@ -74,7 +74,7 @@ turn: 1                      # Orchestrator-assigned
 from: claude                 # claude | codex | human | system
 timestamp: 2026-03-23T...   # Orchestrator-assigned
 status: complete             # complete | needs_human | done | decided
-phase: debate                # debate | implement | review
+phase: plan                  # plan | implement | review
 decisions:                   # Optional, array of strings
   - "Key decision made"
 ---
@@ -95,7 +95,7 @@ decisions:                   # Optional, array of strings
 ## Worktree Isolation
 
 Each edit-mode session's implement phase runs in an isolated git worktree:
-- Worktree created at debate→implement transition: `.def/worktrees/<sessionId>`
+- Worktree created at plan→implement transition: `.def/worktrees/<sessionId>`
 - Branch: `def/<short-id>-<slugified-topic>`
 - `session.target_repo` is swapped to the worktree path during implement/review
 - Changes are committed to the branch after each implementation turn
@@ -106,8 +106,8 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - `context.ts` builds prompts with a **400K character budget** (~100K tokens).
 - Newest turns are prioritized; oldest are dropped first.
 - Only `decisions` arrays from truncated turns are preserved in a summary notice — no other content survives truncation.
-- Prompts are phase-aware: debate prompts encourage challenge, implement prompts include decisions and tool access instructions, review prompts include the git diff.
-- Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (debate-only, no implementation).
+- Prompts are phase-aware: plan prompts encourage challenge, implement prompts include decisions and tool access instructions, review prompts include the git diff.
+- Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (plan-only, no implementation).
 
 ## Agent Invocation
 - **Claude plan/review:** `claude -p "instruction" --allowedTools Read Glob Grep "Bash(gh:*)" "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)" "Bash(ls *)" --dangerously-skip-permissions`, prompt piped as stdin context. Read-only tool access — agents can observe files, search code, browse git history, and query GitHub, but cannot modify anything.
@@ -116,7 +116,7 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - **Codex implement:** `codex exec --full-auto --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Full workspace-write tool access.
 - Windows: agents spawn with `shell: true` because npm CLIs are .cmd shims. Process kill uses `taskkill /T /F` for proper tree cleanup.
 - **Three model tiers:** full (opus/gpt-5.4), mid (sonnet), fast (haiku/gpt-5.1-codex-mini). Review phase uses mid by default; consensus confirmation uses fast. `--no-fast` forces all turns to full tier.
-- **300s timeout** (debate/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
+- **300s timeout** (plan/review), **900s timeout** (implement) → SIGTERM → 5s grace → SIGKILL.
 - **5MB output cap** — child is killed if stdout exceeds this.
 
 ## UI & API
