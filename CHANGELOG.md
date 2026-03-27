@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.11](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.10...def-v0.0.11) (2026-03-27)
+
+
+### Features
+
+* UI design critique fixes ([#85](https://github.com/daviseford/dueling-experts-framework/issues/85)) ([307f866](https://github.com/daviseford/dueling-experts-framework/commit/307f866e879e29d5ada078f0345afbcff2d90844))
+
 ## [0.0.10](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.9...def-v0.0.10) (2026-03-27)
 
 
