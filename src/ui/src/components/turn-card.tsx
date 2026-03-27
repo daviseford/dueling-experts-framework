@@ -95,7 +95,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                     <Badge
                       variant="outline"
                       className={cn(
-                        "font-mono text-[9px] font-normal tracking-wide",
+                        "font-mono text-[10px] font-normal tracking-wide",
                         phaseToken.badgeClass
                       )}
                     >
@@ -109,7 +109,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                 <Badge
                   variant="outline"
                   className={cn(
-                    "hidden font-mono text-[9px] font-normal tracking-wide @md:inline-flex md:inline-flex",
+                    "hidden font-mono text-[10px] font-normal tracking-wide @md:inline-flex md:inline-flex",
                     turn.model_tier === "fast" ? FAST_BADGE_STYLE
                       : turn.model_tier === "mid" ? MID_BADGE_STYLE
                       : "bg-muted/50 text-muted-foreground border-border/50"

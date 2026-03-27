@@ -134,6 +134,7 @@ export function SessionTabBar({
           size="icon"
           className="absolute left-0 z-10 h-full w-7 rounded-none bg-gradient-to-r from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("left")}
+          aria-label="Scroll tabs left"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </Button>
@@ -184,7 +185,7 @@ export function SessionTabBar({
                   <button
                     type="button"
                     aria-label={`Dismiss ${s.topic}`}
-                    className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation()
                       onDismissSession(s.id)
@@ -230,6 +231,7 @@ export function SessionTabBar({
           size="icon"
           className="absolute right-0 z-10 h-full w-7 rounded-none bg-gradient-to-l from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("right")}
+          aria-label="Scroll tabs right"
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </Button>

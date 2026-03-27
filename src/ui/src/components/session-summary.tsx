@@ -41,7 +41,7 @@ export function SessionSummary({
           </div>
           <div>
             <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
-              Session Completed
+              Session completed
             </h3>
             <div className="mt-0.5 flex items-center gap-1.5">
               <Layers className="h-3 w-3 text-muted-foreground/60" />

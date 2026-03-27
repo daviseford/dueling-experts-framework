@@ -47,7 +47,7 @@ export function DecisionLog({ entries, phase }: DecisionLogProps) {
             </span>
             <Badge
               variant="outline"
-              className="font-mono text-[9px] font-normal text-muted-foreground"
+              className="font-mono text-[10px] font-normal text-muted-foreground"
             >
               {entries.length}
             </Badge>

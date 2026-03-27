@@ -64,7 +64,7 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
           onClick={doSend}
           disabled={disabled || sending || !value.trim()}
           size="sm"
-          className="h-10 rounded-xl bg-teal-600 px-5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-gradient-to-r hover:from-teal-500 hover:to-emerald-500 hover:shadow-md focus-visible:bg-gradient-to-r focus-visible:from-teal-500 focus-visible:to-emerald-500 disabled:bg-muted disabled:shadow-none"
+          className="h-10 rounded-xl bg-teal-600 px-5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-gradient-to-r hover:from-teal-500 hover:to-emerald-500 hover:shadow-md focus-visible:bg-gradient-to-r focus-visible:from-teal-500 focus-visible:to-emerald-500 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
         >
           <Send className="mr-1.5 h-3.5 w-3.5" />
           Send
