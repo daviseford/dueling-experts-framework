@@ -1,4 +1,4 @@
-import type { Turn, TurnsResponse } from "@/lib/types"
+import type { Turn } from "@/lib/types"
 
 const BASE_TIME = new Date("2026-03-24T14:00:00.000Z").getTime()
 
@@ -446,19 +446,195 @@ Approved for merge. The PR is ready.`,
   },
 ]
 
-export const MOCK_RESPONSE: TurnsResponse = {
-  turns: MOCK_TURNS,
-  session_id: "mock-session-id",
-  session_status: "completed",
-  phase: "review",
-  topic: "Add rate limiting middleware to the API gateway",
-  turn_count: 11,
-  thinking: null,
-  branch_name: "def/a1b2c3d4-rate-limiting-middleware",
-  pr_url: "https://github.com/example/repo/pull/42",
-  pr_number: 42,
-  turns_path: ".def/sessions/mock-session-id/turns",
-  artifacts_path: ".def/sessions/mock-session-id/artifacts",
-  artifact_names: ["decisions.md", "diff-0008.patch", "pr-body.md"],
-  usage: null,
+const MOCK_TURNS_SESSION_2: Turn[] = [
+  {
+    id: "turn-s2-0001-claude",
+    turn: 1,
+    from: "claude",
+    phase: "plan",
+    status: "complete",
+    timestamp: "2026-03-24T10:00:00.000Z",
+    duration_ms: 80_000,
+    decisions: [
+      "Replace per-request connections with a shared pool using generic-pool",
+      "Set pool min=2, max=10 with 30s idle timeout",
+    ],
+    content: `## Database Connection Pooling -- Plan
+
+Currently each request opens a new database connection, which is wasteful under load.
+
+I propose using \`generic-pool\` to maintain a shared connection pool with configurable min/max sizes and idle timeouts.`,
+  },
+  {
+    id: "turn-s2-0002-codex",
+    turn: 2,
+    from: "codex",
+    phase: "plan",
+    status: "decided",
+    timestamp: "2026-03-24T10:05:00.000Z",
+    duration_ms: 55_000,
+    decisions: [
+      "Replace per-request connections with a shared pool using generic-pool",
+      "Set pool min=2, max=10 with 30s idle timeout",
+    ],
+    content: `Agreed. The generic-pool approach is standard and well-tested. The defaults are sensible for our workload.`,
+  },
+  {
+    id: "turn-s2-0003-claude",
+    turn: 3,
+    from: "claude",
+    phase: "implement",
+    status: "complete",
+    timestamp: "2026-03-24T10:15:00.000Z",
+    duration_ms: 300_000,
+    decisions: [],
+    content: `## Implementation Complete
+
+Created \`src/db/pool.ts\` with connection pool wrapper. Updated all query functions to acquire/release from the pool.`,
+  },
+  {
+    id: "turn-s2-0004-codex",
+    turn: 4,
+    from: "codex",
+    phase: "review",
+    status: "complete",
+    timestamp: "2026-03-24T10:25:00.000Z",
+    duration_ms: 60_000,
+    verdict: "fix",
+    decisions: [],
+    content: `## Review -- verdict: fix
+
+The pool config is missing a \`testOnBorrow\` option. Add connection health checks before handing connections to callers.`,
+  },
+  {
+    id: "turn-s2-0005-claude",
+    turn: 5,
+    from: "claude",
+    phase: "implement",
+    status: "complete",
+    timestamp: "2026-03-24T10:35:00.000Z",
+    duration_ms: 120_000,
+    decisions: [],
+    content: `Added \`testOnBorrow: true\` with a lightweight \`SELECT 1\` health check. Updated tests.`,
+  },
+  {
+    id: "turn-s2-0006-codex",
+    turn: 6,
+    from: "codex",
+    phase: "review",
+    status: "done",
+    timestamp: "2026-03-24T10:45:00.000Z",
+    duration_ms: 45_000,
+    verdict: "approve",
+    decisions: [],
+    content: `## Review -- verdict: approve
+
+Health check is correct. Pool lifecycle is clean. Approved for merge.`,
+  },
+]
+
+const MOCK_TURNS_SESSION_3: Turn[] = [
+  {
+    id: "turn-s3-0001-claude",
+    turn: 1,
+    from: "claude",
+    phase: "plan",
+    status: "complete",
+    timestamp: "2026-03-25T09:00:00.000Z",
+    duration_ms: 90_000,
+    decisions: [
+      "Use native WebSocket API with reconnection logic",
+      "Stream events as newline-delimited JSON",
+    ],
+    content: `## WebSocket Event Streaming -- Plan
+
+Proposing a WebSocket endpoint at \`/ws/events\` that streams server-sent events to connected clients using newline-delimited JSON.`,
+  },
+  {
+    id: "turn-s3-0002-codex",
+    turn: 2,
+    from: "codex",
+    phase: "plan",
+    status: "decided",
+    timestamp: "2026-03-25T09:05:00.000Z",
+    duration_ms: 60_000,
+    decisions: [
+      "Use native WebSocket API with reconnection logic",
+      "Stream events as newline-delimited JSON",
+    ],
+    content: `Agreed on the WebSocket approach. NDJSON is a good fit for incremental event delivery.`,
+  },
+  {
+    id: "turn-s3-0003-claude",
+    turn: 3,
+    from: "claude",
+    phase: "implement",
+    status: "complete",
+    timestamp: "2026-03-25T09:15:00.000Z",
+    duration_ms: 250_000,
+    decisions: [],
+    content: `## Implementation in progress
+
+Created the WebSocket server handler and client-side hook. Working on reconnection logic next.`,
+  },
+  {
+    id: "turn-s3-0004-claude",
+    turn: 4,
+    from: "claude",
+    phase: "implement",
+    status: "complete",
+    timestamp: "2026-03-25T09:30:00.000Z",
+    duration_ms: 180_000,
+    decisions: [],
+    content: `Added exponential backoff reconnection with jitter. The client recovers gracefully from dropped connections.`,
+  },
+]
+
+const MOCK_TURNS_SESSION_4: Turn[] = [
+  {
+    id: "turn-s4-0001-claude",
+    turn: 1,
+    from: "claude",
+    phase: "plan",
+    status: "complete",
+    timestamp: "2026-03-25T11:30:00.000Z",
+    duration_ms: 70_000,
+    decisions: [
+      "Add mutex lock around token refresh to prevent concurrent refresh attempts",
+    ],
+    content: `## Auth Token Refresh Race Condition -- Analysis
+
+The current token refresh logic can fire multiple concurrent refresh requests when several API calls detect an expired token simultaneously. This causes 401 cascades.
+
+Proposed fix: add a mutex that serializes refresh attempts.`,
+  },
+  {
+    id: "turn-s4-0002-codex",
+    turn: 2,
+    from: "codex",
+    phase: "plan",
+    status: "needs_human",
+    timestamp: "2026-03-25T11:35:00.000Z",
+    duration_ms: 50_000,
+    decisions: [],
+    content: `The mutex approach is correct, but I need clarification: should queued callers receive the new token from the in-flight refresh, or should they retry independently?
+
+Waiting for human input before proceeding.`,
+  },
+]
+
+/** Per-session mock turn data keyed by session ID. */
+export const MOCK_TURNS_BY_SESSION: Record<string, Turn[]> = {
+  "mock-session-1": MOCK_TURNS,
+  "mock-session-2": MOCK_TURNS_SESSION_2,
+  "mock-session-3": MOCK_TURNS_SESSION_3,
+  "mock-session-4": MOCK_TURNS_SESSION_4,
+}
+
+/** Per-session mock metadata (prNumber, artifactNames) keyed by session ID. */
+export const MOCK_SESSION_META: Record<string, { prNumber: number | null; artifactNames: string[] }> = {
+  "mock-session-1": { prNumber: 42, artifactNames: ["decisions.md", "diff-0008.patch", "pr-body.md"] },
+  "mock-session-2": { prNumber: null, artifactNames: ["pool-config.md"] },
+  "mock-session-3": { prNumber: null, artifactNames: [] },
+  "mock-session-4": { prNumber: null, artifactNames: [] },
 }

@@ -101,6 +101,7 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
         )}
         {canShowGrid && onToggleViewMode && (
           <Button
+            data-testid="view-mode-toggle"
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"

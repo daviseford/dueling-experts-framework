@@ -12,6 +12,8 @@ npm test                              # Run tests (node:test via tsx)
 npm run typecheck                     # Type-check with tsc --noEmit
 npm run dev:ui                        # Dev UI with hot reload
 npm run build:ui                      # Build UI
+cd src/ui && npm run test:e2e         # Run Playwright e2e tests (mock mode)
+cd src/ui && npm run test:e2e:ui      # Playwright e2e with interactive UI
 ```
 
 Run a single test file: `tsx --test src/__tests__/validate.test.ts`
@@ -31,3 +33,13 @@ This repo IS a multi-agent orchestrator (DEF). When discussing agents, reviewers
 - **Never commit to `main`/`master`/`dev`/`stage`** — use feature branches.
 - **No session resumption.** Sessions are not recoverable — each `def` invocation starts fresh.
 - **All def sessions are equal.** There are no special sessions - the initial session that happens to launch the explorer is not special. All sessions are treated equally.
+
+## Reference Documentation
+
+The `references/` directory contains long-lived implementation guides written for implementing agents. Unlike `docs/` (which is gitignored for session artifacts), everything in `references/` is committed and versioned as persistent project knowledge.
+
+When creating or updating references:
+- Write from the perspective of an implementing agent tasked with extending or debugging features
+- Ground content in the tracked main branch -- do not reference worktree artifacts or temporary session state
+- Use concrete file paths, component names, and API endpoints from the actual codebase
+- Cover setup, conventions, testing patterns, and gotchas specific to this repo

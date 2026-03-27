@@ -124,8 +124,8 @@ export function Transcript({
   const isEmpty = turns.length === 0 && !isLoading && !thinking && (sessionStatus === "active" || sessionStatus === "paused")
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className="space-y-3 px-5 py-4">
+    <ScrollArea className="min-h-0 min-w-0 flex-1">
+      <div className="min-w-0 space-y-3 overflow-hidden px-5 py-4">
         {isLoading && (
           <>
             <SkeletonTurnCard index={0} />

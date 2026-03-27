@@ -67,9 +67,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
         )}
       >
         <CollapsibleTrigger asChild>
-          <button className="flex w-full cursor-pointer flex-col gap-1 px-3 py-2 text-left transition-colors hover:bg-muted/30">
-            {/* Row 1: Speaker + turn # + content preview */}
-            <div className="flex w-full items-center gap-2">
+          <button className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/30">
               <ChevronRight
                 className={cn(
                   "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200",
@@ -90,15 +88,6 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
               <span className="font-mono text-[11px] text-muted-foreground">
                 #{turn.turn}
               </span>
-              {!open && (
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
-                  {extractPreview(turn.content)}
-                </span>
-              )}
-              {open && <span className="flex-1" />}
-            </div>
-            {/* Row 2: Phase + model + duration + timestamp */}
-            <div className="flex w-full items-center gap-2 pl-5">
               {turn.from !== "human" && (
                 <Badge
                   variant="outline"
@@ -135,11 +124,15 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                   {turn.cost_usd < 0.01 ? "<0.01" : turn.cost_usd.toFixed(2)}
                 </span>
               )}
-              <span className="flex-1" />
+              {!open && (
+                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
+                  {extractPreview(turn.content)}
+                </span>
+              )}
+              {open && <span className="flex-1" />}
               <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground/50 @sm:inline sm:inline">
                 {formatTimestamp(turn.timestamp)}
               </span>
-            </div>
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>

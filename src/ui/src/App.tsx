@@ -155,8 +155,9 @@ export default function App() {
         <EmptyState />
       ) : isGrid ? (
         <div
+          data-testid="grid-container"
           className={cn(
-            "grid min-h-0 flex-1 gap-4 p-2",
+            "grid min-h-0 flex-1 gap-4 overflow-hidden p-2",
             gridCount <= 1 && "grid-cols-1",
             gridCount >= 2 && "grid-cols-2",
             gridCount >= 3 && "grid-rows-[1fr_1fr]",
@@ -180,12 +181,14 @@ export default function App() {
           ))}
         </div>
       ) : (
-        <SessionPanel
-          key={selectedSessionId}
-          sessionId={selectedSessionId}
-          sessions={sessions}
-          className="flex-1"
-        />
+        <div data-testid="single-session-container" className="flex min-h-0 flex-1 flex-col">
+          <SessionPanel
+            key={selectedSessionId}
+            sessionId={selectedSessionId}
+            sessions={sessions}
+            className="flex-1"
+          />
+        </div>
       )}
       <Toaster position="bottom-right" />
     </div>
