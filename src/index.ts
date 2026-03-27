@@ -207,8 +207,8 @@ try {
 
     if (probe.action === 'join') {
       // A shared DEF server with active sessions exists -- run headless
+      // Keep the server module reference so the orchestrator can probe for adoption
       ui.status('server.shared', { port: defaultPort });
-      server = null;
       ownsServer = false;
     } else {
       // 'replace' or 'bind-new' -- start our own server
@@ -220,19 +220,14 @@ try {
   // Headless mode -- server module unavailable
 }
 
-// Start the server if we own it
-if (server && ownsServer) {
-  // server.start() is called by the orchestrator via the server reference
-}
-
 // Run the turn loop
 try {
-  await run(session, { server, noPr: opts.noPr, noFast: opts.noFast, noWorktree: opts.noWorktree });
+  await run(session, { server, ownsServer, noPr: opts.noPr, noFast: opts.noFast, noWorktree: opts.noWorktree });
 } catch (err: unknown) {
   ui.error(`Orchestrator error: ${(err as Error).message}`);
   process.exitCode = 1;
 } finally {
-  if (server && ownsServer) {
+  if (server) {
     server.stop();
   }
   process.exit(process.exitCode || 0);

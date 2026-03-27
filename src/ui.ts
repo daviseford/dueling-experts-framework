@@ -89,6 +89,7 @@ interface StatusPayloads {
   'invoke.escalate':    { turn: number; reason: string };
   'server.url':         { url: string };
   'server.shared':      { port: number };
+  'server.adopted':     { port: number };
   'shutdown.start':     {};
   'shutdown.saved':     {};
   'shutdown.worktree':  { branch: string };
@@ -383,6 +384,10 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'server.shared': {
       const { port } = d as StatusPayloads['server.shared'];
       return `  ${c.cyan(SYM.info)} Shared server detected on port ${c.bold(String(port))}, running headless`;
+    }
+    case 'server.adopted': {
+      const { port } = d as StatusPayloads['server.adopted'];
+      return `  ${c.cyan(SYM.info)} Adopted orphaned server on port ${c.bold(String(port))}`;
     }
 
     // Shutdown
