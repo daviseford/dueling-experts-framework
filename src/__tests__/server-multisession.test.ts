@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { start, startExplorer, stop, probeExistingServer, _testGetOpenBrowserCallCount, _testResetBrowserState } from '../server.js';
+import { start, startExplorer, stop, probeExistingServer, getDefaultPort, _testGetOpenBrowserCallCount, _testResetBrowserState } from '../server.js';
 import { buildDefaultRoster } from '../roster.js';
 
 function httpGet(port: number, path: string): Promise<{ status: number; body: string }> {
@@ -719,5 +719,124 @@ describe('probe join->bind-new transition and adoption', () => {
     assert.equal(status, 200);
     const json = JSON.parse(body);
     assert.equal(json.server, 'def');
+  });
+});
+
+describe('adoption race: fallback port must not count as successful adoption', () => {
+  let testRepo: string;
+  let blocker: http.Server;
+  let blockerPort: number;
+  let savedCI: string | undefined;
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-adoption-race-${randomUUID()}`);
+    await mkdir(join(testRepo, '.def', 'sessions'), { recursive: true });
+
+    // Start a dummy server to block a specific port, simulating the race winner
+    blocker = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('occupied');
+    });
+    await new Promise<void>((resolve) => {
+      blocker.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = blocker.address();
+    blockerPort = typeof addr === 'object' && addr ? addr.port : 0;
+  });
+
+  after(async () => {
+    stop();
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('start() on blocked port falls back to random port, failing the adoption port check', async () => {
+    // This simulates the race condition: probeExistingServer returned 'bind-new'
+    // but by the time start() runs, another process already grabbed the port.
+    // listenWithFallback will bind a random port instead.
+    //
+    // We can't control getDefaultPort() from the test (it reads CI env at call time),
+    // so instead we directly verify the invariant the orchestrator relies on:
+    // when start() falls back to a different port, session.port !== probePort.
+    const sessionId = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Race loser' });
+    const owningDir = join(sessionsDir, sessionId);
+
+    const mockSession = {
+      id: sessionId,
+      topic: 'Race loser',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Temporarily unset CI so getDefaultPort() returns 18541 (the real default).
+    // This lets listenWithFallback actually attempt that port and fall back.
+    savedCI = process.env.CI;
+    delete process.env.CI;
+
+    _testResetBrowserState();
+
+    // Block the default port with our dummy server first
+    const defaultPort = getDefaultPort();
+    // Stop the dummy blocker and rebind it on the default port
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    blocker = http.createServer((_req, res) => { res.writeHead(200); res.end('occupied'); });
+    await new Promise<void>((resolve, reject) => {
+      blocker.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          // Port already in use by something else — skip this test
+          resolve();
+        } else {
+          reject(err);
+        }
+      });
+      blocker.listen(defaultPort, '127.0.0.1', () => resolve());
+    });
+    blockerPort = defaultPort;
+
+    await start(mockSession, mockController, { openBrowser: false });
+
+    // Restore CI
+    process.env.CI = savedCI || '1';
+
+    // The server bound successfully on some port
+    assert.ok(mockSession.port !== null && mockSession.port! > 0, 'server should have bound a port');
+
+    // The key assertion: session.port differs from the probe port (defaultPort)
+    // because the blocker occupied it. This is what the orchestrator checks —
+    // if session.port !== probePort, adoption is rejected and the server is stopped.
+    assert.notEqual(
+      mockSession.port, defaultPort,
+      'session.port should differ from default port when it is blocked — ' +
+      'the orchestrator must NOT count this as successful adoption',
+    );
   });
 });

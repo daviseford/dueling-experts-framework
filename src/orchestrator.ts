@@ -248,15 +248,23 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
         try {
           const probe = await server.probeExistingServer(probePort);
           if (probe.action === 'bind-new') {
-            // The owning server is gone and the port is free — adopt it
-            adopted = true;
-            if (adoptionProbeInterval) {
-              clearInterval(adoptionProbeInterval);
-              adoptionProbeInterval = null;
-            }
+            // The owning server is gone and the port is free — try to adopt it
             try {
               await server.start(session, controller, { openBrowser: false });
-              ui.status('server.adopted', { port: probePort });
+              // Verify we actually got the original port, not a random fallback.
+              // If another session won the race and we fell back to a random port,
+              // browsers are still pointed at the original port — this isn't recovery.
+              if (session.port === probePort) {
+                adopted = true;
+                if (adoptionProbeInterval) {
+                  clearInterval(adoptionProbeInterval);
+                  adoptionProbeInterval = null;
+                }
+                ui.status('server.adopted', { port: probePort });
+              } else {
+                // We bound a fallback port — stop and keep probing
+                server.stop();
+              }
             } catch {
               // Adoption failed (e.g. another session won the race) — not fatal
             }
