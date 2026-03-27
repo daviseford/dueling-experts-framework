@@ -42,4 +42,23 @@ describe('parseArgs', () => {
     assert.equal(opts.agents, undefined);
     assert.equal(opts.budget, undefined);
   });
+
+  it('throws on unknown -- flags', () => {
+    assert.throws(
+      () => parseArgs(['--topic', 'test', '--maxturns', '5']),
+      { message: /Unknown flag '--maxturns'/ },
+    );
+  });
+
+  it('throws on unknown flag with helpful message', () => {
+    assert.throws(
+      () => parseArgs(['--unknown-flag']),
+      { message: /Run 'def --help' for options/ },
+    );
+  });
+
+  it('allows positional args without -- prefix', () => {
+    const opts = parseArgs(['add', 'dark', 'mode']);
+    assert.equal(opts.topic, 'add dark mode');
+  });
 });

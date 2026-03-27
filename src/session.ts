@@ -175,8 +175,9 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
     const forceTimer = setTimeout(() => process.exit(1), 5000);
     forceTimer.unref(); // Don't keep event loop alive
 
-    ui.status('shutdown.start', {});
     try {
+      ui.status('shutdown.start', {});
+
       // Mark session as completed FIRST — before any slow operations.
       // If the force timer fires or cleanup hangs, the session status
       // is already updated so it won't appear stuck as paused/active.
@@ -202,6 +203,11 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
           await removeWorktree(session.original_repo, session.worktree_path);
           ui.status('shutdown.worktree', { branch: session.branch_name! });
         } catch { /* best effort */ }
+      }
+
+      // Tell the user where their work lives so they can recover
+      if (session?.branch_name) {
+        ui.status('shutdown.recovery', { branch: session.branch_name });
       }
     } catch { /* best effort */ }
     process.exit(0);

@@ -95,9 +95,13 @@ interface StatusPayloads {
   'base.unresolvable':  { original: string };
   'branch.switched':    { expected: string; actual: string };
   'push.failed':        { branch: string; error: string };
+  'push.hint':          { error: string };
   'pr.failed':          { branch: string; error: string };
+  'pr.hint':            { error: string };
   'pr.parse.failed':    { output: string };
   'pr.lookup.failed':   { owner: string; repo: string; number: number };
+  'shutdown.recovery':  { branch: string };
+  'cost.estimate':      { maxTurns: number; budget?: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -132,6 +136,7 @@ export interface SessionInfo {
   impl_model: string;
   review_turns: number;
   dir: string;
+  noPr?: boolean;
 }
 
 export function intro(session: SessionInfo): void {
@@ -168,6 +173,12 @@ export function intro(session: SessionInfo): void {
   console.log(kv('Impl model', session.impl_model));
   console.log(kv('Review turns', String(session.review_turns)));
   console.log(kv('Session dir', c.dim(session.dir)));
+  if (session.mode === 'edit') {
+    const prNote = session.noPr
+      ? 'will create a branch and commit changes locally'
+      : 'will create a branch, push to origin, and open a draft PR';
+    console.log(`  ${c.yellow(SYM.warn)} Edit mode: ${prNote}.`);
+  }
   console.log('');
 }
 
@@ -382,6 +393,34 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       const { branch } = d as StatusPayloads['shutdown.worktree'];
       return `  ${c.dim(SYM.check)} Worktree cleaned up. Branch preserved: ${c.cyan(branch)}`;
     }
+    case 'shutdown.recovery': {
+      const { branch } = d as StatusPayloads['shutdown.recovery'];
+      return [
+        '',
+        `  ${c.cyan(SYM.info)} Your work is saved on branch: ${c.cyan(c.bold(branch))}`,
+        `  ${c.dim('To inspect:')} git log ${branch}`,
+        `  ${c.dim('To checkout:')} git checkout ${branch}`,
+      ].join('\n');
+    }
+
+    // Cost estimate
+    case 'cost.estimate': {
+      const { maxTurns, budget } = d as StatusPayloads['cost.estimate'];
+      const lines: string[] = [];
+      // Rough per-turn heuristic: ~$0.50-2.00 for full-tier models.
+      // Actual cost depends on prompt size, model mix, and review/fix loops
+      // (edit mode may use additional turns beyond maxTurns for review cycles).
+      const low = (maxTurns * 0.5).toFixed(2);
+      const high = (maxTurns * 2.0).toFixed(2);
+      lines.push(`  ${c.yellow(SYM.warn)} Rough cost guide: ~$${low}-${high} for up to ${maxTurns} turns.`);
+      lines.push(`  ${c.dim(SYM.info)} Actual cost varies with prompt size, model, and review cycles.`);
+      if (budget) {
+        lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
+      } else {
+        lines.push(`  ${c.dim(SYM.info)} No budget cap set. Use --budget <usd> to limit spending.`);
+      }
+      return lines.join('\n');
+    }
 
     // Base ref resolution
     case 'base.fallback': {
@@ -402,9 +441,42 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       const { branch, error: err } = d as StatusPayloads['push.failed'];
       return `  ${c.yellow(SYM.warn)} Could not push branch: ${err}. Branch preserved: ${c.cyan(branch)}`;
     }
+    case 'push.hint': {
+      const { error: err } = d as StatusPayloads['push.hint'];
+      const hints: string[] = [];
+      if (/permission denied|403|authentication/i.test(err)) {
+        hints.push("Check your git credentials and repository permissions.");
+      }
+      if (/remote.*not found|does not appear.*repository/i.test(err)) {
+        hints.push("Verify that the 'origin' remote URL is correct.");
+      }
+      if (/gh auth/i.test(err)) {
+        hints.push("Run 'gh auth login' to authenticate.");
+      }
+      hints.push("Tip: use --no-pr to skip push/PR creation and keep changes local.");
+      return hints.map(h => `  ${c.dim(SYM.info)} ${h}`).join('\n');
+    }
     case 'pr.failed': {
       const { branch, error: err } = d as StatusPayloads['pr.failed'];
       return `  ${c.yellow(SYM.warn)} Could not create PR: ${err}. Branch preserved: ${c.cyan(branch)}`;
+    }
+    case 'pr.hint': {
+      const { error: err } = d as StatusPayloads['pr.hint'];
+      const hints: string[] = [];
+      if (/permission denied|403|authentication|credentials/i.test(err)) {
+        hints.push("Check your git/GitHub credentials and repository permissions.");
+      }
+      if (/not found|does not exist|404/i.test(err)) {
+        hints.push("Verify the repository exists on GitHub and you have access.");
+      }
+      if (/gh auth|not logged/i.test(err)) {
+        hints.push("Run 'gh auth login' to authenticate the GitHub CLI.");
+      }
+      if (/already exists|already has/i.test(err)) {
+        hints.push("A PR for this branch may already exist. Check with 'gh pr list'.");
+      }
+      hints.push("Tip: use --no-pr to skip push/PR creation and keep changes local.");
+      return hints.map(h => `  ${c.dim(SYM.info)} ${h}`).join('\n');
     }
     case 'pr.parse.failed': {
       const { output } = d as StatusPayloads['pr.parse.failed'];
