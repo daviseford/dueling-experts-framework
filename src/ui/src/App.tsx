@@ -184,6 +184,7 @@ export default function App() {
           key={selectedSessionId}
           sessionId={selectedSessionId}
           sessions={sessions}
+          className="flex-1"
         />
       )}
       <Toaster position="bottom-right" />
