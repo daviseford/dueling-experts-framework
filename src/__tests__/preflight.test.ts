@@ -94,8 +94,8 @@ describe('collectPreflightErrors', () => {
       { agents: ['claude', 'codex'], noPr: false, mode: 'edit' },
       check,
     );
-    // Should have: claude missing, codex missing, not in git repo, no remote, no gh
-    assert.ok(errors.length >= 4);
+    // claude missing, codex missing, not in git repo (remote + gh skipped since not in git repo)
+    assert.equal(errors.length, 3);
   });
 
   it('deduplicates providers', async () => {

@@ -9,6 +9,7 @@ export interface ParsedArgs {
   noFast?: boolean;
   noWorktree?: boolean;
   version?: boolean;
+  help?: boolean;
   /** Comma-separated agent list (e.g., 'claude,codex' or 'claude,claude'). */
   agents?: string;
   /** Budget cap in USD. */
@@ -51,6 +52,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '-v':
         result.version = true;
         break;
+      case '--help':
+      case '-h':
+        result.help = true;
+        break;
       case '--agents':
         result.agents = argv[++i];
         break;
@@ -59,7 +64,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       default:
         if (argv[i].startsWith('--')) {
-          throw new Error(`Unknown flag '${argv[i]}'. Run 'def --help' for options.`);
+          throw new Error(`Unknown flag '${argv[i]}'. Run 'def' with no arguments for usage.`);
         }
         positional.push(argv[i]);
         break;
