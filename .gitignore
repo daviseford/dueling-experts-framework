@@ -8,3 +8,6 @@ src/ui/node_modules/
 *.tgz
 /.vscode
 /.cursor/hooks
+src/ui/test-results/
+src/ui/playwright-report/
+src/ui/blob-report/

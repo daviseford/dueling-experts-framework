@@ -5,6 +5,7 @@ import { isMock } from "@/lib/env"
 
 const TURNS_POLL_INTERVAL = 3000
 const ELAPSED_INTERVAL = 1000
+const EMPTY_TURNS: Turn[] = []
 
 function elapsedStr(since: string): string {
   const secs = Math.round((Date.now() - new Date(since).getTime()) / 1000)
@@ -195,24 +196,34 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
   }
 }
 
+interface MockData {
+  turnsBySession: Record<string, Turn[]>
+  sessionMeta: Record<string, { prNumber: number | null; artifactNames: string[] }>
+}
+
 function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {
   // Lazy-load mock data to avoid circular dependency issues
-  const [mockData, setMockData] = useState<{ turns: Turn[], turn_count: number, artifact_names: string[] } | null>(null)
+  const [mockData, setMockData] = useState<MockData | null>(null)
 
   useEffect(() => {
-    import("@/mocks/mock-session").then(m => setMockData(m.MOCK_RESPONSE))
+    import("@/mocks/mock-session").then(m => setMockData({
+      turnsBySession: m.MOCK_TURNS_BY_SESSION,
+      sessionMeta: m.MOCK_SESSION_META,
+    }))
   }, [])
 
   const session = sessions.find(s => s.id === sessionId)
   const status = session?.session_status ?? "completed"
   const statusText = status === "completed" ? "Session completed" : status === "interrupted" ? "Session interrupted" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
 
+  const turns = mockData?.turnsBySession[sessionId] ?? EMPTY_TURNS
+
   return {
-    turns: sessionId === "mock-session-1" && mockData ? mockData.turns : [],
+    turns,
     sessionId,
     sessionStatus: status,
     topic: session?.topic ?? "",
-    turnCount: sessionId === "mock-session-1" && mockData ? mockData.turn_count : (session?.current_turn ?? 0),
+    turnCount: turns.length || (session?.current_turn ?? 0),
     thinking: status === "active" ? { agent: "claude", since: new Date(Date.now() - 15000).toISOString() } : null,
     thinkingElapsed: status === "active" ? "15s" : "",
     statusText,
@@ -220,10 +231,10 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     phase: session?.phase ?? "review",
     branchName: session?.branch_name ?? null,
     prUrl: session?.pr_url ?? null,
-    prNumber: sessionId === "mock-session-1" ? 42 : null,
+    prNumber: mockData?.sessionMeta[sessionId]?.prNumber ?? null,
     turnsPath: `.def/sessions/${sessionId}/turns`,
     artifactsPath: `.def/sessions/${sessionId}/artifacts`,
-    artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifact_names : [],
+    artifactNames: mockData?.sessionMeta[sessionId]?.artifactNames ?? [],
     usage: null,
   }
 }
