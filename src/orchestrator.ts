@@ -238,46 +238,54 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
 
   // Adoption probe — when we have the server module but don't own the server,
   // poll to detect if the owning server dies so we can adopt it.
-  let adoptionProbeInterval: ReturnType<typeof setInterval> | null = null;
+  // Uses self-scheduling setTimeout (not setInterval) to prevent overlapping
+  // async callbacks when a probe takes longer than the interval.
+  let adoptionProbeTimeout: ReturnType<typeof setTimeout> | null = null;
   let adopted = false;
+  let adoptionStopped = false;
   if (server && !ownsServer) {
     const probePort = server.getDefaultPort();
     if (probePort > 0) {
-      adoptionProbeInterval = setInterval(async () => {
-        if (adopted) return;
-        try {
-          const probe = await server.probeExistingServer(probePort);
-          if (probe.action === 'bind-new') {
-            // The owning server is gone and the port is free — try to adopt it
-            try {
-              const portBefore = session.port;
-              await server.start(session, controller, { openBrowser: false });
-              // Verify we actually got the original port, not a random fallback.
-              // If another session won the race and we fell back to a random port,
-              // browsers are still pointed at the original port — this isn't recovery.
-              if (session.port === probePort) {
-                adopted = true;
-                if (adoptionProbeInterval) {
-                  clearInterval(adoptionProbeInterval);
-                  adoptionProbeInterval = null;
+      const scheduleAdoptionProbe = (): void => {
+        if (adoptionStopped || adopted) return;
+        adoptionProbeTimeout = setTimeout(async () => {
+          if (adoptionStopped || adopted) return;
+          try {
+            const probe = await server.probeExistingServer(probePort);
+            if (adoptionStopped) return;
+            if (probe.action === 'bind-new') {
+              // The owning server is gone and the port is free — try to adopt it
+              try {
+                const portBefore = session.port;
+                await server.start(session, controller, { openBrowser: false });
+                if (adoptionStopped) { server.stop(); return; }
+                // Verify we actually got the original port, not a random fallback.
+                // If another session won the race and we fell back to a random port,
+                // browsers are still pointed at the original port — this isn't recovery.
+                if (session.port === probePort) {
+                  adopted = true;
+                  ui.status('server.adopted', { port: probePort });
+                } else {
+                  // We bound a fallback port — stop and restore the original port
+                  // so the session metadata still points at the shared UI port.
+                  server.stop();
+                  session.port = portBefore;
+                  await updateSession(session.dir, { port: portBefore });
                 }
-                ui.status('server.adopted', { port: probePort });
-              } else {
-                // We bound a fallback port — stop and restore the original port
-                // so the session metadata still points at the shared UI port.
-                server.stop();
-                session.port = portBefore;
+              } catch {
+                // Adoption failed (e.g. another session won the race) — not fatal
               }
-            } catch {
-              // Adoption failed (e.g. another session won the race) — not fatal
             }
+            // 'join' — another session is serving, keep polling
+            // 'replace' — stale server still holds port, keep polling until it releases
+          } catch {
+            // Probe error — retry next interval
+          } finally {
+            scheduleAdoptionProbe();
           }
-          // 'join' — another session is serving, keep polling
-          // 'replace' — stale server still holds port, keep polling until it releases
-        } catch {
-          // Probe error — retry next interval
-        }
-      }, 5000);
+        }, 5000);
+      };
+      scheduleAdoptionProbe();
     }
   }
 
@@ -815,9 +823,10 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
     clearInterval(heartbeatInterval);
     pollStopped = true;
     if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
-    if (adoptionProbeInterval) {
-      clearInterval(adoptionProbeInterval);
-      adoptionProbeInterval = null;
+    adoptionStopped = true;
+    if (adoptionProbeTimeout) {
+      clearTimeout(adoptionProbeTimeout);
+      adoptionProbeTimeout = null;
     }
   }
 

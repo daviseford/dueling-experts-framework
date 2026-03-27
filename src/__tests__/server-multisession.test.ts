@@ -657,7 +657,9 @@ describe('probe join->bind-new transition and adoption', () => {
   });
 
   it('adopter starts on freed port with browser suppressed after join->bind-new', async () => {
-    // Server was stopped in prior test. Port should be free.
+    // Ensure server is stopped (don't rely on prior test ordering)
+    try { stop(); } catch { /* already stopped */ }
+
     // Simulate what the orchestrator adoption loop does:
     // 1. probe returns bind-new
     // 2. start() with openBrowser: false
@@ -916,18 +918,21 @@ describe('adoption race: fallback port must not count as successful adoption', (
     const fallbackPort = mockSession.port;
     assert.notEqual(fallbackPort, defaultPort, 'precondition: should have fallen back');
 
+    // Verify session.json on disk has the fallback port (written by server.start())
+    const diskAfterStart = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    assert.equal(
+      diskAfterStart.port, fallbackPort,
+      'session.json should have the fallback port written by server.start()',
+    );
+
     // Simulate the orchestrator's adoption-failure cleanup:
-    // stop the fallback server and restore session.port
+    // stop the fallback server and restore session.port + session.json
     stop();
     mockSession.port = originalPort;
 
-    // The key assertion: session.port is restored to the original shared port
+    // Verify the in-memory and original port relationship
     assert.equal(
-      mockSession.port, originalPort,
-      'session.port must be restored to original value after failed adoption',
-    );
-    assert.equal(
-      mockSession.port, defaultPort,
+      originalPort, defaultPort,
       'original port should match the probePort (defaultPort)',
     );
   });
