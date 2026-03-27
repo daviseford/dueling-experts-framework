@@ -24,16 +24,23 @@ describe('parseArgs', () => {
     assert.equal(opts.budget, 10);
   });
 
+  it('parses --dry-run flag', () => {
+    const opts = parseArgs(['--topic', 'test', '--dry-run']);
+    assert.equal(opts.dryRun, true);
+  });
+
   it('parses all new flags together', () => {
     const opts = parseArgs([
       '--topic', 'refactor auth',
       '--agents', 'claude,claude',
       '--budget', '2.00',
+      '--dry-run',
       '--no-fast',
     ]);
     assert.equal(opts.topic, 'refactor auth');
     assert.equal(opts.agents, 'claude,claude');
     assert.equal(opts.budget, 2.00);
+    assert.equal(opts.dryRun, true);
     assert.equal(opts.noFast, true);
   });
 

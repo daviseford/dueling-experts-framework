@@ -8,6 +8,7 @@ import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import { listProviders, getProvider } from './agent.js';
 import { preflight } from './preflight.js';
+import { buildDefaultRoster, buildRoster } from './roster.js';
 import * as ui from './ui.js';
 
 // Subcommand routing -- check before parseArgs
@@ -50,7 +51,7 @@ if (opts.version) {
 if (!opts.topic) {
   const providers = listProviders().join(', ');
   console.error('Usage: def <topic>');
-  console.error(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
+  console.error(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--dry-run] [--no-pr] [--no-fast] [--no-worktree]`);
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
   console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
@@ -118,12 +119,31 @@ for (const name of registeredProviders) {
 }
 
 const targetRepo = resolve(process.cwd());
+const firstAgent = opts.first || 'claude';
+
+if (opts.dryRun) {
+  const roster = agentsList
+    ? buildRoster(agentsList, opts.implModel || 'claude', displayNames)
+    : buildDefaultRoster(firstAgent, opts.implModel || 'claude', displayNames);
+
+  console.log(ui.dryRunPreview({
+    topic: opts.topic,
+    mode: opts.mode || 'edit',
+    targetRepo,
+    maxTurns: opts.maxTurns || 20,
+    reviewTurns: opts.reviewTurns || 6,
+    roster,
+    noPr: !!opts.noPr,
+    noWorktree: !!opts.noWorktree,
+    budget: opts.budget,
+  }));
+  process.exit(0);
+}
 
 // Determine which providers will be used (for preflight CLI checks).
 // Must mirror buildDefaultRoster logic: the second agent is the first
 // registered provider that differs from firstAgent (or firstAgent itself
 // for self-debate when only one provider is registered).
-const firstAgent = opts.first || 'claude';
 const preflightAgents = agentsList
   ? [...new Set(agentsList)]
   : [...new Set([firstAgent, registeredProviders.find(a => a !== firstAgent) ?? firstAgent])];

@@ -5,6 +5,7 @@ export interface ParsedArgs {
   first?: string;
   implModel?: string;
   reviewTurns?: number;
+  dryRun?: boolean;
   noPr?: boolean;
   noFast?: boolean;
   noWorktree?: boolean;
@@ -37,6 +38,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--review-turns':
         result.reviewTurns = parseInt(argv[++i], 10);
+        break;
+      case '--dry-run':
+        result.dryRun = true;
         break;
       case '--no-pr':
         result.noPr = true;

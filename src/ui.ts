@@ -13,6 +13,8 @@
 import pc from 'picocolors';
 import * as clack from '@clack/prompts';
 import gradient from 'gradient-string';
+import { getImplementer, getReviewer } from './roster.js';
+import type { Participant } from './roster.js';
 
 // -- Environment detection ---------------------------------------------------
 
@@ -139,6 +141,18 @@ export interface SessionInfo {
   noPr?: boolean;
 }
 
+export interface DryRunInfo {
+  topic: string;
+  mode: string;
+  targetRepo: string;
+  maxTurns: number;
+  reviewTurns: number;
+  roster: Participant[];
+  noPr: boolean;
+  noWorktree: boolean;
+  budget?: number;
+}
+
 export function intro(session: SessionInfo): void {
   // Gradient banner (TTY + color only)
   if (isTTY && !noColor) {
@@ -180,6 +194,46 @@ export function intro(session: SessionInfo): void {
     console.log(`  ${c.yellow(SYM.warn)} Edit mode: ${prNote}.`);
   }
   console.log('');
+}
+
+export function dryRunPreview(info: DryRunInfo): string {
+  const implementer = getImplementer(info.roster);
+  const reviewer = getReviewer(info.roster);
+  const planningParticipants = info.roster
+    .map(participant => `  ${c.cyan(participant.id)} (${participant.displayName})`)
+    .join('\n');
+  const sideEffects = formatDryRunSideEffects(info);
+  const costEstimate = formatCostEstimate(info.maxTurns, info.budget);
+  const lines = [
+    c.bold('Dueling Experts Framework -- Dry Run'),
+    '',
+    dryRunKv('Topic', info.topic),
+    dryRunKv('Mode', info.mode),
+    dryRunKv('Target repo', info.targetRepo),
+    dryRunKv('Max turns', String(info.maxTurns)),
+    dryRunKv('Review turns', String(info.reviewTurns)),
+    dryRunKv('First planner', `${info.roster[0]?.id ?? 'n/a'} (${info.roster[0]?.displayName ?? 'n/a'})`),
+    '',
+    c.bold('Planning participants'),
+    planningParticipants,
+    '',
+    c.bold('Roles'),
+    `  ${c.cyan('Implementer'.padEnd(13))} ${implementer.id} (${implementer.displayName})`,
+    `  ${c.cyan('Reviewer'.padEnd(13))} ${reviewer.id} (${reviewer.displayName})`,
+    '',
+    c.bold('Phase flow'),
+    ...formatPhaseFlow(info, implementer, reviewer),
+    '',
+    c.bold('Side effects if run for real'),
+    ...sideEffects,
+    '',
+    c.bold('Cost estimate'),
+    ...costEstimate,
+    '',
+    `  ${c.dim(SYM.info)} --dry-run exits before preflight checks, session creation, server setup, or agent invocation.`,
+  ];
+
+  return lines.join('\n');
 }
 
 // -- status() ----------------------------------------------------------------
@@ -406,20 +460,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     // Cost estimate
     case 'cost.estimate': {
       const { maxTurns, budget } = d as StatusPayloads['cost.estimate'];
-      const lines: string[] = [];
-      // Rough per-turn heuristic: ~$0.50-2.00 for full-tier models.
-      // Actual cost depends on prompt size, model mix, and review/fix loops
-      // (edit mode may use additional turns beyond maxTurns for review cycles).
-      const low = (maxTurns * 0.5).toFixed(2);
-      const high = (maxTurns * 2.0).toFixed(2);
-      lines.push(`  ${c.yellow(SYM.warn)} Rough cost guide: ~$${low}-${high} for up to ${maxTurns} turns.`);
-      lines.push(`  ${c.dim(SYM.info)} Actual cost varies with prompt size, model, and review cycles.`);
-      if (budget) {
-        lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
-      } else {
-        lines.push(`  ${c.dim(SYM.info)} No budget cap set. Use --budget <usd> to limit spending.`);
-      }
-      return lines.join('\n');
+      return formatCostEstimate(maxTurns, budget).join('\n');
     }
 
     // Base ref resolution
@@ -490,6 +531,66 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     default:
       return '';
   }
+}
+
+function dryRunKv(key: string, value: string): string {
+  return `  ${c.cyan(key.padEnd(14))} ${c.white(c.bold(value))}`;
+}
+
+function formatPhaseFlow(info: DryRunInfo, implementer: Participant, reviewer: Participant): string[] {
+  const lines = [
+    `  1. Plan      ${info.roster.length} agent(s) debate until consensus, starting with ${info.roster[0]?.id ?? 'n/a'}.`,
+  ];
+
+  if (info.mode === 'planning') {
+    lines.push('  2. End       Planning mode stops after the plan phase.');
+    return lines;
+  }
+
+  lines.push(`  2. Implement ${implementer.id} makes changes in the isolated work area.`);
+  lines.push(`  3. Review    ${reviewer.id} reviews and may request fixes for up to ${info.reviewTurns} review turn(s).`);
+  return lines;
+}
+
+function formatDryRunSideEffects(info: DryRunInfo): string[] {
+  const lines = [
+    '  + Session metadata would be created under .def/sessions/<uuid>/',
+  ];
+
+  if (info.mode === 'edit') {
+    if (info.noWorktree) {
+      lines.push('  + Implementation would run in the target repo without creating a worktree.');
+    } else {
+      lines.push('  + A git worktree and dedicated branch would be created for implementation.');
+    }
+    lines.push('  + Implementation changes would be committed to the session branch.');
+    if (info.noPr) {
+      lines.push('  + PR creation would be skipped and changes would remain local.');
+    } else {
+      lines.push('  + The branch would be pushed and a draft GitHub PR would be opened.');
+    }
+  } else {
+    lines.push('  + Planning mode would stop after writing plan artifacts; no code changes or PRs.');
+  }
+
+  return lines;
+}
+
+function formatCostEstimate(maxTurns: number, budget?: number): string[] {
+  const low = (maxTurns * 0.5).toFixed(2);
+  const high = (maxTurns * 2.0).toFixed(2);
+  const lines = [
+    `  ${c.yellow(SYM.warn)} Rough cost guide: ~$${low}-${high} for up to ${maxTurns} turns.`,
+    `  ${c.dim(SYM.info)} Actual cost varies with prompt size, model, and review cycles.`,
+  ];
+
+  if (budget !== undefined) {
+    lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
+  } else {
+    lines.push(`  ${c.dim(SYM.info)} No budget cap set. Use --budget <usd> to limit spending.`);
+  }
+
+  return lines;
 }
 
 // -- startActivity() / ActivityHandle ----------------------------------------
