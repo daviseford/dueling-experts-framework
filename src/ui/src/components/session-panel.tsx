@@ -173,7 +173,7 @@ export function SessionPanel({
                 <AlertDialogHeader>
                   <AlertDialogTitle>End this session?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will stop the session &ldquo;{topic}&rdquo;. This action cannot be undone.
+                    The current agent will be stopped and the session &ldquo;{topic}&rdquo; will end shortly after. This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
