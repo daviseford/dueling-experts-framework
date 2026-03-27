@@ -7,6 +7,7 @@ import { endSession } from "@/lib/api";
 import { SessionHeader } from "@/components/session-header";
 import { SessionTabBar } from "@/components/session-tab-bar";
 import { SessionPanel } from "@/components/session-panel";
+import { GridOverflowCard } from "@/components/grid-overflow-card";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 import type { ViewMode } from "@/lib/types";
@@ -162,29 +163,45 @@ export default function App() {
       ) : isGrid ? (
         <div
           data-testid="grid-container"
-          className={cn(
-            "grid min-h-0 flex-1 gap-4 overflow-hidden p-2",
-            gridCount <= 1 && "grid-cols-1",
-            gridCount >= 2 && "grid-cols-2",
-            gridCount >= 3 && "grid-rows-[1fr_1fr]",
-          )}
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2"
         >
-          {gridSessions.map((s, i) => (
-            <SessionPanel
-              key={s.id}
-              sessionId={s.id}
-              sessions={sessions}
-              showPanelHeader
-              showMaximize
-              showDismiss
-              onMaximize={() => {
-                setSelectedSessionId(s.id);
-                setViewMode("single");
-              }}
-              onDismiss={() => handleDismissSession(s.id)}
-              className={cn(gridCount === 3 && i === 2 && "col-span-2")}
-            />
-          ))}
+          {/* Primary panels: first 2 sessions get full treatment */}
+          <div className={cn(
+            "grid min-h-0 flex-1 gap-4",
+            gridCount <= 1 ? "grid-cols-1" : "grid-cols-2",
+          )}>
+            {gridSessions.slice(0, 2).map((s) => (
+              <SessionPanel
+                key={s.id}
+                sessionId={s.id}
+                sessions={sessions}
+                showPanelHeader
+                showMaximize
+                showDismiss
+                onMaximize={() => {
+                  setSelectedSessionId(s.id);
+                  setViewMode("single");
+                }}
+                onDismiss={() => handleDismissSession(s.id)}
+              />
+            ))}
+          </div>
+          {/* Overflow cards: sessions 3+ as compact rows */}
+          {gridSessions.length > 2 && (
+            <div className="grid shrink-0 gap-2 grid-cols-2">
+              {gridSessions.slice(2).map((s) => (
+                <GridOverflowCard
+                  key={s.id}
+                  session={s}
+                  onMaximize={() => {
+                    setSelectedSessionId(s.id);
+                    setViewMode("single");
+                  }}
+                  onDismiss={() => handleDismissSession(s.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div data-testid="single-session-container" className="flex min-h-0 flex-1 flex-col">
