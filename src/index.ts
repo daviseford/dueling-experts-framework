@@ -218,13 +218,7 @@ try {
   process.exitCode = 1;
 } finally {
   if (server && ownsServer) {
-    // Keep server alive for multi-session browsing after session completes.
-    // Server shuts down after idle timeout (default 5 minutes).
-    try {
-      await server.beginIdleShutdown();
-    } catch {
-      server.stop();
-    }
+    server.stop();
   }
   process.exit(process.exitCode || 0);
 }
