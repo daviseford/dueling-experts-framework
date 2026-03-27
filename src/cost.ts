@@ -232,6 +232,35 @@ export interface UsageArtifact {
   updated_at: string;
 }
 
+// ── Per-agent usage summary ─────────────────────────────────────────
+
+export interface AgentUsageSummary {
+  agent: string;
+  turns: number;
+  tokens_in: number;
+  tokens_out: number;
+}
+
+/**
+ * Aggregate UsageEntry[] by the `from` field (agent identity).
+ * Null token counts are treated as 0.
+ * Results are sorted alphabetically by agent name.
+ */
+export function buildAgentSummary(entries: UsageEntry[]): AgentUsageSummary[] {
+  const map = new Map<string, AgentUsageSummary>();
+  for (const e of entries) {
+    let row = map.get(e.from);
+    if (!row) {
+      row = { agent: e.from, turns: 0, tokens_in: 0, tokens_out: 0 };
+      map.set(e.from, row);
+    }
+    row.turns += 1;
+    row.tokens_in += e.tokens_in ?? 0;
+    row.tokens_out += e.tokens_out ?? 0;
+  }
+  return [...map.values()].sort((a, b) => a.agent.localeCompare(b.agent));
+}
+
 /** Build a usage artifact from accumulated entries. */
 export function buildUsageArtifact(entries: UsageEntry[]): UsageArtifact {
   const totals = entries.reduce(

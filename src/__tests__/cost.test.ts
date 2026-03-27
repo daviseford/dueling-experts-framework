@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateCost, parseClaudeUsage, parseCodexUsage, buildUsageArtifact, loadRates, mergeUsage } from '../cost.js';
+import { estimateCost, parseClaudeUsage, parseCodexUsage, buildUsageArtifact, buildAgentSummary, loadRates, mergeUsage } from '../cost.js';
 import type { TokenUsage, UsageEntry } from '../cost.js';
 
 describe('loadRates', () => {
@@ -162,5 +162,55 @@ describe('buildUsageArtifact', () => {
     assert.equal(artifact.turns.length, 0);
     assert.equal(artifact.totals.tokens_in, 0);
     assert.equal(artifact.totals.cost_usd, 0);
+  });
+});
+
+describe('buildAgentSummary', () => {
+  it('aggregates entries by agent (mixed providers)', () => {
+    const entries: UsageEntry[] = [
+      { turn: 1, from: 'claude', model: 'opus', tokens_in: 10000, tokens_out: 5000, cost_usd: 1.50, duration_ms: 5000 },
+      { turn: 2, from: 'codex', model: 'gpt-5.4', tokens_in: 8000, tokens_out: 3000, cost_usd: 0.80, duration_ms: 3000 },
+      { turn: 3, from: 'claude', model: 'opus', tokens_in: 12000, tokens_out: 4000, cost_usd: 2.00, duration_ms: 6000 },
+    ];
+    const summary = buildAgentSummary(entries);
+    assert.equal(summary.length, 2);
+
+    // Sorted alphabetically: claude first, codex second
+    assert.equal(summary[0].agent, 'claude');
+    assert.equal(summary[0].turns, 2);
+    assert.equal(summary[0].tokens_in, 22000);
+    assert.equal(summary[0].tokens_out, 9000);
+
+    assert.equal(summary[1].agent, 'codex');
+    assert.equal(summary[1].turns, 1);
+    assert.equal(summary[1].tokens_in, 8000);
+    assert.equal(summary[1].tokens_out, 3000);
+  });
+
+  it('returns single-agent summary', () => {
+    const entries: UsageEntry[] = [
+      { turn: 1, from: 'claude', model: 'opus', tokens_in: 5000, tokens_out: 2000, cost_usd: 0.50, duration_ms: 3000 },
+    ];
+    const summary = buildAgentSummary(entries);
+    assert.equal(summary.length, 1);
+    assert.equal(summary[0].agent, 'claude');
+    assert.equal(summary[0].turns, 1);
+    assert.equal(summary[0].tokens_in, 5000);
+    assert.equal(summary[0].tokens_out, 2000);
+  });
+
+  it('returns empty array for empty input', () => {
+    const summary = buildAgentSummary([]);
+    assert.equal(summary.length, 0);
+  });
+
+  it('treats null token counts as 0', () => {
+    const entries: UsageEntry[] = [
+      { turn: 1, from: 'claude', model: 'opus', tokens_in: null, tokens_out: null, cost_usd: null, duration_ms: 3000 },
+      { turn: 2, from: 'claude', model: 'opus', tokens_in: 5000, tokens_out: 2000, cost_usd: 1.00, duration_ms: 3000 },
+    ];
+    const summary = buildAgentSummary(entries);
+    assert.equal(summary[0].tokens_in, 5000);
+    assert.equal(summary[0].tokens_out, 2000);
   });
 });
