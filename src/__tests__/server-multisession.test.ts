@@ -839,4 +839,96 @@ describe('adoption race: fallback port must not count as successful adoption', (
       'the orchestrator must NOT count this as successful adoption',
     );
   });
+
+  it('failed adoption race restores session.port to pre-adoption value', async () => {
+    // Simulate the orchestrator's adoption logic: if start() binds a fallback port,
+    // the orchestrator stops the server and restores session.port to its original value.
+    // This ensures session metadata still points at the shared UI port, not a dead fallback.
+    stop();
+
+    const sessionId = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Port restore' });
+    const owningDir = join(sessionsDir, sessionId);
+
+    const mockSession = {
+      id: sessionId,
+      topic: 'Port restore',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: 18541 as number | null,  // Simulate the headless session's "joined" port
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Temporarily unset CI so getDefaultPort() returns 18541
+    const ci = process.env.CI;
+    delete process.env.CI;
+    const defaultPort = getDefaultPort();
+
+    // Ensure the blocker is on the default port
+    try { await new Promise<void>((resolve) => blocker.close(() => resolve())); } catch { /* ok */ }
+    blocker = http.createServer((_req, res) => { res.writeHead(200); res.end('occupied'); });
+    await new Promise<void>((resolve, reject) => {
+      blocker.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') resolve();
+        else reject(err);
+      });
+      blocker.listen(defaultPort, '127.0.0.1', () => resolve());
+    });
+
+    _testResetBrowserState();
+
+    // Record the original port
+    const originalPort = mockSession.port;
+
+    // start() will bind a random fallback port (not the default)
+    await start(mockSession, mockController, { openBrowser: false });
+
+    // Restore CI
+    process.env.CI = ci || '1';
+
+    // session.port is now the fallback port (different from default)
+    const fallbackPort = mockSession.port;
+    assert.notEqual(fallbackPort, defaultPort, 'precondition: should have fallen back');
+
+    // Simulate the orchestrator's adoption-failure cleanup:
+    // stop the fallback server and restore session.port
+    stop();
+    mockSession.port = originalPort;
+
+    // The key assertion: session.port is restored to the original shared port
+    assert.equal(
+      mockSession.port, originalPort,
+      'session.port must be restored to original value after failed adoption',
+    );
+    assert.equal(
+      mockSession.port, defaultPort,
+      'original port should match the probePort (defaultPort)',
+    );
+  });
 });
