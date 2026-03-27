@@ -327,6 +327,14 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
 
       const { alive, status: resolvedStatus, heartbeatAt } = await isSessionAlive(sessionDir);
 
+      // Reconcile stale sessions: if on-disk status is active/paused but session is dead, update disk
+      const onDiskStatus: string = data.session_status ?? 'unknown';
+      if (!alive && (onDiskStatus === 'active' || onDiskStatus === 'paused') && resolvedStatus !== onDiskStatus) {
+        try {
+          await update(sessionDir, { session_status: resolvedStatus as SessionStatus });
+        } catch { /* best effort — skip if write fails */ }
+      }
+
       summaries.push({
         id: data.id ?? dir,
         topic: data.topic ?? '(no topic)',
