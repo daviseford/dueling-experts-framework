@@ -68,4 +68,26 @@ test.describe("Mock scenario states", () => {
     // Error turn should show SYSTEM badge
     await expect(errorTurn.getByText("SYSTEM")).toBeVisible()
   })
+
+  test("queued human interjection shows PendingTurnCard with Queued label", async ({ page }) => {
+    // Use thinking scenario -- an active session where InterjectionInput is visible
+    await page.goto("/?mock=thinking")
+    // Wait for turns to load
+    await expect(page.getByText("CLAUDE").first()).toBeVisible()
+
+    // Intercept the POST /api/interject to return 200 so the onSent callback fires
+    await page.route("**/api/interject", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    )
+
+    // Type a message and submit
+    const textarea = page.getByPlaceholder("Type a message to interject...")
+    await textarea.fill("Please consider edge cases for rate limiting")
+    await page.getByRole("button", { name: "Send" }).click()
+
+    // PendingTurnCard should appear with "Queued" label and USER badge
+    await expect(page.getByText("Queued")).toBeVisible()
+    // The pending card shows the message content
+    await expect(page.getByText("Please consider edge cases for rate limiting")).toBeVisible()
+  })
 })

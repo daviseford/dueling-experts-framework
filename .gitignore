@@ -5,6 +5,8 @@ docs/
 .def/
 src/ui/dist/
 src/ui/node_modules/
+src/ui/test-results/
+src/ui/playwright-report/
 *.tgz
 /.vscode
 /.cursor/hooks

@@ -53,3 +53,41 @@ test.describe("Transcript behavior", () => {
     await expect(page.getByText("PLAN").first()).toBeVisible()
   })
 })
+
+test.describe("Active implement-phase transcript", () => {
+  test("shows decision log, thinking indicator, and no session summary", async ({ page }) => {
+    // thinking scenario is active with implement phase and all mock turns loaded
+    await page.goto("/?mock=thinking")
+    // Wait for turns to render
+    await expect(page.getByText("CLAUDE").first()).toBeVisible()
+
+    // Decision Log should be visible (non-completed session with decisions)
+    await expect(page.getByText("Decision Log")).toBeVisible()
+
+    // ThinkingIndicator should be active
+    const indicator = page.getByTestId("thinking-indicator")
+    await expect(indicator).toBeVisible()
+
+    // Session summary should NOT appear (session is active, not completed)
+    await expect(page.getByRole("heading", { name: "Session Completed" })).toHaveCount(0)
+  })
+
+  test("implement and review phase turns are present in transcript", async ({ page }) => {
+    await page.goto("/?mock=thinking")
+    await expect(page.getByText("CLAUDE").first()).toBeVisible()
+
+    // Mock turns include plan, implement, and review phases
+    await expect(page.getByText("PLAN").first()).toBeVisible()
+    await expect(page.getByText("IMPLEMENT").first()).toBeVisible()
+    await expect(page.getByText("REVIEW").first()).toBeVisible()
+  })
+
+  test("interjection input is available for active sessions", async ({ page }) => {
+    await page.goto("/?mock=thinking")
+    await expect(page.getByText("CLAUDE").first()).toBeVisible()
+
+    // InterjectionInput should be rendered (not read-only)
+    await expect(page.getByPlaceholder("Type a message to interject...")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
+  })
+})
