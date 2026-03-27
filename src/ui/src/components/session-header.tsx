@@ -104,9 +104,9 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
             data-testid="view-mode-toggle"
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            className="h-7 w-7 min-h-11 min-w-11 p-0 text-muted-foreground hover:text-foreground"
             onClick={onToggleViewMode}
-            title={isGrid ? "Single session view" : "Grid view"}
+            aria-label={isGrid ? "Single session view" : "Grid view"}
           >
             {isGrid ? <Maximize2 className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
           </Button>
@@ -114,7 +114,7 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+          className="h-7 w-7 min-h-11 min-w-11 p-0 text-muted-foreground hover:text-foreground"
           asChild
         >
           <a

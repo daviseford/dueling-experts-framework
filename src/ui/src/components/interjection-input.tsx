@@ -55,10 +55,11 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          aria-label="Message to agents"
           placeholder="Send a message to agents at the next turn boundary..."
           disabled={disabled || sending}
           rows={1}
-          className="min-h-10 flex-1 resize-none rounded-xl border-border/30 bg-background/60 px-4 font-sans text-sm transition-colors focus-visible:border-teal-500/40 focus-visible:ring-teal-500/20"
+          className="min-h-10 flex-1 resize-none rounded-xl border-border/30 bg-background/60 px-4 font-sans text-sm transition-colors focus-visible:border-teal-500/40 focus-visible:ring-teal-500/40"
         />
         <Button
           onClick={doSend}

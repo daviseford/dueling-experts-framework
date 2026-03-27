@@ -62,7 +62,7 @@ export function DecisionLog({ entries, phase }: DecisionLogProps) {
                     <Badge
                       variant="outline"
                       className={cn(
-                        "font-mono text-[8px] font-semibold tracking-wider",
+                        "font-mono text-[10px] font-semibold tracking-wider",
                         getAgentToken(entry.from).badgeClass
                       )}
                     >

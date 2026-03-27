@@ -158,7 +158,7 @@ export function SessionTabBar({
               onClick={() => onSelectSession(s.id)}
               onKeyDown={(e) => handleTabKeyDown(e, index)}
               className={cn(
-                "group relative flex min-w-[180px] max-w-[240px] shrink-0 flex-1 cursor-pointer flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
+                "group relative flex min-w-[140px] max-w-[240px] shrink-0 flex-1 cursor-pointer flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all sm:min-w-[180px]",
                 STATUS_BORDER[s.session_status] || "border-l-zinc-400",
                 isSelected
                   ? "bg-background shadow-[inset_0_-2px_0_0] shadow-teal-500"
@@ -169,7 +169,7 @@ export function SessionTabBar({
               {/* Row 1: Topic + close button */}
               <div className="flex items-start gap-1.5">
                 {multiRepo && (
-                  <span className="mt-px shrink-0 rounded bg-muted px-1 py-px text-[8px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  <span className="mt-px shrink-0 rounded bg-muted px-1 py-px text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                     {s.repo}
                   </span>
                 )}
