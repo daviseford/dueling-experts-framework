@@ -29,8 +29,8 @@ export const PHASE_TOKENS: Record<SessionPhase, PhaseToken> = {
   debate: {
     label: "Debate",
     shortLabel: "DEBATE",
-    badgeClass: "bg-amber-500/10 text-amber-600/70 dark:text-amber-400/70 border-amber-500/20",
-    textClass: "text-amber-600/70 dark:text-amber-400/70",
+    badgeClass: "bg-lime-500/10 text-lime-600/70 dark:text-lime-400/70 border-lime-500/20",
+    textClass: "text-lime-600/70 dark:text-lime-400/70",
     thinkingLabel: "Debating",
   },
   implement: {
@@ -47,6 +47,14 @@ export const PHASE_TOKENS: Record<SessionPhase, PhaseToken> = {
     textClass: "text-pink-600/70 dark:text-pink-400/70",
     thinkingLabel: "Reviewing",
   },
+}
+
+/** Human-readable phase descriptions for tooltips */
+export const PHASE_DESCRIPTIONS: Record<SessionPhase, string> = {
+  plan: "Agents are proposing and debating approaches",
+  debate: "Agents are refining the plan through discussion",
+  implement: "Agent is writing code changes in the worktree",
+  review: "Agent is reviewing the implementation for issues",
 }
 
 /** Get phase token with fallback for unknown phases */

@@ -87,7 +87,7 @@ test.describe("Active implement-phase transcript", () => {
     await expect(page.getByText("CLAUDE").first()).toBeVisible()
 
     // InterjectionInput should be rendered (not read-only)
-    await expect(page.getByPlaceholder("Type a message to interject...")).toBeVisible()
+    await expect(page.getByPlaceholder("Send a message to agents at the next turn boundary...")).toBeVisible()
     await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
   })
 })

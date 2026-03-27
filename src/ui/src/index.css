@@ -182,6 +182,12 @@
   .animate-scan {
     animation: none !important;
   }
+
+  /* Static ring for active status when pulse animation is disabled */
+  .status-active-indicator {
+    animation: none !important;
+    filter: drop-shadow(0 0 2px currentColor);
+  }
 }
 
 /* ── Markdown prose (turn card content) ─────────────────────────── */

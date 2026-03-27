@@ -43,3 +43,14 @@ When creating or updating references:
 - Ground content in the tracked main branch -- do not reference worktree artifacts or temporary session state
 - Use concrete file paths, component names, and API endpoints from the actual codebase
 - Cover setup, conventions, testing patterns, and gotchas specific to this repo
+
+## Design Context
+
+See [`.impeccable.md`](./.impeccable.md) for the full design context document. Key principles for all UI work:
+
+- **Mission control aesthetic.** Vercel/Linear-inspired — status indicators, data density, glanceable metrics. Not a chat UI, not an enterprise dashboard.
+- **Clean, Calm, Professional.** Muted palettes, subtle depth, no jarring transitions. The UI should feel steady and trustworthy.
+- **Transparency over abstraction.** Show real state — turns, costs, decisions, phase, agent identity. Don't hide complexity; organize it.
+- **Content is king.** Debate prose, decisions, and diffs are primary. Chrome frames and organizes, never competes.
+- **Semantic color only.** Color signals meaning (agent identity, phase, status). No decorative color.
+- **Glanceable density.** Badges, left-border accents, and status indicators pack meaning into small space without feeling cramped.

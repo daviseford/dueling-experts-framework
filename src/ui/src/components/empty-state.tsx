@@ -12,6 +12,9 @@ export function EmptyState() {
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-foreground">No sessions found</h3>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
+              DEF orchestrates structured debates between AI agents, then implements and reviews the result.
+            </p>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
               Run{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[12px]">
                 def --topic &apos;Your topic&apos;

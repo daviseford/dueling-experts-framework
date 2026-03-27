@@ -34,7 +34,7 @@ test.describe("session panel", () => {
     await expect(page.getByText("Active").first()).toBeVisible()
 
     // Interjection input should be visible with placeholder text
-    await expect(page.getByPlaceholder("Type a message to interject...")).toBeVisible()
+    await expect(page.getByPlaceholder("Send a message to agents at the next turn boundary...")).toBeVisible()
   })
 
   test("paused session shows pause banner", async ({ page }) => {
