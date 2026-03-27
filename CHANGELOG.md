@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.10](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.9...def-v0.0.10) (2026-03-27)
+
+
+### Bug Fixes
+
+* post-merge consistency fixes ([#82](https://github.com/daviseford/dueling-experts-framework/issues/82)) ([15b8a1b](https://github.com/daviseford/dueling-experts-framework/commit/15b8a1baa76139763e5dcf923c8d0a282638503d))
+* prevent grid-mode content overflow and fix vite dev proxy port ([#80](https://github.com/daviseford/dueling-experts-framework/issues/80)) ([45a13ff](https://github.com/daviseford/dueling-experts-framework/commit/45a13ff66cb9075d85406ebddb8ade71bfeff559))
+
 ## [0.0.9](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.8...def-v0.0.9) (2026-03-26)
 
 
