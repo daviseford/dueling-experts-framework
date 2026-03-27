@@ -18,11 +18,17 @@ export interface PreflightOptions {
   mode: string;
 }
 
+/** Function signature for checking whether a command is available. */
+export type CheckCommandFn = (cmd: string, args?: string[]) => Promise<boolean>;
+
 /**
- * Run all preflight checks. Prints a specific error and exits on failure.
- * Must be called before session.create() in src/index.ts.
+ * Collect all preflight errors. Returns an empty array if everything passes.
+ * Accepts an optional checkCmd override for testing.
  */
-export async function preflight(opts: PreflightOptions): Promise<void> {
+export async function collectPreflightErrors(
+  opts: PreflightOptions,
+  checkCmd: CheckCommandFn = checkCommand,
+): Promise<string[]> {
   const errors: string[] = [];
 
   // 1. Check that each agent CLI is installed and responds
@@ -30,7 +36,7 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   for (const name of uniqueProviders) {
     const provider = getProvider(name);
     if (!provider) continue; // already validated by index.ts
-    const ok = await checkCommand(provider.cmd);
+    const ok = await checkCmd(provider.cmd);
     if (!ok) {
       errors.push(
         `'${provider.cmd}' CLI not found on PATH. Install it before running def.\n` +
@@ -40,7 +46,7 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   }
 
   // 2. Check that we're inside a git repository
-  const inGitRepo = await checkCommand('git', ['rev-parse', '--show-toplevel']);
+  const inGitRepo = await checkCmd('git', ['rev-parse', '--show-toplevel']);
   if (!inGitRepo) {
     errors.push(
       'Not inside a git repository. Run def from within a git repo.',
@@ -49,20 +55,20 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
 
   // 3. For edit mode with PR creation, check gh auth and remote
   if (opts.mode === 'edit' && !opts.noPr) {
-    const hasRemote = await checkCommand('git', ['remote', 'get-url', 'origin']);
+    const hasRemote = await checkCmd('git', ['remote', 'get-url', 'origin']);
     if (!hasRemote) {
       errors.push(
         "No 'origin' remote configured. Add one with 'git remote add origin <url>' or use --no-pr.",
       );
     }
 
-    const ghInstalled = await checkCommand('gh', ['--version']);
+    const ghInstalled = await checkCmd('gh', ['--version']);
     if (!ghInstalled) {
       errors.push(
         "'gh' CLI not found on PATH. Install it from https://cli.github.com or use --no-pr.",
       );
     } else {
-      const ghAuthed = await checkCommand('gh', ['auth', 'status']);
+      const ghAuthed = await checkCmd('gh', ['auth', 'status']);
       if (!ghAuthed) {
         errors.push(
           "GitHub CLI not authenticated. Run 'gh auth login' or use --no-pr.",
@@ -70,6 +76,16 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       }
     }
   }
+
+  return errors;
+}
+
+/**
+ * Run all preflight checks. Prints a specific error and exits on failure.
+ * Must be called before session.create() in src/index.ts.
+ */
+export async function preflight(opts: PreflightOptions): Promise<void> {
+  const errors = await collectPreflightErrors(opts);
 
   if (errors.length > 0) {
     console.error('');
@@ -83,9 +99,9 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// -- Helpers ------------------------------------------------------------------
 
-function checkCommand(cmd: string, args: string[] = ['--version']): Promise<boolean> {
+export function checkCommand(cmd: string, args: string[] = ['--version']): Promise<boolean> {
   return new Promise((resolve) => {
     execFile(cmd, args, { timeout: 10_000, shell: process.platform === 'win32' }, (err) => {
       resolve(!err);

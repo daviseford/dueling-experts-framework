@@ -59,8 +59,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       default:
         if (argv[i].startsWith('--')) {
-          console.error(`Error: unknown flag '${argv[i]}'. Run 'def --help' for options.`);
-          process.exit(1);
+          throw new Error(`Unknown flag '${argv[i]}'. Run 'def --help' for options.`);
         }
         positional.push(argv[i]);
         break;

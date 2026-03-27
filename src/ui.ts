@@ -100,6 +100,7 @@ interface StatusPayloads {
   'pr.parse.failed':    { output: string };
   'pr.lookup.failed':   { owner: string; repo: string; number: number };
   'shutdown.recovery':  { branch: string };
+  'cost.estimate':      { maxTurns: number; budget?: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -399,6 +400,22 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
         `  ${c.dim('To inspect:')} git log ${branch}`,
         `  ${c.dim('To checkout:')} git checkout ${branch}`,
       ].join('\n');
+    }
+
+    // Cost estimate
+    case 'cost.estimate': {
+      const { maxTurns, budget } = d as StatusPayloads['cost.estimate'];
+      const lines: string[] = [];
+      // Rough per-turn cost range: ~$0.50-2.00 for full-tier models
+      const low = (maxTurns * 0.5).toFixed(2);
+      const high = (maxTurns * 2.0).toFixed(2);
+      lines.push(`  ${c.yellow(SYM.warn)} Estimated cost: $${low}-${high} for ${maxTurns} turns (varies by prompt size).`);
+      if (budget) {
+        lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
+      } else {
+        lines.push(`  ${c.dim(SYM.info)} No budget cap set. Use --budget <usd> to limit spending.`);
+      }
+      return lines.join('\n');
     }
 
     // Base ref resolution

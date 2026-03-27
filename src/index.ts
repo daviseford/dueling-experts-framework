@@ -32,7 +32,13 @@ const VALID_MODES = ['edit', 'planning'];
 
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
-const opts = parseArgs(args);
+let opts;
+try {
+  opts = parseArgs(args);
+} catch (err: unknown) {
+  console.error(`Error: ${(err as Error).message}`);
+  process.exit(1);
+}
 
 if (opts.version) {
   const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
@@ -113,10 +119,14 @@ for (const name of registeredProviders) {
 
 const targetRepo = resolve(process.cwd());
 
-// Determine which providers will be used (for preflight CLI checks)
+// Determine which providers will be used (for preflight CLI checks).
+// Must mirror buildDefaultRoster logic: the second agent is the first
+// registered provider that differs from firstAgent (or firstAgent itself
+// for self-debate when only one provider is registered).
+const firstAgent = opts.first || 'claude';
 const preflightAgents = agentsList
   ? [...new Set(agentsList)]
-  : [...new Set([opts.first || 'claude', opts.implModel || 'claude'])];
+  : [...new Set([firstAgent, registeredProviders.find(a => a !== firstAgent) ?? firstAgent])];
 
 // Preflight: validate CLIs, git state, and GitHub auth before spending credits
 await preflight({
@@ -158,6 +168,11 @@ ui.intro({
   review_turns: session.review_turns,
   dir: session.dir,
   noPr: opts.noPr,
+});
+
+ui.status('cost.estimate', {
+  maxTurns: session.max_turns,
+  budget: session.budget,
 });
 
 installShutdownHandler(session.dir, targetRepo, session);
