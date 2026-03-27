@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { start, startExplorer, stop } from '../server.js';
+import { buildDefaultRoster } from '../roster.js';
 
 function httpGet(port: number, path: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
@@ -110,6 +111,7 @@ describe('GET /api/sessions', () => {
       base_ref: null,
       pr_url: null,
       pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
     };
 
     const mockController = {
@@ -230,6 +232,7 @@ describe('interject routing', () => {
       base_ref: null,
       pr_url: null,
       pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
     };
 
     const mockController = {
@@ -352,6 +355,7 @@ describe('end-session routing', () => {
       base_ref: null,
       pr_url: null,
       pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
     };
 
     const mockController = {

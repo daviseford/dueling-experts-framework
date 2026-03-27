@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { ChevronsDownUp, ChevronsUpDown, Clock, Hash, Radio } from "lucide-react"
+import { ChevronsDownUp, ChevronsUpDown, Clock, DollarSign, Hash, Radio } from "lucide-react"
 
 interface StatusBarProps {
   statusText: string
@@ -11,6 +11,7 @@ interface StatusBarProps {
   sessionTimer: string
   allCollapsed: boolean
   onToggleAll: () => void
+  costUsd?: number | null
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -27,7 +28,12 @@ const DOT_COLORS: Record<string, string> = {
   interrupted: "text-red-600 dark:text-red-400",
 }
 
-export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll }: StatusBarProps) {
+function formatCost(usd: number): string {
+  if (usd < 0.01) return "<$0.01"
+  return `$${usd.toFixed(2)}`
+}
+
+export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll, costUsd }: StatusBarProps) {
   return (
     <div className="flex items-center gap-3 border-t border-border/30 bg-card/80 px-5 py-2.5">
       <Badge
@@ -61,6 +67,16 @@ export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, 
         <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
         <span className="font-mono font-medium">{sessionTimer}</span>
       </div>
+
+      {costUsd != null && costUsd > 0 && (
+        <>
+          <Separator orientation="vertical" className="h-4" />
+          <div className="flex items-center gap-1.5 text-sm text-foreground/70">
+            <DollarSign className="h-3.5 w-3.5 text-muted-foreground/60" />
+            <span className="font-mono font-medium">{formatCost(costUsd)}</span>
+          </div>
+        </>
+      )}
 
       <span className="flex-1" />
 

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { create, installShutdownHandler } from './session.js';
-import type { Session, AgentName } from './session.js';
+import type { Session } from './session.js';
 import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
+import { listProviders, getProvider } from './agent.js';
 import * as ui from './ui.js';
 
-// Subcommand routing — check before parseArgs
+// Subcommand routing -- check before parseArgs
 const subcmd = process.argv[2];
 if (subcmd === 'history') {
   const mod = await import('./history-cmd.js');
@@ -27,7 +28,6 @@ if (subcmd === 'explorer') {
 }
 
 const VALID_MODES = ['edit', 'planning'];
-const VALID_AGENTS = ['claude', 'codex'];
 
 // Parse and validate CLI args
 const args: string[] = process.argv.slice(2);
@@ -41,8 +41,9 @@ if (opts.version) {
 }
 
 if (!opts.topic) {
+  const providers = listProviders().join(', ');
   console.error('Usage: def <topic>');
-  console.error('       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first claude|codex] [--impl-model claude|codex] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]');
+  console.error(`       def --topic "Your topic" [--mode edit|planning] [--max-turns 20] [--first ${providers}] [--impl-model ${providers}] [--agents ${providers}] [--budget 5.00] [--review-turns 6] [--no-pr] [--no-fast] [--no-worktree]`);
   console.error('       def history [--status <s>] [--topic <t>] [--since <d>] [--before <d>] [--limit <n>] [--json]');
   console.error('       def show <session-id-or-prefix>');
   console.error('       def explorer [--idle-timeout <seconds>] [--port <number>]');
@@ -60,19 +61,53 @@ if (opts.mode && !VALID_MODES.includes(opts.mode)) {
   console.error(`Error: --mode must be one of: ${VALID_MODES.join(', ')}`);
   process.exit(1);
 }
-if (opts.first && !VALID_AGENTS.includes(opts.first)) {
-  console.error(`Error: --first must be one of: ${VALID_AGENTS.join(', ')}`);
+
+// Validate agent names against the provider registry
+const registeredProviders = listProviders();
+
+if (opts.first && !registeredProviders.includes(opts.first)) {
+  console.error(`Error: --first must be one of: ${registeredProviders.join(', ')}`);
   process.exit(1);
 }
-if (opts.implModel && !VALID_AGENTS.includes(opts.implModel)) {
-  console.error(`Error: --impl-model must be one of: ${VALID_AGENTS.join(', ')}`);
+if (opts.implModel && !registeredProviders.includes(opts.implModel)) {
+  console.error(`Error: --impl-model must be one of: ${registeredProviders.join(', ')}`);
   process.exit(1);
 }
+
+// Parse --agents flag (comma-separated provider names)
+let agentsList: string[] | undefined;
+if (opts.agents) {
+  agentsList = opts.agents.split(',').map(a => a.trim());
+  if (agentsList.length < 2) {
+    console.error('Error: --agents requires at least 2 comma-separated provider names (e.g., --agents claude,codex)');
+    process.exit(1);
+  }
+  for (const agent of agentsList) {
+    if (!registeredProviders.includes(agent)) {
+      console.error(`Error: unknown agent "${agent}" in --agents. Available: ${registeredProviders.join(', ')}`);
+      process.exit(1);
+    }
+  }
+}
+
 if (opts.reviewTurns !== undefined) {
   if (isNaN(opts.reviewTurns) || opts.reviewTurns < 1 || opts.reviewTurns > 50) {
     console.error('Error: --review-turns must be a number between 1 and 50');
     process.exit(1);
   }
+}
+if (opts.budget !== undefined) {
+  if (isNaN(opts.budget) || opts.budget <= 0) {
+    console.error('Error: --budget must be a positive number (USD)');
+    process.exit(1);
+  }
+}
+
+// Build display name map from registry
+const displayNames: Record<string, string> = {};
+for (const name of registeredProviders) {
+  const provider = getProvider(name);
+  if (provider) displayNames[name] = provider.displayName;
 }
 
 const targetRepo = resolve(process.cwd());
@@ -84,10 +119,13 @@ try {
     topic: opts.topic!,
     mode: opts.mode || 'edit',
     maxTurns: opts.maxTurns || 20,
-    firstAgent: (opts.first || 'claude') as AgentName,
-    implModel: (opts.implModel || 'claude') as AgentName,
+    firstAgent: opts.first || 'claude',
+    implModel: opts.implModel || 'claude',
     reviewTurns: opts.reviewTurns || 6,
     targetRepo,
+    agents: agentsList,
+    budget: opts.budget,
+    displayNames,
   });
 } catch (err: unknown) {
   ui.error((err as Error).message);
@@ -118,24 +156,24 @@ try {
 
   const defaultPort = server.getDefaultPort();
   if (defaultPort === 0) {
-    // CI or DEF_NO_OPEN — skip probe, start our own server
+    // CI or DEF_NO_OPEN -- skip probe, start our own server
     ownsServer = true;
   } else {
     const probe = await server.probeExistingServer(defaultPort);
 
     if (probe.action === 'join') {
-      // A shared DEF server with active sessions exists — run headless
+      // A shared DEF server with active sessions exists -- run headless
       ui.status('server.shared', { port: defaultPort });
       server = null;
       ownsServer = false;
     } else {
-      // 'replace' or 'bind-new' — start our own server
+      // 'replace' or 'bind-new' -- start our own server
       // For 'replace', the probe already sent end-session to the stale server
       ownsServer = true;
     }
   }
 } catch {
-  // Headless mode — server module unavailable
+  // Headless mode -- server module unavailable
 }
 
 // Start the server if we own it

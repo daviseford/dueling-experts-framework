@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
 import { recoverEphemeralState } from '../orchestrator.js';
 import type { Session } from '../session.js';
+import { buildDefaultRoster } from '../roster.js';
 
 /**
  * Helper: write a turn file with the given frontmatter data and optional body.
@@ -46,6 +47,7 @@ function mockSession(dir: string, overrides: Partial<Session> = {}): Session {
     base_ref: null,
     pr_url: null,
     pr_number: null,
+    roster: buildDefaultRoster('claude', 'claude'),
     ...overrides,
   };
 }

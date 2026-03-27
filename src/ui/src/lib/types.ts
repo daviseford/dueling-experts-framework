@@ -1,7 +1,7 @@
 export interface Turn {
   id: string
   turn: number
-  from: "claude" | "codex" | "human" | "system"
+  from: "claude" | "codex" | "human" | "system" | (string & {})
   timestamp: string
   status: "complete" | "needs_human" | "done" | "decided" | "error"
   phase: "plan" | "debate" | "implement" | "review"
@@ -11,15 +11,25 @@ export interface Turn {
   content: string
   model_tier?: "full" | "mid" | "fast"
   model_name?: string
+  tokens_in?: number | null
+  tokens_out?: number | null
+  cost_usd?: number | null
 }
 
 export interface ThinkingState {
-  agent: "claude" | "codex"
+  agent: "claude" | "codex" | (string & {})
   since: string
   model?: string | null
 }
 
 export type SessionPhase = "plan" | "debate" | "implement" | "review"
+
+export interface UsageTotals {
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number
+  duration_ms: number
+}
 
 export interface TurnsResponse {
   turns: Turn[]
@@ -35,6 +45,7 @@ export interface TurnsResponse {
   turns_path: string | null
   artifacts_path: string | null
   artifact_names: string[]
+  usage: UsageTotals | null
 }
 
 export interface PendingInterjection {
@@ -88,4 +99,5 @@ export interface PollingState {
   turnsPath: string | null
   artifactsPath: string | null
   artifactNames: string[]
+  usage: UsageTotals | null
 }

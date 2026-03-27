@@ -173,6 +173,129 @@
   animation: scan 2.5s ease-in-out infinite;
 }
 
+/* ── Markdown prose (turn card content) ─────────────────────────── */
+
+.def-prose {
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.7;
+  color: oklch(from var(--foreground) l c h / 85%);
+}
+
+.def-prose h1,
+.def-prose h2,
+.def-prose h3,
+.def-prose h4,
+.def-prose h5,
+.def-prose h6 {
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+.def-prose h1 { font-size: 1.25em; }
+.def-prose h2 { font-size: 1.125em; }
+.def-prose h3 { font-size: 1em; }
+.def-prose h4,
+.def-prose h5,
+.def-prose h6 { font-size: 0.875em; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.def-prose > :first-child { margin-top: 0; }
+
+.def-prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.def-prose ul,
+.def-prose ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+.def-prose ul { list-style-type: disc; }
+.def-prose ol { list-style-type: decimal; }
+.def-prose li { margin-top: 0.25em; margin-bottom: 0.25em; }
+.def-prose li > ul,
+.def-prose li > ol { margin-top: 0.25em; margin-bottom: 0.25em; }
+
+.def-prose strong { font-weight: 600; color: var(--foreground); }
+.def-prose em { font-style: italic; }
+
+.def-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25em;
+  background: oklch(from var(--muted) l c h / 80%);
+  color: var(--foreground);
+}
+
+.def-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
+  line-height: 1.6;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  padding: 0.75em 1em;
+  border-radius: 0.375em;
+  background: oklch(from var(--muted) l c h / 60%);
+  overflow-x: auto;
+  white-space: pre;
+}
+.def-prose pre code {
+  padding: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+.def-prose blockquote {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  padding-left: 1em;
+  border-left: 3px solid oklch(from var(--border) l c h / 50%);
+  color: oklch(from var(--foreground) l c h / 70%);
+}
+
+.def-prose hr {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.def-prose a {
+  color: oklch(0.6 0.15 240);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dark .def-prose a {
+  color: oklch(0.7 0.15 240);
+}
+
+.def-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  font-size: 0.875em;
+}
+.def-prose th,
+.def-prose td {
+  padding: 0.4em 0.75em;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.def-prose th {
+  font-weight: 600;
+  background: oklch(from var(--muted) l c h / 50%);
+}
+
+.def-prose img {
+  max-width: 100%;
+  border-radius: 0.375em;
+}
+
 /* ── Scrollbar ──────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {

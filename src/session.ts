@@ -5,10 +5,13 @@ import type { ChildProcess } from 'node:child_process';
 import { atomicWrite, killChildProcess, isProcessAlive } from './util.js';
 import { removeWorktree, commitChanges } from './worktree.js';
 import * as ui from './ui.js';
+import type { Participant } from './roster.js';
+import { buildDefaultRoster, buildRoster } from './roster.js';
 
 // ── Type definitions ────────────────────────────────────────────────
 
-export type AgentName = 'claude' | 'codex';
+/** Agent name -- widened from 'claude' | 'codex' to string for pluggable backends. */
+export type AgentName = string;
 export type SessionStatus = 'active' | 'paused' | 'completed' | 'interrupted';
 export type SessionPhase = 'plan' | 'implement' | 'review';
 
@@ -21,9 +24,9 @@ export interface Session {
   created: string;
   session_status: SessionStatus;
   current_turn: number;
-  next_agent: AgentName;
+  next_agent: string;
   phase: SessionPhase;
-  impl_model: AgentName;
+  impl_model: string;
   review_turns: number;
   port: number | null;
   pid: number;
@@ -35,6 +38,10 @@ export interface Session {
   pr_url: string | null;
   pr_number: number | null;
   heartbeat_at?: string;
+  /** Ordered list of participants in this session. */
+  roster: Participant[];
+  /** Optional budget cap in USD. */
+  budget?: number;
   _currentChild?: ChildProcess | null;
 }
 
@@ -42,10 +49,16 @@ export interface CreateSessionOptions {
   topic: string;
   mode: string;
   maxTurns: number;
-  firstAgent: AgentName;
-  implModel: AgentName;
+  firstAgent: string;
+  implModel: string;
   reviewTurns: number;
   targetRepo: string;
+  /** Explicit agent list (e.g., ['claude', 'claude'] for self-debate). */
+  agents?: string[];
+  /** Budget cap in USD. */
+  budget?: number;
+  /** Display names for providers (from registry). */
+  displayNames?: Record<string, string>;
 }
 
 // ── Session CRUD ────────────────────────────────────────────────────
@@ -54,7 +67,7 @@ export interface CreateSessionOptions {
  * Create a new session directory and session.json.
  * Each session is independent — multiple sessions can run concurrently.
  */
-export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo }: CreateSessionOptions): Promise<Session> {
+export async function create({ topic, mode, maxTurns, firstAgent, implModel, reviewTurns, targetRepo, agents, budget, displayNames }: CreateSessionOptions): Promise<Session> {
   const defDir = join(targetRepo, '.def');
 
   // Ensure .def/ exists
@@ -67,6 +80,15 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
   await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
   await mkdir(join(sessionDir, 'runtime'), { recursive: true });
 
+  // Build roster from explicit --agents list or default pair
+  const roster = agents
+    ? buildRoster(agents, implModel, displayNames)
+    : buildDefaultRoster(firstAgent, implModel, displayNames);
+
+  // For self-debate rosters, use the generated participant IDs
+  const effectiveFirstAgent = roster[0].id;
+  const effectiveImplModel = roster.find(p => p.role === 'implementer')?.id ?? roster[0].id;
+
   const session: Omit<Session, 'dir'> = {
     id,
     topic,
@@ -76,9 +98,9 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     created: new Date().toISOString(),
     session_status: 'active',
     current_turn: 0,
-    next_agent: firstAgent,
+    next_agent: effectiveFirstAgent,
     phase: 'plan',
-    impl_model: implModel || 'claude',
+    impl_model: effectiveImplModel,
     review_turns: reviewTurns || 6,
     port: null,
     pid: process.pid,
@@ -88,6 +110,8 @@ export async function create({ topic, mode, maxTurns, firstAgent, implModel, rev
     base_ref: null,
     pr_url: null,
     pr_number: null,
+    roster,
+    budget: budget ?? undefined,
   };
 
   await atomicWriteJson(join(sessionDir, 'session.json'), session);
@@ -107,6 +131,13 @@ export async function load(sessionDir: string): Promise<Session> {
   // Normalize legacy 'debate' phase to 'plan'
   if (parsed.phase === 'debate') {
     parsed.phase = 'plan';
+  }
+  // Synthesize roster for sessions created before the roster feature
+  if (!parsed.roster) {
+    parsed.roster = buildDefaultRoster(
+      parsed.next_agent || 'claude',
+      parsed.impl_model || 'claude',
+    );
   }
   return { ...parsed, dir: sessionDir } as Session;
 }

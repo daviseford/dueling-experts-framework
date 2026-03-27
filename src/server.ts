@@ -469,6 +469,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
     turnFiles.map(async (file) => {
       const raw = await readFile(join(turnsDir, file), 'utf8');
       const parsed = validate(raw);
+      const extra = parsed.data as Record<string, unknown> | null;
       return {
         id: parsed.data?.id || file.replace('.md', ''),
         turn: parsed.data?.turn,
@@ -482,6 +483,9 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
         content: parsed.content || raw,
         model_tier: parsed.data?.model_tier,
         model_name: parsed.data?.model_name,
+        tokens_in: extra?.tokens_in ?? null,
+        tokens_out: extra?.tokens_out ?? null,
+        cost_usd: extra?.cost_usd ?? null,
       };
     })
   );
@@ -490,6 +494,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
   const sessionPath = join(sessionRef!.dir, 'session.json');
   const metadata = await getSessionMetadata(sessionPath);
   const thinking = await readThinkingState(sessionRef!.dir);
+  const usage = await readUsageTotals(sessionRef!.dir);
 
   // Resolve liveness — a paused/active session with a dead PID is interrupted
   const liveness = await isSessionAlive(sessionRef!.dir);
@@ -510,6 +515,7 @@ async function handleGetTurns(res: ServerResponse): Promise<void> {
     turns_path: join(sessionRef!.dir, 'turns'),
     artifacts_path: join(sessionRef!.dir, 'artifacts'),
     artifact_names: metadata.artifactNames,
+    usage,
   }));
 }
 
@@ -584,6 +590,21 @@ async function readThinkingState(sessionDir: string): Promise<{ agent: string; s
   }
 }
 
+/**
+ * Read usage totals from a session's artifacts/usage.json.
+ * Returns null if the file doesn't exist or can't be parsed.
+ */
+async function readUsageTotals(sessionDir: string): Promise<{ tokens_in: number; tokens_out: number; cost_usd: number; duration_ms: number } | null> {
+  try {
+    const raw = await readFile(join(sessionDir, 'artifacts', 'usage.json'), 'utf8');
+    const data = JSON.parse(raw);
+    if (data.totals) return data.totals;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function handleGetSessions(res: ServerResponse): Promise<void> {
   if (!targetRepoRef) {
     res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -632,6 +653,7 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
     turnFiles.map(async (file) => {
       const raw = await readFile(join(turnsDir, file), 'utf8');
       const parsed = validate(raw);
+      const extra = parsed.data as Record<string, unknown> | null;
       return {
         id: parsed.data?.id || file.replace('.md', ''),
         turn: parsed.data?.turn,
@@ -645,6 +667,9 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
         content: parsed.content || raw,
         model_tier: parsed.data?.model_tier,
         model_name: parsed.data?.model_name,
+        tokens_in: extra?.tokens_in ?? null,
+        tokens_out: extra?.tokens_out ?? null,
+        cost_usd: extra?.cost_usd ?? null,
       };
     })
   );
@@ -653,6 +678,7 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
   const sessionPath = join(sessionDir, 'session.json');
   const metadata = await getSessionMetadata(sessionPath);
   const thinking = await readThinkingState(sessionDir);
+  const usage = await readUsageTotals(sessionDir);
 
   // Resolve liveness — a paused/active session with a dead PID is interrupted
   const liveness = await isSessionAlive(sessionDir);
@@ -673,6 +699,7 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
     turns_path: join(sessionDir, 'turns'),
     artifacts_path: join(sessionDir, 'artifacts'),
     artifact_names: metadata.artifactNames,
+    usage,
   }));
 }
 

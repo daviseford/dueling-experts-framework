@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getPhaseToken } from "@/lib/phase-tokens"
 import type { SessionSummary } from "@/lib/types"
 
 interface SessionTabBarProps {
@@ -18,25 +19,10 @@ const STATUS_BORDER: Record<string, string> = {
   interrupted: "border-l-red-400 dark:border-l-red-500",
 }
 
-const PHASE_COLOR: Record<string, string> = {
-  plan: "text-blue-600/70 dark:text-blue-400/70",
-  implement: "text-emerald-600/70 dark:text-emerald-400/70",
-  review: "text-purple-600/70 dark:text-purple-400/70",
-}
-
 const STATUS_COLOR: Record<string, string> = {
   completed: "text-emerald-600/70 dark:text-emerald-400/70",
   interrupted: "text-red-500/70 dark:text-red-400/70",
   paused: "text-amber-600/70 dark:text-amber-400/70",
-}
-
-function phaseLabel(phase: string): string {
-  switch (phase) {
-    case "plan": return "PLAN"
-    case "implement": return "IMPL"
-    case "review": return "REVIEW"
-    default: return phase.toUpperCase()
-  }
 }
 
 /** For dead sessions, show outcome status instead of frozen phase. */
@@ -50,7 +36,8 @@ function badgeInfo(session: { phase: string; session_status: string }): { label:
   if (session.session_status === "paused") {
     return { label: "PAUSED", color: STATUS_COLOR.paused }
   }
-  return { label: phaseLabel(session.phase), color: PHASE_COLOR[session.phase] || "text-muted-foreground/60" }
+  const token = getPhaseToken(session.phase)
+  return { label: token.shortLabel, color: token.textClass }
 }
 
 function isDead(status: string): boolean {
@@ -184,7 +171,11 @@ export function SessionTabBar({
                 ) })()}
                 <span className="text-muted-foreground/60">&middot;</span>
                 <span className="font-mono text-muted-foreground/70">
-                  {s.current_turn === 0 ? "—" : `${s.current_turn} turns`}
+                  {s.current_turn === 0
+                    ? "starting"
+                    : s.current_turn === 1
+                      ? "1 turn"
+                      : `${s.current_turn} turns`}
                 </span>
                 <span className="text-muted-foreground/60">&middot;</span>
                 <span className="text-muted-foreground/70">

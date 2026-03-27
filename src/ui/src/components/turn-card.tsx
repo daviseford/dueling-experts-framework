@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -5,9 +6,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
+import { getPhaseToken } from "@/lib/phase-tokens"
+import { extractPreview } from "@/lib/extract-preview"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronsUpDown, Clock, ListChecks } from "lucide-react"
+import { ChevronRight, ChevronsUpDown, Clock, DollarSign, ListChecks } from "lucide-react"
 import type { Turn } from "@/lib/types"
+
+const MarkdownContent = lazy(() => import("@/components/markdown-content"))
 
 const LABEL_MAP: Record<string, string> = {
   claude: "CLAUDE",
@@ -33,12 +38,6 @@ const BADGE_STYLES: Record<string, string> = {
 const MID_BADGE_STYLE = "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/25"
 const FAST_BADGE_STYLE = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
 
-const PHASE_STYLES: Record<string, string> = {
-  plan: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
-  debate: "bg-orange-500/10 text-orange-600/70 dark:text-orange-400/70 border-orange-500/20",
-  implement: "bg-cyan-500/10 text-cyan-600/70 dark:text-cyan-400/70 border-cyan-500/20",
-  review: "bg-pink-500/10 text-pink-600/70 dark:text-pink-400/70 border-pink-500/20",
-}
 
 function formatTimestamp(ts: string): string {
   if (!ts) return ""
@@ -64,19 +63,6 @@ function formatDuration(ms: number): string {
   return minutes + "m"
 }
 
-function truncateContent(content: string): string {
-  if (!content) return ""
-  const lines = content.split(/\r?\n/)
-  const trimmed = lines.map(function (l) { return l.trim() })
-  const line = trimmed.find(function (l) {
-    return l.length > 0 && !l.startsWith("---") && !l.startsWith("``" + "`")
-  })
-  if (!line) return ""
-  const clean = line.replace(/^#+\s*/, "").replace(/\*\*/g, "")
-  if (clean.length > 120) return clean.slice(0, 120) + "\u2026"
-  return clean
-}
-
 interface TurnCardProps {
   turn: Turn
   open: boolean
@@ -86,6 +72,7 @@ interface TurnCardProps {
 export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
   const isError = turn.status === "error"
   const label = LABEL_MAP[turn.from] || turn.from.toUpperCase()
+  const phaseToken = getPhaseToken(turn.phase)
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
@@ -98,73 +85,86 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
         )}
       >
         <CollapsibleTrigger asChild>
-          <button className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/30">
-            <ChevronRight
-              className={cn(
-                "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200",
-                open && "rotate-90"
-              )}
-            />
-            <Badge
-              variant="outline"
-              className={cn(
-                "font-mono text-[10px] font-semibold tracking-wider",
-                isError
-                  ? "border-red-500/25 bg-red-500/15 text-red-600 dark:text-red-400"
-                  : BADGE_STYLES[turn.from]
-              )}
-            >
-              {label}
-            </Badge>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              #{turn.turn}
-            </span>
-            {turn.from !== "human" && (
+          <button className="flex w-full cursor-pointer flex-col gap-1 px-3 py-2 text-left transition-colors hover:bg-muted/30">
+            {/* Row 1: Speaker + turn # + content preview */}
+            <div className="flex w-full items-center gap-2">
+              <ChevronRight
+                className={cn(
+                  "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200",
+                  open && "rotate-90"
+                )}
+              />
               <Badge
                 variant="outline"
                 className={cn(
-                  "font-mono text-[9px] font-normal tracking-wide",
-                  PHASE_STYLES[turn.phase] || "bg-muted text-muted-foreground"
+                  "font-mono text-[10px] font-semibold tracking-wider",
+                  isError
+                    ? "border-red-500/25 bg-red-500/15 text-red-600 dark:text-red-400"
+                    : BADGE_STYLES[turn.from]
                 )}
               >
-                {turn.phase}
+                {label}
               </Badge>
-            )}
-            {turn.model_name && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "font-mono text-[9px] font-normal tracking-wide",
-                  turn.model_tier === "fast" ? FAST_BADGE_STYLE
-                    : turn.model_tier === "mid" ? MID_BADGE_STYLE
-                    : "bg-muted/50 text-muted-foreground border-border/50"
-                )}
-              >
-                {turn.model_name}
-              </Badge>
-            )}
-            {turn.duration_ms != null && (
-              <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70">
-                <Clock className="h-3 w-3" />
-                {formatDuration(turn.duration_ms)}
+              <span className="font-mono text-[11px] text-muted-foreground">
+                #{turn.turn}
               </span>
-            )}
-            {!open && (
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
-                {truncateContent(turn.content)}
+              {!open && (
+                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
+                  {extractPreview(turn.content)}
+                </span>
+              )}
+              {open && <span className="flex-1" />}
+            </div>
+            {/* Row 2: Phase + model + duration + timestamp */}
+            <div className="flex w-full items-center gap-2 pl-5">
+              {turn.from !== "human" && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "font-mono text-[9px] font-normal tracking-wide",
+                    phaseToken.badgeClass
+                  )}
+                >
+                  {phaseToken.label}
+                </Badge>
+              )}
+              {turn.model_name && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "hidden font-mono text-[9px] font-normal tracking-wide @md:inline-flex md:inline-flex",
+                    turn.model_tier === "fast" ? FAST_BADGE_STYLE
+                      : turn.model_tier === "mid" ? MID_BADGE_STYLE
+                      : "bg-muted/50 text-muted-foreground border-border/50"
+                  )}
+                >
+                  {turn.model_name}
+                </Badge>
+              )}
+              {turn.duration_ms != null && (
+                <span className="hidden shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70 @md:flex md:flex">
+                  <Clock className="h-3 w-3" />
+                  {formatDuration(turn.duration_ms)}
+                </span>
+              )}
+              {turn.cost_usd != null && turn.cost_usd > 0 && (
+                <span className="hidden shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70 @md:flex md:flex">
+                  <DollarSign className="h-3 w-3" />
+                  {turn.cost_usd < 0.01 ? "<0.01" : turn.cost_usd.toFixed(2)}
+                </span>
+              )}
+              <span className="flex-1" />
+              <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground/50 @sm:inline sm:inline">
+                {formatTimestamp(turn.timestamp)}
               </span>
-            )}
-            {open && <span className="flex-1" />}
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground/50">
-              {formatTimestamp(turn.timestamp)}
-            </span>
+            </div>
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="border-t border-border/40 px-4 py-3">
-            <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/85">
-              {turn.content}
-            </pre>
+            <Suspense fallback={<pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-foreground/85">{turn.content}</pre>}>
+              <MarkdownContent content={turn.content} />
+            </Suspense>
           </div>
           {turn.decisions?.length > 0 && (
             <div className="border-t border-border/30 px-4 py-2.5">
