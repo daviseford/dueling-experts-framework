@@ -70,7 +70,7 @@ export function InterjectionInput({ sessionId, disabled, isReadOnly, onSent }: I
           Send
         </Button>
       </div>
-      <p className="mt-1.5 px-1 text-[11px] text-muted-foreground/50">
+      <p className="mt-1.5 px-1 text-[11px] text-muted-foreground/70">
         Your message will be delivered when the current turn ends.
       </p>
     </div>

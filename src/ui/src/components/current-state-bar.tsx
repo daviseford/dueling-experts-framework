@@ -149,17 +149,15 @@ export function CurrentStateBar({
         </div>
       )}
 
-      {/* Last decision */}
+      {/* Last decision — hidden on narrow viewports */}
       {truncatedDecision && (
-        <>
+        <div className="hidden min-w-0 items-center gap-1 sm:flex">
           <span className="text-muted-foreground/30">|</span>
-          <div className="flex min-w-0 items-center gap-1">
-            <ListChecks className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-            <span className="truncate text-[11px] text-muted-foreground/60">
-              {truncatedDecision}
-            </span>
-          </div>
-        </>
+          <ListChecks className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+          <span className="truncate text-[11px] text-muted-foreground/60">
+            {truncatedDecision}
+          </span>
+        </div>
       )}
     </div>
   )
