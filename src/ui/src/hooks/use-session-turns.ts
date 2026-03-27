@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { fetchSessionTurns } from "@/lib/api"
 import type { Turn, ThinkingState, SessionPhase, SessionStatus, PollingState, SessionSummary, UsageTotals } from "@/lib/types"
-import { isMock } from "@/lib/env"
+import { isMock, mockScenario } from "@/lib/env"
 
 const TURNS_POLL_INTERVAL = 3000
 const ELAPSED_INTERVAL = 1000
@@ -195,37 +195,134 @@ function useLiveSessionTurns(sessionId: string, sessions: SessionSummary[], enab
   }
 }
 
+const EMPTY_TURNS: Turn[] = []
+const EMPTY_ARTIFACTS: string[] = []
+
 function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {
   // Lazy-load mock data to avoid circular dependency issues
   const [mockData, setMockData] = useState<{ turns: Turn[], turn_count: number, artifact_names: string[] } | null>(null)
+  // For the "loading" scenario, simulate an artificial delay before data appears
+  const [loadingReady, setLoadingReady] = useState(mockScenario !== "loading")
 
   useEffect(() => {
     import("@/mocks/mock-session").then(m => setMockData(m.MOCK_RESPONSE))
   }, [])
 
-  const session = sessions.find(s => s.id === sessionId)
-  const status = session?.session_status ?? "completed"
-  const statusText = status === "completed" ? "Session completed" : status === "interrupted" ? "Session interrupted" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
+  useEffect(() => {
+    if (mockScenario === "loading") {
+      const timer = setTimeout(() => setLoadingReady(true), 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [])
 
-  return {
-    turns: sessionId === "mock-session-1" && mockData ? mockData.turns : [],
-    sessionId,
-    sessionStatus: status,
-    topic: session?.topic ?? "",
-    turnCount: sessionId === "mock-session-1" && mockData ? mockData.turn_count : (session?.current_turn ?? 0),
-    thinking: status === "active" ? { agent: "claude", since: new Date(Date.now() - 15000).toISOString() } : null,
-    thinkingElapsed: status === "active" ? "15s" : "",
-    statusText,
-    sessionTimer: "58m 0s",
-    phase: session?.phase ?? "review",
-    branchName: session?.branch_name ?? null,
-    prUrl: session?.pr_url ?? null,
-    prNumber: sessionId === "mock-session-1" ? 42 : null,
-    turnsPath: `.def/sessions/${sessionId}/turns`,
-    artifactsPath: `.def/sessions/${sessionId}/artifacts`,
-    artifactNames: sessionId === "mock-session-1" && mockData ? mockData.artifact_names : [],
-    usage: null,
-  }
+  // Memoize paused turns slice so reference is stable
+  const pausedTurns = useMemo(
+    () => mockData ? mockData.turns.slice(0, 2) : EMPTY_TURNS,
+    [mockData]
+  )
+
+  return useMemo((): PollingState => {
+    const session = sessions.find(s => s.id === sessionId)
+    const status = session?.session_status ?? "completed"
+    const statusText = status === "completed" ? "Session completed" : status === "interrupted" ? "Session interrupted" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
+
+    const hasDefaultTurns = (sessionId === "mock-session-1" || mockScenario === "thinking") && mockData
+
+    // "empty" scenario: active session with zero turns
+    if (mockScenario === "empty") {
+      return {
+        turns: EMPTY_TURNS,
+        sessionId,
+        sessionStatus: "active",
+        topic: session?.topic ?? "New session with no turns yet",
+        turnCount: 0,
+        thinking: null,
+        thinkingElapsed: "",
+        statusText: "Active",
+        sessionTimer: "0s",
+        phase: "plan",
+        branchName: null,
+        prUrl: null,
+        prNumber: null,
+        turnsPath: `.def/sessions/${sessionId}/turns`,
+        artifactsPath: `.def/sessions/${sessionId}/artifacts`,
+        artifactNames: EMPTY_ARTIFACTS,
+        usage: null,
+      }
+    }
+
+    // "loading" scenario: simulates initial data load delay
+    if (mockScenario === "loading" && !loadingReady) {
+      return {
+        turns: EMPTY_TURNS,
+        sessionId,
+        sessionStatus: "active",
+        topic: "",
+        turnCount: 0,
+        thinking: null,
+        thinkingElapsed: "",
+        statusText: "Loading...",
+        sessionTimer: "0s",
+        phase: "plan",
+        branchName: null,
+        prUrl: null,
+        prNumber: null,
+        turnsPath: null,
+        artifactsPath: null,
+        artifactNames: EMPTY_ARTIFACTS,
+        usage: null,
+      }
+    }
+
+    // "paused" scenario: session is paused, has some turns
+    if (mockScenario === "paused") {
+      return {
+        turns: pausedTurns,
+        sessionId,
+        sessionStatus: "paused",
+        topic: session?.topic ?? "Paused session waiting for human input",
+        turnCount: 2,
+        thinking: null,
+        thinkingElapsed: "",
+        statusText: "Paused \u2014 waiting for human",
+        sessionTimer: "20m 0s",
+        phase: "plan",
+        branchName: null,
+        prUrl: null,
+        prNumber: null,
+        turnsPath: `.def/sessions/${sessionId}/turns`,
+        artifactsPath: `.def/sessions/${sessionId}/artifacts`,
+        artifactNames: EMPTY_ARTIFACTS,
+        usage: null,
+      }
+    }
+
+    // Thinking state for active scenarios
+    const thinking: ThinkingState | null =
+      mockScenario === "thinking" ? { agent: "claude", since: new Date(Date.now() - 15000).toISOString() }
+      : (status === "active" && mockScenario !== "empty" && mockScenario !== "loading") ? { agent: "claude", since: new Date(Date.now() - 15000).toISOString() }
+      : null
+
+    return {
+      turns: hasDefaultTurns ? mockData.turns : EMPTY_TURNS,
+      sessionId,
+      sessionStatus: status,
+      topic: session?.topic ?? "",
+      turnCount: hasDefaultTurns ? mockData.turn_count : (session?.current_turn ?? 0),
+      thinking,
+      thinkingElapsed: thinking ? "15s" : "",
+      statusText,
+      sessionTimer: "58m 0s",
+      phase: session?.phase ?? "review",
+      branchName: session?.branch_name ?? null,
+      prUrl: session?.pr_url ?? null,
+      prNumber: sessionId === "mock-session-1" ? 42 : null,
+      turnsPath: `.def/sessions/${sessionId}/turns`,
+      artifactsPath: `.def/sessions/${sessionId}/artifacts`,
+      artifactNames: hasDefaultTurns ? mockData.artifact_names : EMPTY_ARTIFACTS,
+      usage: null,
+    }
+  }, [sessionId, sessions, mockData, loadingReady, pausedTurns])
 }
 
 export function useSessionTurns(sessionId: string, sessions: SessionSummary[]): PollingState {

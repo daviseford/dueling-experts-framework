@@ -7,21 +7,8 @@ import {
 } from "@/components/ui/collapsible"
 import { ChevronRight, ListChecks } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getAgentToken } from "@/lib/agent-tokens"
 import type { SessionPhase } from "@/lib/types"
-
-const AGENT_BADGE_STYLES: Record<string, string> = {
-  claude: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25",
-  codex: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
-  human: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/25",
-  system: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
-}
-
-const AGENT_LABELS: Record<string, string> = {
-  claude: "CLAUDE",
-  codex: "CODEX",
-  human: "USER",
-  system: "SYSTEM",
-}
 
 interface DecisionLogProps {
   entries: { text: string; from: string; turn: number }[]
@@ -76,10 +63,10 @@ export function DecisionLog({ entries, phase }: DecisionLogProps) {
                       variant="outline"
                       className={cn(
                         "font-mono text-[8px] font-semibold tracking-wider",
-                        AGENT_BADGE_STYLES[entry.from]
+                        getAgentToken(entry.from).badgeClass
                       )}
                     >
-                      {AGENT_LABELS[entry.from] || entry.from.toUpperCase()}
+                      {getAgentToken(entry.from).label}
                     </Badge>
                     <span className="font-mono text-[10px] text-muted-foreground/50">
                       #{entry.turn}

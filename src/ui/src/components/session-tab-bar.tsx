@@ -113,11 +113,15 @@ export function SessionTabBar({
           const isSelected = s.id === selectedSessionId
           const dead = isDead(s.session_status)
           return (
-            <button
+            <div
               key={s.id}
+              role="tab"
+              tabIndex={0}
+              aria-selected={isSelected}
               onClick={() => onSelectSession(s.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectSession(s.id) } }}
               className={cn(
-                "group relative flex w-[240px] shrink-0 flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
+                "group relative flex min-w-[180px] max-w-[240px] shrink-0 flex-1 cursor-pointer flex-col border-l-2 border-r border-r-border/20 px-3 py-2 text-left transition-all",
                 STATUS_BORDER[s.session_status] || "border-l-zinc-400",
                 isSelected
                   ? "bg-background shadow-[inset_0_-2px_0_0] shadow-teal-500"
@@ -141,24 +145,17 @@ export function SessionTabBar({
 
                 {/* Dismiss button */}
                 {onDismissSession && (
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     aria-label={`Dismiss ${s.topic}`}
                     className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation()
                       onDismissSession(s.id)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation()
-                        onDismissSession(s.id)
-                      }
-                    }}
                   >
                     <X className="h-3 w-3" />
-                  </span>
+                  </button>
                 )}
               </div>
 
@@ -182,7 +179,7 @@ export function SessionTabBar({
                   {elapsed(s.created)}
                 </span>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>
