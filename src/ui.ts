@@ -97,6 +97,7 @@ interface StatusPayloads {
   'push.failed':        { branch: string; error: string };
   'push.hint':          { error: string };
   'pr.failed':          { branch: string; error: string };
+  'pr.hint':            { error: string };
   'pr.parse.failed':    { output: string };
   'pr.lookup.failed':   { owner: string; repo: string; number: number };
   'shutdown.recovery':  { branch: string };
@@ -406,10 +407,13 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'cost.estimate': {
       const { maxTurns, budget } = d as StatusPayloads['cost.estimate'];
       const lines: string[] = [];
-      // Rough per-turn cost range: ~$0.50-2.00 for full-tier models
+      // Rough per-turn heuristic: ~$0.50-2.00 for full-tier models.
+      // Actual cost depends on prompt size, model mix, and review/fix loops
+      // (edit mode may use additional turns beyond maxTurns for review cycles).
       const low = (maxTurns * 0.5).toFixed(2);
       const high = (maxTurns * 2.0).toFixed(2);
-      lines.push(`  ${c.yellow(SYM.warn)} Estimated cost: $${low}-${high} for ${maxTurns} turns (varies by prompt size).`);
+      lines.push(`  ${c.yellow(SYM.warn)} Rough cost guide: ~$${low}-${high} for up to ${maxTurns} turns.`);
+      lines.push(`  ${c.dim(SYM.info)} Actual cost varies with prompt size, model, and review cycles.`);
       if (budget) {
         lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
       } else {
@@ -455,6 +459,24 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
     case 'pr.failed': {
       const { branch, error: err } = d as StatusPayloads['pr.failed'];
       return `  ${c.yellow(SYM.warn)} Could not create PR: ${err}. Branch preserved: ${c.cyan(branch)}`;
+    }
+    case 'pr.hint': {
+      const { error: err } = d as StatusPayloads['pr.hint'];
+      const hints: string[] = [];
+      if (/permission denied|403|authentication|credentials/i.test(err)) {
+        hints.push("Check your git/GitHub credentials and repository permissions.");
+      }
+      if (/not found|does not exist|404/i.test(err)) {
+        hints.push("Verify the repository exists on GitHub and you have access.");
+      }
+      if (/gh auth|not logged/i.test(err)) {
+        hints.push("Run 'gh auth login' to authenticate the GitHub CLI.");
+      }
+      if (/already exists|already has/i.test(err)) {
+        hints.push("A PR for this branch may already exist. Check with 'gh pr list'.");
+      }
+      hints.push("Tip: use --no-pr to skip push/PR creation and keep changes local.");
+      return hints.map(h => `  ${c.dim(SYM.info)} ${h}`).join('\n');
     }
     case 'pr.parse.failed': {
       const { output } = d as StatusPayloads['pr.parse.failed'];

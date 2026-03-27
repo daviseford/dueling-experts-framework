@@ -156,7 +156,9 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
 
     return { url: prUrl, number: prNumber };
   } catch (err: unknown) {
-    ui.status('pr.failed', { branch: branchName, error: (err as Error).message });
+    const errMsg = (err as Error).message;
+    ui.status('pr.failed', { branch: branchName, error: errMsg });
+    ui.status('pr.hint', { error: errMsg });
     return null;
   }
 }
