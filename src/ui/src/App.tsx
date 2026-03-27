@@ -135,6 +135,9 @@ export default function App() {
   return (
     <TooltipProvider>
     <div className="flex h-screen flex-col overflow-hidden">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:shadow-lg focus:ring-2 focus:ring-ring">
+        Skip to content
+      </a>
       <SessionHeader
         topic={topic}
         sessionId={selectedSessionId}
@@ -153,6 +156,7 @@ export default function App() {
           onDismissSession={handleDismissSession}
         />
       )}
+      <main id="main-content" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {!hasAnySessions ? (
         <EmptyState />
       ) : isGrid ? (
@@ -192,6 +196,7 @@ export default function App() {
           />
         </div>
       )}
+      </main>
       <Toaster position="bottom-right" />
     </div>
     </TooltipProvider>
