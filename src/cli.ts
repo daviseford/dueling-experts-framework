@@ -58,9 +58,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
         result.budget = parseFloat(argv[++i]);
         break;
       default:
-        if (!argv[i].startsWith('--')) {
-          positional.push(argv[i]);
+        if (argv[i].startsWith('--')) {
+          console.error(`Error: unknown flag '${argv[i]}'. Run 'def --help' for options.`);
+          process.exit(1);
         }
+        positional.push(argv[i]);
         break;
     }
   }

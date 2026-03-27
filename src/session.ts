@@ -203,6 +203,11 @@ export function installShutdownHandler(sessionDir: string, targetRepo: string, s
           ui.status('shutdown.worktree', { branch: session.branch_name! });
         } catch { /* best effort */ }
       }
+
+      // Tell the user where their work lives so they can recover
+      if (session?.branch_name) {
+        ui.status('shutdown.recovery', { branch: session.branch_name });
+      }
     } catch { /* best effort */ }
     process.exit(0);
   });

@@ -123,7 +123,9 @@ export async function pushAndCreatePr(opts: PrOptions): Promise<PrResult | null>
   try {
     await exec(repoPath, 'git', ['push', '-u', 'origin', branchName]);
   } catch (err: unknown) {
-    ui.status('push.failed', { branch: branchName, error: (err as Error).message });
+    const errMsg = (err as Error).message;
+    ui.status('push.failed', { branch: branchName, error: errMsg });
+    ui.status('push.hint', { error: errMsg });
     return null;
   }
 

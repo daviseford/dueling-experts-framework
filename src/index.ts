@@ -7,6 +7,7 @@ import { registerRepo } from './registry.js';
 import { run } from './orchestrator.js';
 import { parseArgs } from './cli.js';
 import { listProviders, getProvider } from './agent.js';
+import { preflight } from './preflight.js';
 import * as ui from './ui.js';
 
 // Subcommand routing -- check before parseArgs
@@ -112,6 +113,18 @@ for (const name of registeredProviders) {
 
 const targetRepo = resolve(process.cwd());
 
+// Determine which providers will be used (for preflight CLI checks)
+const preflightAgents = agentsList
+  ? [...new Set(agentsList)]
+  : [...new Set([opts.first || 'claude', opts.implModel || 'claude'])];
+
+// Preflight: validate CLIs, git state, and GitHub auth before spending credits
+await preflight({
+  agents: preflightAgents,
+  noPr: !!opts.noPr,
+  mode: opts.mode || 'edit',
+});
+
 // Create new session
 let session: Session;
 try {
@@ -144,6 +157,7 @@ ui.intro({
   impl_model: session.impl_model,
   review_turns: session.review_turns,
   dir: session.dir,
+  noPr: opts.noPr,
 });
 
 installShutdownHandler(session.dir, targetRepo, session);
