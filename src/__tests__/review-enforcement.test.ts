@@ -6,36 +6,24 @@ describe('buildPrTitle', () => {
   const topic = 'implement authentication flow';
 
   it('returns normal title when reviewApproved is true', () => {
-    const title = buildPrTitle(topic, true, false);
+    const title = buildPrTitle(topic, true);
     assert.equal(title, `def: ${topic}`);
   });
 
-  it('returns normal title when reviewApproved is true and endRequested is also true', () => {
-    // Both flags set (e.g., recovery after approve + user end) — no prefix.
-    const title = buildPrTitle(topic, true, true);
-    assert.equal(title, `def: ${topic}`);
-  });
-
-  it('returns normal title when endRequested is true (user override)', () => {
-    // User explicitly ended the session without review approval.
-    const title = buildPrTitle(topic, false, true);
-    assert.equal(title, `def: ${topic}`);
-  });
-
-  it('prefixes with [UNAPPROVED] when neither approved nor user-ended', () => {
-    // Review never approved and user did not explicitly end — e.g., review loop exhausted.
-    const title = buildPrTitle(topic, false, false);
+  it('prefixes with [UNAPPROVED] when review was not approved', () => {
+    // Review never approved — e.g., review loop exhausted, or session ended early.
+    const title = buildPrTitle(topic, false);
     assert.equal(title, `[UNAPPROVED] def: ${topic}`);
   });
 
   it('handles empty topic string', () => {
-    assert.equal(buildPrTitle('', true, false), 'def: ');
-    assert.equal(buildPrTitle('', false, false), '[UNAPPROVED] def: ');
+    assert.equal(buildPrTitle('', true), 'def: ');
+    assert.equal(buildPrTitle('', false), '[UNAPPROVED] def: ');
   });
 
   it('handles topic with special characters', () => {
     const specialTopic = 'fix: "quotes" & <brackets>';
-    assert.equal(buildPrTitle(specialTopic, true, false), `def: ${specialTopic}`);
-    assert.equal(buildPrTitle(specialTopic, false, false), `[UNAPPROVED] def: ${specialTopic}`);
+    assert.equal(buildPrTitle(specialTopic, true), `def: ${specialTopic}`);
+    assert.equal(buildPrTitle(specialTopic, false), `[UNAPPROVED] def: ${specialTopic}`);
   });
 });

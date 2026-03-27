@@ -122,10 +122,10 @@ export function deduplicateDecisions(entries: DecisionEntry[]): DecisionEntry[] 
 
 /**
  * Build the PR title, prefixing with [UNAPPROVED] when the review phase
- * never approved the implementation and the user didn't explicitly end.
+ * never approved the implementation.
  */
-export function buildPrTitle(topic: string, reviewApproved: boolean, endRequested: boolean): string {
-  if (!reviewApproved && !endRequested) {
+export function buildPrTitle(topic: string, reviewApproved: boolean): string {
+  if (!reviewApproved) {
     return `[UNAPPROVED] def: ${topic}`;
   }
   return `def: ${topic}`;
@@ -771,7 +771,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
       // Use the resolved ref (may differ from session.base_ref if original was deleted)
       const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
-        const prTitle = buildPrTitle(session.topic, reviewApproved, endRequested);
+        const prTitle = buildPrTitle(session.topic, reviewApproved);
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,

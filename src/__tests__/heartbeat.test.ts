@@ -110,6 +110,51 @@ describe('stale session reconciliation in listSessions()', () => {
     assert.equal(dataAfter.session_status, 'interrupted', 'on-disk status should be reconciled to interrupted');
   });
 
+  it('reconciles paused session with dead PID to interrupted on disk', async () => {
+    const sessionId = randomUUID();
+    const sessionDir = join(tempRepo, '.def', 'sessions', sessionId);
+    await mkdir(join(sessionDir, 'turns'), { recursive: true });
+    await mkdir(join(sessionDir, 'artifacts'), { recursive: true });
+    await mkdir(join(sessionDir, 'runtime'), { recursive: true });
+
+    const sessionData = {
+      id: sessionId,
+      topic: 'test paused reconciliation',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: tempRepo,
+      created: new Date().toISOString(),
+      session_status: 'paused',
+      current_turn: 3,
+      next_agent: 'claude',
+      phase: 'implement',
+      impl_model: 'claude',
+      review_turns: 6,
+      port: null,
+      pid: 999999,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: [{ id: 'claude', provider: 'claude', role: 'planner', model: 'claude' }],
+    };
+    await atomicWrite(join(sessionDir, 'session.json'), JSON.stringify(sessionData, null, 2) + '\n');
+
+    const staleHeartbeat = new Date(Date.now() - 60_000).toISOString();
+    await atomicWrite(join(sessionDir, 'heartbeat.json'), JSON.stringify({ heartbeat_at: staleHeartbeat }) + '\n');
+
+    const sessions = await listSessions(tempRepo);
+    const found = sessions.find(s => s.id === sessionId);
+    assert.ok(found, 'session should appear in list');
+    assert.equal(found.session_status, 'interrupted', 'returned status should be interrupted');
+
+    const rawAfter = await readFile(join(sessionDir, 'session.json'), 'utf8');
+    const dataAfter = JSON.parse(rawAfter);
+    assert.equal(dataAfter.session_status, 'interrupted', 'on-disk paused session should be reconciled to interrupted');
+  });
+
   it('does not modify a completed session', async () => {
     const sessionId = randomUUID();
     const sessionDir = join(tempRepo, '.def', 'sessions', sessionId);

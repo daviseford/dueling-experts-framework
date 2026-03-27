@@ -64,6 +64,42 @@ describe('deduplicateDecisions', () => {
     assert.deepStrictEqual(result, []);
   });
 
+  it('drops decisions that normalize to empty string after prefix stripping', () => {
+    const entries: DecisionEntry[] = [
+      { turn: 1, from: 'claude', decision: 'Use React' },
+      { turn: 2, from: 'codex', decision: 'Agreed: .' },
+      { turn: 3, from: 'claude', decision: 'Yes,' },
+    ];
+    const result = deduplicateDecisions(entries);
+    // 'Agreed: .' normalizes to '' (empty after prefix strip + punctuation strip)
+    // 'Yes,' normalizes to '' (prefix 'yes,' stripped, nothing left)
+    assert.equal(result.length, 1);
+    assert.equal(result[0].decision, 'Use React');
+  });
+
+  it('strips "Agreed --" prefix correctly (longest prefix first)', () => {
+    const entries: DecisionEntry[] = [
+      { turn: 1, from: 'claude', decision: 'Deploy to staging first' },
+      { turn: 2, from: 'codex', decision: 'Agreed -- deploy to staging first' },
+    ];
+    const result = deduplicateDecisions(entries);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].turn, 1);
+  });
+
+  it('strips "Yes:" and "Yes --" prefixes', () => {
+    const entries: DecisionEntry[] = [
+      { turn: 1, from: 'claude', decision: 'Use TypeScript' },
+      { turn: 2, from: 'codex', decision: 'Yes: use TypeScript' },
+      { turn: 3, from: 'claude', decision: 'Add unit tests' },
+      { turn: 4, from: 'codex', decision: 'Yes -- add unit tests' },
+    ];
+    const result = deduplicateDecisions(entries);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].decision, 'Use TypeScript');
+    assert.equal(result[1].decision, 'Add unit tests');
+  });
+
   it('collapses all duplicates to one entry (earliest turn)', () => {
     const entries: DecisionEntry[] = [
       { turn: 1, from: 'claude', decision: 'Use React' },
