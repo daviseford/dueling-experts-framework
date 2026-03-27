@@ -96,6 +96,22 @@ describe('collectPreflightErrors', () => {
     );
     // claude missing, codex missing, not in git repo (remote + gh skipped since not in git repo)
     assert.equal(errors.length, 3);
+    assert.ok(errors.some(e => e.includes("'claude' CLI not found")));
+    assert.ok(errors.some(e => e.includes("'codex' CLI not found")));
+    assert.ok(errors.some(e => e.includes('Not inside a git repository')));
+  });
+
+  it('skips remote and gh checks when not in a git repo', async () => {
+    // Agents available, but git repo check fails -- remote/gh checks should be skipped
+    const check = mockCheck(['claude', 'codex']);
+    const errors = await collectPreflightErrors(
+      { agents: ['claude', 'codex'], noPr: false, mode: 'edit' },
+      check,
+    );
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].includes('Not inside a git repository'));
+    assert.ok(!errors.some(e => e.includes("No 'origin' remote")));
+    assert.ok(!errors.some(e => e.includes("'gh' CLI not found")));
   });
 
   it('deduplicates providers', async () => {

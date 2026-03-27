@@ -143,7 +143,7 @@ try {
   await preflight({
     agents: preflightAgents,
     noPr: !!opts.noPr,
-    mode: (opts.mode || 'edit') as 'edit' | 'planning',
+    mode: opts.mode || 'edit',
   });
 } catch (err: unknown) {
   console.error(`Preflight error: ${(err as Error).message}`);

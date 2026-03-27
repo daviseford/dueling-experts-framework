@@ -1,6 +1,6 @@
 export interface ParsedArgs {
   topic?: string;
-  mode?: string;
+  mode?: 'edit' | 'planning';
   maxTurns?: number;
   first?: string;
   implModel?: string;
@@ -25,7 +25,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         result.topic = argv[++i];
         break;
       case '--mode':
-        result.mode = argv[++i];
+        result.mode = argv[++i] as 'edit' | 'planning';
         break;
       case '--max-turns':
         result.maxTurns = parseInt(argv[++i], 10);
