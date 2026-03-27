@@ -30,10 +30,10 @@ const TOKENS: Record<string, AgentToken> = {
   },
   system: {
     label: "SYSTEM",
-    borderClass: "border-l-amber-500",
-    badgeClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25",
-    spinnerClass: "text-amber-600 dark:text-amber-400",
-    scanGradient: "from-transparent via-amber-500/8 to-transparent",
+    borderClass: "border-l-slate-500",
+    badgeClass: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/25",
+    spinnerClass: "text-slate-600 dark:text-slate-400",
+    scanGradient: "from-transparent via-slate-500/8 to-transparent",
   },
 }
 

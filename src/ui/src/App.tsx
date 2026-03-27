@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSessionList } from "@/hooks/use-explorer";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { endSession } from "@/lib/api";
@@ -132,6 +133,7 @@ export default function App() {
   const showTabBar = !isGrid && visibleSessions.length > 1;
 
   return (
+    <TooltipProvider>
     <div className="flex h-screen flex-col overflow-hidden">
       <SessionHeader
         topic={topic}
@@ -192,5 +194,6 @@ export default function App() {
       )}
       <Toaster position="bottom-right" />
     </div>
+    </TooltipProvider>
   );
 }

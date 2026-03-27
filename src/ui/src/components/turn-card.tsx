@@ -5,8 +5,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { getPhaseToken } from "@/lib/phase-tokens"
+import { getPhaseToken, PHASE_DESCRIPTIONS } from "@/lib/phase-tokens"
 import { getAgentToken } from "@/lib/agent-tokens"
 import { extractPreview } from "@/lib/extract-preview"
 import { Button } from "@/components/ui/button"
@@ -89,21 +90,26 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
                 #{turn.turn}
               </span>
               {turn.from !== "human" && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "font-mono text-[9px] font-normal tracking-wide",
-                    phaseToken.badgeClass
-                  )}
-                >
-                  {phaseToken.label}
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "font-mono text-[10px] font-normal tracking-wide",
+                        phaseToken.badgeClass
+                      )}
+                    >
+                      {phaseToken.label}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>{PHASE_DESCRIPTIONS[turn.phase] ?? phaseToken.label}</TooltipContent>
+                </Tooltip>
               )}
               {turn.model_name && (
                 <Badge
                   variant="outline"
                   className={cn(
-                    "hidden font-mono text-[9px] font-normal tracking-wide @md:inline-flex md:inline-flex",
+                    "hidden font-mono text-[10px] font-normal tracking-wide @md:inline-flex md:inline-flex",
                     turn.model_tier === "fast" ? FAST_BADGE_STYLE
                       : turn.model_tier === "mid" ? MID_BADGE_STYLE
                       : "bg-muted/50 text-muted-foreground border-border/50"

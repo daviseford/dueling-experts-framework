@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#16213e"/>
+      <stop offset="0%" stop-color="#1a1a2a"/>
+      <stop offset="100%" stop-color="#171720"/>
     </linearGradient>
     <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#e94560"/>
-      <stop offset="100%" stop-color="#ff6b6b"/>
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#10b981"/>
     </linearGradient>
   </defs>
   <!-- Background rounded square -->
@@ -14,8 +14,8 @@
   <!-- DEF text -->
   <text x="64" y="82" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="56" fill="url(#accent)" text-anchor="middle" letter-spacing="-2">DEF</text>
   <!-- Subtle dueling swords accent -->
-  <line x1="20" y1="28" x2="52" y2="28" stroke="#e94560" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
-  <line x1="76" y1="28" x2="108" y2="28" stroke="#ff6b6b" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <line x1="20" y1="28" x2="52" y2="28" stroke="#14b8a6" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <line x1="76" y1="28" x2="108" y2="28" stroke="#10b981" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
   <!-- Crossing point -->
-  <circle cx="64" cy="28" r="3" fill="#e94560" opacity="0.8"/>
+  <circle cx="64" cy="28" r="3" fill="#14b8a6" opacity="0.8"/>
 </svg>

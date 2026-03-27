@@ -7,10 +7,13 @@ export function EmptyState() {
       <Card className="max-w-md border-border/30 bg-card/60">
         <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/50">
-            <Terminal className="h-6 w-6 text-muted-foreground" />
+            <Terminal className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
           </div>
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-foreground">No sessions found</h3>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              DEF orchestrates structured debates between AI agents, then implements and reviews the result.
+            </p>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               Run{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[12px]">

@@ -34,14 +34,14 @@ export function SessionSummary({
   return (
     <div className="animate-slide-up min-w-0 overflow-hidden rounded-xl border border-border/30 bg-card shadow-lg dark:shadow-teal-950/20">
       {/* Header */}
-      <div className="border-b border-border/30 bg-gradient-to-r from-teal-500/8 via-cyan-500/5 to-transparent px-5 py-4">
+      <div className="border-b border-border/30 bg-teal-500/5 px-5 py-4">
         <div className="flex items-center gap-3.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-500/15 ring-1 ring-teal-500/25">
             <CheckCircle2 className="h-5 w-5 text-teal-500" />
           </div>
           <div>
             <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
-              Session Completed
+              Session completed
             </h3>
             <div className="mt-0.5 flex items-center gap-1.5">
               <Layers className="h-3 w-3 text-muted-foreground/60" />

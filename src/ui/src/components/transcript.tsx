@@ -135,7 +135,7 @@ export function Transcript({
         )}
         {isEmpty && (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
+            <MessageSquare className="h-8 w-8 text-muted-foreground/30" aria-hidden="true" />
             <p className="text-sm text-muted-foreground/60">Waiting for agents to start...</p>
           </div>
         )}

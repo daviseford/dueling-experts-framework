@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ThemeToggle } from "./theme-toggle"
-import { LayoutGrid, Maximize2, Radio } from "lucide-react"
+import { CircleHelp, LayoutGrid, Maximize2, Radio } from "lucide-react"
 import type { SessionSummary, SessionStatus, ViewMode } from "@/lib/types"
 
 interface SessionHeaderProps {
@@ -111,6 +111,21 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
             {isGrid ? <Maximize2 className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <a
+            href="https://github.com/daviseford/dueling-experts-framework#readme"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <CircleHelp className="h-4 w-4" />
+            <span className="sr-only">Help</span>
+          </a>
+        </Button>
         <ThemeToggle />
       </div>
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent" />

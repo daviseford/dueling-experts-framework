@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getPhaseToken } from "@/lib/phase-tokens"
+import { getPhaseToken, PHASE_DESCRIPTIONS } from "@/lib/phase-tokens"
 import type { SessionSummary } from "@/lib/types"
 
 interface SessionTabBarProps {
@@ -26,18 +27,18 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 /** For dead sessions, show outcome status instead of frozen phase. */
-function badgeInfo(session: { phase: string; session_status: string }): { label: string; color: string } {
+function badgeInfo(session: { phase: string; session_status: string }): { label: string; color: string; description: string } {
   if (session.session_status === "completed") {
-    return { label: "DONE", color: STATUS_COLOR.completed }
+    return { label: "DONE", color: STATUS_COLOR.completed, description: "Session finished \u2014 all phases complete" }
   }
   if (session.session_status === "interrupted") {
-    return { label: "INTERRUPTED", color: STATUS_COLOR.interrupted }
+    return { label: "INTERRUPTED", color: STATUS_COLOR.interrupted, description: "Session was stopped before completion" }
   }
   if (session.session_status === "paused") {
-    return { label: "PAUSED", color: STATUS_COLOR.paused }
+    return { label: "PAUSED", color: STATUS_COLOR.paused, description: "Session paused \u2014 human input needed" }
   }
   const token = getPhaseToken(session.phase)
-  return { label: token.shortLabel, color: token.textClass }
+  return { label: token.shortLabel, color: token.textClass, description: PHASE_DESCRIPTIONS[session.phase as keyof typeof PHASE_DESCRIPTIONS] ?? token.label }
 }
 
 function isDead(status: string): boolean {
@@ -133,6 +134,7 @@ export function SessionTabBar({
           size="icon"
           className="absolute left-0 z-10 h-full w-7 rounded-none bg-gradient-to-r from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("left")}
+          aria-label="Scroll tabs left"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </Button>
@@ -183,7 +185,7 @@ export function SessionTabBar({
                   <button
                     type="button"
                     aria-label={`Dismiss ${s.topic}`}
-                    className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    className="mt-px shrink-0 rounded p-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation()
                       onDismissSession(s.id)
@@ -197,9 +199,14 @@ export function SessionTabBar({
               {/* Row 2: Status/phase badge + turn count + elapsed */}
               <div className="mt-1 flex items-center gap-2 text-[10px]">
                 {(() => { const b = badgeInfo(s); return (
-                <span className={cn("font-semibold tracking-wider", b.color)}>
-                  {b.label}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className={cn("font-semibold tracking-wider", b.color)}>
+                      {b.label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{b.description}</TooltipContent>
+                </Tooltip>
                 ) })()}
                 <span className="text-muted-foreground/60">&middot;</span>
                 <span className="font-mono text-muted-foreground/70">
@@ -224,6 +231,7 @@ export function SessionTabBar({
           size="icon"
           className="absolute right-0 z-10 h-full w-7 rounded-none bg-gradient-to-l from-muted/80 to-transparent dark:from-card/80"
           onClick={() => scroll("right")}
+          aria-label="Scroll tabs right"
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </Button>

@@ -81,7 +81,7 @@ test.describe("Mock scenario states", () => {
     )
 
     // Type a message and submit
-    const textarea = page.getByPlaceholder("Type a message to interject...")
+    const textarea = page.getByPlaceholder("Send a message to agents at the next turn boundary...")
     await textarea.fill("Please consider edge cases for rate limiting")
     await page.getByRole("button", { name: "Send" }).click()
 

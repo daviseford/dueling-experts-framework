@@ -12,7 +12,7 @@ export function PendingTurnCard({ content }: PendingTurnCardProps) {
 
   return (
     <div className={cn(
-      "animate-fade-in overflow-hidden rounded-lg border-l-[3px] bg-card/60 opacity-75 ring-1 ring-border/10",
+      "animate-fade-in overflow-hidden rounded-lg border-l-[3px] border-dashed bg-card/60 opacity-90 ring-1 ring-border/10",
       token.borderClass
     )}>
       <div className="flex items-center gap-2 px-3 py-2">

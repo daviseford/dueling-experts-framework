@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { useSessionTurns } from "@/hooks/use-session-turns"
 import { endSession } from "@/lib/api"
 import { PauseBanner } from "@/components/pause-banner"
+import { CurrentStateBar } from "@/components/current-state-bar"
 import { Transcript } from "@/components/transcript"
 import { InterjectionInput } from "@/components/interjection-input"
 import { StatusBar } from "@/components/status-bar"
@@ -196,6 +197,14 @@ export function SessionPanel({
         </div>
       )}
       <PauseBanner visible={sessionStatus === "paused"} isReadOnly={isReadOnly} />
+      <CurrentStateBar
+        phase={phase}
+        thinking={thinking}
+        thinkingElapsed={thinkingElapsed}
+        sessionStatus={sessionStatus}
+        statusText={statusText}
+        turns={turns}
+      />
       <Transcript
         turns={turns}
         thinking={thinking}
@@ -214,9 +223,7 @@ export function SessionPanel({
       />
       <InterjectionInput sessionId={sessionId} disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
       <StatusBar
-        statusText={statusText}
         turnCount={turnCount}
-        sessionStatus={sessionStatus}
         sessionTimer={sessionTimer}
         allCollapsed={allCollapsed}
         onToggleAll={handleToggleAll}
