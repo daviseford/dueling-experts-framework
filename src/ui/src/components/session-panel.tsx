@@ -152,7 +152,7 @@ export function SessionPanel({
   }, [sessionId])
 
   return (
-    <div className={cn("flex min-h-0 flex-col overflow-hidden", showPanelHeader && "border border-border/60 rounded-lg shadow-sm", className)}>
+    <div className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden", showPanelHeader && "border border-border/60 rounded-lg shadow-sm", className)}>
       {showPanelHeader && (
         <div className="flex items-center gap-2 border-b border-border/60 bg-muted/50 px-3 py-1.5">
           <span className="flex-1 truncate text-xs font-medium text-foreground/80">{topic || "Loading..."}</span>

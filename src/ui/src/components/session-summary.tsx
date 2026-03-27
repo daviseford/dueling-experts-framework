@@ -32,7 +32,7 @@ export function SessionSummary({
   implementations,
 }: SessionSummaryProps) {
   return (
-    <div className="animate-slide-up overflow-hidden rounded-xl border border-border/30 bg-card shadow-lg dark:shadow-teal-950/20">
+    <div className="animate-slide-up min-w-0 overflow-hidden rounded-xl border border-border/30 bg-card shadow-lg dark:shadow-teal-950/20">
       {/* Header */}
       <div className="border-b border-border/30 bg-gradient-to-r from-teal-500/8 via-cyan-500/5 to-transparent px-5 py-4">
         <div className="flex items-center gap-3.5">
@@ -105,7 +105,7 @@ export function SessionSummary({
               {decisions.map((d, i) => (
                 <li
                   key={i}
-                  className="list-disc text-[12px] leading-relaxed text-foreground/75 marker:text-teal-500/40"
+                  className="list-disc break-words text-[12px] leading-relaxed text-foreground/75 marker:text-teal-500/40"
                 >
                   {d}
                 </li>
@@ -127,7 +127,7 @@ export function SessionSummary({
               {implementations.map((d, i) => (
                 <li
                   key={i}
-                  className="list-disc text-[12px] leading-relaxed text-foreground/75 marker:text-cyan-500/40"
+                  className="list-disc break-words text-[12px] leading-relaxed text-foreground/75 marker:text-cyan-500/40"
                 >
                   {d}
                 </li>
