@@ -232,6 +232,42 @@ export interface UsageArtifact {
   updated_at: string;
 }
 
+// ── Per-agent usage summary ─────────────────────────────────────────
+
+export interface AgentUsageSummary {
+  agent: string;
+  turns: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number | null;
+}
+
+/**
+ * Aggregate UsageEntry[] by the `from` field (agent identity).
+ * Null token counts are treated as 0. If ANY entry for an agent has
+ * cost_usd === null, that agent's cost is null (unknown).
+ * Results are sorted alphabetically by agent name.
+ */
+export function buildAgentSummary(entries: UsageEntry[]): AgentUsageSummary[] {
+  const map = new Map<string, AgentUsageSummary>();
+  for (const e of entries) {
+    let row = map.get(e.from);
+    if (!row) {
+      row = { agent: e.from, turns: 0, tokens_in: 0, tokens_out: 0, cost_usd: 0 };
+      map.set(e.from, row);
+    }
+    row.turns += 1;
+    row.tokens_in += e.tokens_in ?? 0;
+    row.tokens_out += e.tokens_out ?? 0;
+    if (row.cost_usd === null || e.cost_usd === null) {
+      row.cost_usd = null;
+    } else {
+      row.cost_usd = Math.round((row.cost_usd + e.cost_usd) * 10000) / 10000;
+    }
+  }
+  return [...map.values()].sort((a, b) => a.agent.localeCompare(b.agent));
+}
+
 /** Build a usage artifact from accumulated entries. */
 export function buildUsageArtifact(entries: UsageEntry[]): UsageArtifact {
   const totals = entries.reduce(

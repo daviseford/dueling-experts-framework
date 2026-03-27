@@ -13,6 +13,7 @@
 import pc from 'picocolors';
 import * as clack from '@clack/prompts';
 import gradient from 'gradient-string';
+import type { AgentUsageSummary } from './cost.js';
 
 // -- Environment detection ---------------------------------------------------
 
@@ -528,6 +529,18 @@ export interface SessionSummary {
   pr?: string | null;
   turnsDir: string;
   artifactsDir: string;
+  usage?: AgentUsageSummary[];
+}
+
+/** Format a number with comma separators (e.g. 18204 -> "18,204"). */
+function formatTokenCount(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/** Format cost as "$1.78" or "--" for null. */
+function formatCost(cost: number | null): string {
+  if (cost === null) return '--';
+  return `$${cost.toFixed(2)}`;
 }
 
 export function outro(summary: SessionSummary): void {
@@ -544,6 +557,49 @@ export function outro(summary: SessionSummary): void {
   }
   lines.push(`  ${c.dim('Turns')}     ${summary.turnsDir}`);
   lines.push(`  ${c.dim('Artifacts')} ${summary.artifactsDir}`);
+
+  // Per-agent usage breakdown
+  if (summary.usage && summary.usage.length > 0) {
+    lines.push('');
+    lines.push(`  ${c.bold('Usage')}`);
+
+    // Compute column widths for alignment
+    const rows = summary.usage;
+    const nameWidth = Math.max(...rows.map(r => r.agent.length), 5); // min 5 for "total"
+    const turnStrings = rows.map(r => `${r.turns} turn${r.turns === 1 ? '' : 's'}`);
+    const turnWidth = Math.max(...turnStrings.map(s => s.length));
+    const inStrings = rows.map(r => formatTokenCount(r.tokens_in));
+    const outStrings = rows.map(r => formatTokenCount(r.tokens_out));
+    const inWidth = Math.max(...inStrings.map(s => s.length));
+    const outWidth = Math.max(...outStrings.map(s => s.length));
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const name = c.cyan(r.agent.padEnd(nameWidth));
+      const turns = turnStrings[i].padStart(turnWidth);
+      const tokIn = inStrings[i].padStart(inWidth);
+      const tokOut = outStrings[i].padStart(outWidth);
+      const cost = formatCost(r.cost_usd);
+      lines.push(`    ${name}  ${c.dim(turns)}   ${tokIn} ${c.dim('in')} / ${tokOut} ${c.dim('out')}   ${cost}`);
+    }
+
+    // Total row when 2+ agents
+    if (rows.length >= 2) {
+      const totalTurns = rows.reduce((s, r) => s + r.turns, 0);
+      const totalIn = rows.reduce((s, r) => s + r.tokens_in, 0);
+      const totalOut = rows.reduce((s, r) => s + r.tokens_out, 0);
+      const totalCost: number | null = rows.some(r => r.cost_usd === null)
+        ? null
+        : Math.round(rows.reduce((s, r) => s + (r.cost_usd as number), 0) * 100) / 100;
+
+      const turnStr = `${totalTurns} turn${totalTurns === 1 ? '' : 's'}`;
+      const inStr = formatTokenCount(totalIn);
+      const outStr = formatTokenCount(totalOut);
+
+      const totalName = c.bold('total'.padEnd(nameWidth));
+      lines.push(`    ${totalName}  ${c.dim(turnStr.padStart(turnWidth))}   ${inStr.padStart(inWidth)} ${c.dim('in')} / ${outStr.padStart(outWidth)} ${c.dim('out')}   ${formatCost(totalCost)}`);
+    }
+  }
 
   if (isTTY && !noColor) {
     clack.outro(lines.join('\n'));

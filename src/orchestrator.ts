@@ -15,7 +15,7 @@ import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
 import * as ui from './ui.js';
 import { getOtherParticipant, getImplementer, getReviewer } from './roster.js';
-import { buildUsageArtifact, TurnCostTracker } from './cost.js';
+import { buildUsageArtifact, buildAgentSummary, TurnCostTracker } from './cost.js';
 import type { TokenUsage, UsageEntry } from './cost.js';
 
 // ── Type definitions ────────────────────────────────────────────────
@@ -761,6 +761,7 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     pr: session.pr_url,
     turnsDir: join(session.dir, 'turns'),
     artifactsDir: join(session.dir, 'artifacts'),
+    usage: buildAgentSummary(usageEntries),
   });
 
   } finally {
