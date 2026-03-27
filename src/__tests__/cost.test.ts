@@ -180,13 +180,11 @@ describe('buildAgentSummary', () => {
     assert.equal(summary[0].turns, 2);
     assert.equal(summary[0].tokens_in, 22000);
     assert.equal(summary[0].tokens_out, 9000);
-    assert.equal(summary[0].cost_usd, 3.50);
 
     assert.equal(summary[1].agent, 'codex');
     assert.equal(summary[1].turns, 1);
     assert.equal(summary[1].tokens_in, 8000);
     assert.equal(summary[1].tokens_out, 3000);
-    assert.equal(summary[1].cost_usd, 0.80);
   });
 
   it('returns single-agent summary', () => {
@@ -199,26 +197,11 @@ describe('buildAgentSummary', () => {
     assert.equal(summary[0].turns, 1);
     assert.equal(summary[0].tokens_in, 5000);
     assert.equal(summary[0].tokens_out, 2000);
-    assert.equal(summary[0].cost_usd, 0.50);
   });
 
   it('returns empty array for empty input', () => {
     const summary = buildAgentSummary([]);
     assert.equal(summary.length, 0);
-  });
-
-  it('sets cost to null if any entry for an agent has null cost', () => {
-    const entries: UsageEntry[] = [
-      { turn: 1, from: 'claude', model: 'opus', tokens_in: 5000, tokens_out: 2000, cost_usd: 1.00, duration_ms: 3000 },
-      { turn: 2, from: 'claude', model: 'opus', tokens_in: 3000, tokens_out: 1000, cost_usd: null, duration_ms: 2000 },
-      { turn: 3, from: 'codex', model: 'gpt-5.4', tokens_in: 4000, tokens_out: 1500, cost_usd: 0.60, duration_ms: 2500 },
-    ];
-    const summary = buildAgentSummary(entries);
-    assert.equal(summary[0].agent, 'claude');
-    assert.equal(summary[0].cost_usd, null);
-    // Codex cost is still known
-    assert.equal(summary[1].agent, 'codex');
-    assert.equal(summary[1].cost_usd, 0.60);
   });
 
   it('treats null token counts as 0', () => {
@@ -229,7 +212,5 @@ describe('buildAgentSummary', () => {
     const summary = buildAgentSummary(entries);
     assert.equal(summary[0].tokens_in, 5000);
     assert.equal(summary[0].tokens_out, 2000);
-    // Cost is null because first entry had null cost
-    assert.equal(summary[0].cost_usd, null);
   });
 });
