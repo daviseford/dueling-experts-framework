@@ -24,8 +24,8 @@ test.describe("Transcript behavior", () => {
   })
 
   test("status bar shows turn count and timer", async ({ page }) => {
-    // Status bar should show turn count -- use the specific status bar area
-    const statusBar = page.locator("[class*='border-t'][class*='bg-card']").last()
+    // Use data-testid to reliably locate the status bar
+    const statusBar = page.getByTestId("status-bar")
     await expect(statusBar.getByText("turns")).toBeVisible()
     // Timer
     await expect(statusBar.getByText("58m 0s")).toBeVisible()

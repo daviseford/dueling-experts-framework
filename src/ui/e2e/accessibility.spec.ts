@@ -14,7 +14,7 @@ test.describe("Accessibility", () => {
   test("dismiss button responds to click and removes session tab", async ({ page }) => {
     await page.goto("/?mock")
     // The default mock has 4 sessions, so tab bar is visible with role="tab" elements
-    const tabs = page.locator("[role='tab']")
+    const tabs = page.getByRole("tab")
     const initialCount = await tabs.count()
     expect(initialCount).toBeGreaterThanOrEqual(2)
 
@@ -26,13 +26,47 @@ test.describe("Accessibility", () => {
     await expect(tabs).toHaveCount(initialCount - 1)
   })
 
+  test("tab bar has proper tablist semantics with roving tabindex", async ({ page }) => {
+    await page.goto("/?mock")
+    // Verify tablist role exists
+    const tablist = page.getByRole("tablist", { name: "Sessions" })
+    await expect(tablist).toBeAttached()
+
+    // Verify only the selected tab has tabIndex=0
+    const tabs = page.getByRole("tab")
+    const tabCount = await tabs.count()
+    let focusableCount = 0
+    for (let i = 0; i < tabCount; i++) {
+      const tabIndex = await tabs.nth(i).getAttribute("tabindex")
+      if (tabIndex === "0") focusableCount++
+    }
+    expect(focusableCount).toBe(1)
+  })
+
+  test("arrow keys navigate between tabs", async ({ page }) => {
+    await page.goto("/?mock")
+    const tabs = page.getByRole("tab")
+    const firstTab = tabs.first()
+
+    // Focus the first tab and press ArrowRight
+    await firstTab.focus()
+    const firstTabSelected = await firstTab.getAttribute("aria-selected")
+    expect(firstTabSelected).toBe("true")
+
+    await page.keyboard.press("ArrowRight")
+    // After ArrowRight, the second tab should be selected
+    const secondTab = tabs.nth(1)
+    await expect(secondTab).toHaveAttribute("aria-selected", "true")
+  })
+
   test("prefers-reduced-motion disables animations", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" })
     await page.goto("/?mock=thinking")
     // Wait for the thinking indicator to appear
-    await expect(page.locator(".thinking-glow").first()).toBeAttached()
-    // Check that animation is disabled
-    const animationName = await page.locator(".thinking-glow").first().evaluate(
+    const indicator = page.getByTestId("thinking-indicator")
+    await expect(indicator).toBeAttached()
+    // Check that animation is disabled on the thinking-glow span inside
+    const animationName = await indicator.locator(".thinking-glow").first().evaluate(
       (el) => getComputedStyle(el).animationName
     )
     expect(animationName).toBe("none")
@@ -41,8 +75,9 @@ test.describe("Accessibility", () => {
   test("animations play when motion is not reduced", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" })
     await page.goto("/?mock=thinking")
-    await expect(page.locator(".thinking-glow").first()).toBeAttached()
-    const animationName = await page.locator(".thinking-glow").first().evaluate(
+    const indicator = page.getByTestId("thinking-indicator")
+    await expect(indicator).toBeAttached()
+    const animationName = await indicator.locator(".thinking-glow").first().evaluate(
       (el) => getComputedStyle(el).animationName
     )
     expect(animationName).not.toBe("none")

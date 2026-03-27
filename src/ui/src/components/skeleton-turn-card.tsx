@@ -4,6 +4,7 @@ export function SkeletonTurnCard({ index = 0 }: { index?: number }) {
   const borders = ["border-l-blue-500/40", "border-l-emerald-500/40", "border-l-blue-500/40"]
   return (
     <div
+      data-testid="skeleton-turn-card"
       className={cn(
         "overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 ring-border/10",
         borders[index % borders.length]

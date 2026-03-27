@@ -16,6 +16,7 @@ export function ThinkingIndicator({ thinking, elapsed, phase }: ThinkingIndicato
 
   return (
     <div
+      data-testid="thinking-indicator"
       className={cn(
         "relative overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 ring-border/10",
         token.borderClass

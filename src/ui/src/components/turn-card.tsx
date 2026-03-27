@@ -58,6 +58,7 @@ export function TurnCard({ turn, open, onOpenChange }: TurnCardProps) {
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <div
+        {...(isError ? { "data-testid": "turn-card-error" } : {})}
         className={cn(
           "overflow-hidden rounded-lg border-l-[3px] bg-card/60 ring-1 shadow-sm transition-all duration-200 hover:shadow-md",
           isError

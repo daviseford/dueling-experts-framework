@@ -4,18 +4,21 @@ test.describe("Mock scenario states", () => {
   test("empty scenario shows waiting message", async ({ page }) => {
     await page.goto("/?mock=empty")
     await expect(page.getByText("Waiting for agents to start...")).toBeVisible()
-    // No turn cards should be rendered
-    await expect(page.locator("[class*='border-l-blue-500']")).toHaveCount(0)
+    // No turn cards should be rendered -- check there are no CLAUDE/CODEX badges
+    await expect(page.getByText("CLAUDE")).toHaveCount(0)
   })
 
-  test("loading scenario shows skeleton cards then resolves", async ({ page }) => {
+  test("loading scenario shows skeleton cards then resolves to content", async ({ page }) => {
     await page.goto("/?mock=loading")
-    // Skeleton cards should appear (pulse animations)
-    await expect(page.locator(".animate-pulse").first()).toBeVisible()
-    // Status badge should show "Loading..."
+    // Skeleton cards should appear
+    await expect(page.getByTestId("skeleton-turn-card").first()).toBeVisible()
+    // Status should show "Loading..."
     await expect(page.getByText("Loading...")).toBeVisible()
-    // Wait for loading to complete
-    await page.waitForTimeout(2000)
+    // Wait for loading to complete -- transcript content should appear
+    await expect(page.getByText("CLAUDE").first()).toBeVisible({ timeout: 5000 })
+    // Skeleton should be gone
+    await expect(page.getByTestId("skeleton-turn-card")).toHaveCount(0)
+    // Loading text should be replaced
     await expect(page.getByText("Loading...")).not.toBeVisible()
   })
 
@@ -29,9 +32,10 @@ test.describe("Mock scenario states", () => {
 
   test("thinking scenario shows thinking indicator", async ({ page }) => {
     await page.goto("/?mock=thinking")
-    await expect(page.locator(".thinking-glow").first()).toBeVisible()
-    // Agent badge should be visible in thinking indicator
-    await expect(page.locator(".animate-scan").first()).toBeAttached()
+    const indicator = page.getByTestId("thinking-indicator")
+    await expect(indicator).toBeVisible()
+    // Agent badge should be visible inside the thinking indicator
+    await expect(indicator.getByText("CLAUDE")).toBeVisible()
   })
 
   test("default scenario shows completed session with all turns", async ({ page }) => {
@@ -58,8 +62,10 @@ test.describe("Mock scenario states", () => {
 
   test("error turn renders with error styling", async ({ page }) => {
     await page.goto("/?mock")
-    // Turn 7 is an error from "system"
-    const errorBadge = page.locator(".border-l-red-500").first()
-    await expect(errorBadge).toBeAttached()
+    // Turn 7 is an error -- uses data-testid for structurally ambiguous error state
+    const errorTurn = page.getByTestId("turn-card-error")
+    await expect(errorTurn).toBeAttached()
+    // Error turn should show SYSTEM badge
+    await expect(errorTurn.getByText("SYSTEM")).toBeVisible()
   })
 })

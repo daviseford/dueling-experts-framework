@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test"
 
 test.describe("Visual golden screenshots", () => {
-  test("desktop default mock - light theme", async ({ page }) => {
+  test("desktop default mock - light theme", async ({ page, browserName }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "Desktop-only screenshot")
     await page.goto("/?mock")
     await expect(page.getByRole("heading", { name: "Session Completed" })).toBeVisible()
     await expect(page).toHaveScreenshot("desktop-default-light.png", {
@@ -9,7 +10,8 @@ test.describe("Visual golden screenshots", () => {
     })
   })
 
-  test("desktop default mock - dark theme", async ({ page }) => {
+  test("desktop default mock - dark theme", async ({ page, browserName }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "Desktop-only screenshot")
     await page.goto("/?mock")
     await expect(page.getByRole("heading", { name: "Session Completed" })).toBeVisible()
     // Toggle dark mode via the theme toggle button
@@ -23,8 +25,8 @@ test.describe("Visual golden screenshots", () => {
     })
   })
 
-  test("mobile default mock", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 })
+  test("mobile default mock", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile", "Mobile-only screenshot")
     await page.goto("/?mock")
     await expect(page.getByRole("heading", { name: "Session Completed" })).toBeVisible()
     await expect(page).toHaveScreenshot("mobile-default.png", {

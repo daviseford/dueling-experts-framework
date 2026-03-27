@@ -35,7 +35,7 @@ function formatCost(usd: number): string {
 
 export function StatusBar({ statusText, turnCount, sessionStatus, sessionTimer, allCollapsed, onToggleAll, costUsd }: StatusBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/30 bg-card/80 px-5 py-2.5">
+    <div data-testid="status-bar" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/30 bg-card/80 px-5 py-2.5">
       {/* Primary row: status badge always first */}
       <Badge
         variant="outline"

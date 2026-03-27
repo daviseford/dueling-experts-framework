@@ -5,7 +5,7 @@ test.describe("Mobile viewport (375x667)", () => {
 
   test("status bar wraps without overflow", async ({ page }) => {
     await page.goto("/?mock")
-    const statusBar = page.locator("[class*='border-t'][class*='bg-card']").last()
+    const statusBar = page.getByTestId("status-bar")
     await expect(statusBar).toBeVisible()
 
     // Check that the status bar does not cause horizontal overflow on the page
@@ -29,7 +29,8 @@ test.describe("Mobile viewport (375x667)", () => {
 
   test("thinking state renders on mobile without overflow", async ({ page }) => {
     await page.goto("/?mock=thinking")
-    await expect(page.locator(".thinking-glow").first()).toBeVisible()
+    const indicator = page.getByTestId("thinking-indicator")
+    await expect(indicator).toBeVisible()
     const bodyScrollWidth = await page.evaluate(() => document.body.scrollWidth)
     const viewportWidth = await page.evaluate(() => window.innerWidth)
     expect(bodyScrollWidth).toBeLessThanOrEqual(viewportWidth + 1)

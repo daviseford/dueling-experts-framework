@@ -226,7 +226,7 @@ function useMockSessionTurns(sessionId: string, sessions: SessionSummary[]): Pol
     const status = session?.session_status ?? "completed"
     const statusText = status === "completed" ? "Session completed" : status === "interrupted" ? "Session interrupted" : status === "paused" ? "Paused \u2014 waiting for human" : "Active"
 
-    const hasDefaultTurns = (sessionId === "mock-session-1" || mockScenario === "thinking") && mockData
+    const hasDefaultTurns = (sessionId === "mock-session-1" || mockScenario === "thinking" || mockScenario === "loading") && mockData
 
     // "empty" scenario: active session with zero turns
     if (mockScenario === "empty") {
