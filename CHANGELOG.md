@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.12](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.11...def-v0.0.12) (2026-03-28)
+
+
+### Bug Fixes
+
+* accessibility and responsive audit fixes ([#87](https://github.com/daviseford/dueling-experts-framework/issues/87)) ([97d8d44](https://github.com/daviseford/dueling-experts-framework/commit/97d8d442d6e2fd76222e77befcdc67e212a7897d))
+* address review findings from PR [#83](https://github.com/daviseford/dueling-experts-framework/issues/83) ([#88](https://github.com/daviseford/dueling-experts-framework/issues/88)) ([d6e0fab](https://github.com/daviseford/dueling-experts-framework/commit/d6e0fabe01573ce86ad45d8a10b140ee4ba45a42))
+* session orchestration improvements — review enforcement, stale cleanup, context guardrails, decision dedup ([#96](https://github.com/daviseford/dueling-experts-framework/issues/96)) ([a820ce6](https://github.com/daviseford/dueling-experts-framework/commit/a820ce67ad4c436e6112b247a40f661f970b6935))
+
 ## [0.0.11](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.10...def-v0.0.11) (2026-03-27)
 
 
