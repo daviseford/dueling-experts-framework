@@ -39,12 +39,15 @@ export interface Controller {
 }
 
 export interface ServerModule {
-  start(session: Session, controller: Controller): Promise<void>;
+  start(session: Session, controller: Controller, opts?: { openBrowser?: boolean }): Promise<void>;
   stop(): void;
+  probeExistingServer(port: number): Promise<{ action: 'join' | 'replace' | 'bind-new' }>;
+  getDefaultPort(): number;
 }
 
 interface RunOptions {
   server?: ServerModule | null;
+  ownsServer?: boolean;
   noPr?: boolean;
   noFast?: boolean;
   noWorktree?: boolean;
@@ -157,7 +160,7 @@ export function selectModelTier(
  * Run the orchestrator turn loop.
  * When a server is provided, supports interjection queue, pause/resume, and end-session.
  */
-export async function run(session: Session, { server, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
+export async function run(session: Session, { server, ownsServer, noPr, noFast, noWorktree }: RunOptions = {}): Promise<void> {
   // Initialize child process tracking for SIGINT cleanup
   session._currentChild = null;
 
@@ -285,8 +288,61 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     },
   };
 
-  if (server) {
+  if (server && ownsServer) {
     await server.start(session, controller);
+  }
+
+  // Adoption probe — when we have the server module but don't own the server,
+  // poll to detect if the owning server dies so we can adopt it.
+  // Uses self-scheduling setTimeout (not setInterval) to prevent overlapping
+  // async callbacks when a probe takes longer than the interval.
+  let adoptionProbeTimeout: ReturnType<typeof setTimeout> | null = null;
+  let adopted = false;
+  let adoptionStopped = false;
+  if (server && !ownsServer) {
+    const probePort = server.getDefaultPort();
+    if (probePort > 0) {
+      const scheduleAdoptionProbe = (): void => {
+        if (adoptionStopped || adopted) return;
+        adoptionProbeTimeout = setTimeout(async () => {
+          if (adoptionStopped || adopted) return;
+          try {
+            const probe = await server.probeExistingServer(probePort);
+            if (adoptionStopped) return;
+            if (probe.action === 'bind-new') {
+              // The owning server is gone and the port is free — try to adopt it
+              try {
+                const portBefore = session.port;
+                await server.start(session, controller, { openBrowser: false });
+                if (adoptionStopped) { server.stop(); return; }
+                // Verify we actually got the original port, not a random fallback.
+                // If another session won the race and we fell back to a random port,
+                // browsers are still pointed at the original port — this isn't recovery.
+                if (session.port === probePort) {
+                  adopted = true;
+                  ui.status('server.adopted', { port: probePort });
+                } else {
+                  // We bound a fallback port — stop and restore the original port
+                  // so the session metadata still points at the shared UI port.
+                  server.stop();
+                  session.port = portBefore;
+                  await updateSession(session.dir, { port: portBefore });
+                }
+              } catch {
+                // Adoption failed (e.g. another session won the race) — not fatal
+              }
+            }
+            // 'join' — another session is serving, keep polling
+            // 'replace' — stale server still holds port, keep polling until it releases
+          } catch {
+            // Probe error — retry next interval
+          } finally {
+            scheduleAdoptionProbe();
+          }
+        }, 5000);
+      };
+      scheduleAdoptionProbe();
+    }
   }
 
   // Heartbeat writer — writes heartbeat.json every 10s for liveness detection
@@ -826,6 +882,11 @@ export async function run(session: Session, { server, noPr, noFast, noWorktree }
     clearInterval(heartbeatInterval);
     pollStopped = true;
     if (ipcPollTimeout) clearTimeout(ipcPollTimeout);
+    adoptionStopped = true;
+    if (adoptionProbeTimeout) {
+      clearTimeout(adoptionProbeTimeout);
+      adoptionProbeTimeout = null;
+    }
   }
 
   // --- Helper closures ---

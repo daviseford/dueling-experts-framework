@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSessionList } from "@/hooks/use-explorer";
+import { useConnectivity } from "@/hooks/use-connectivity";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { endSession } from "@/lib/api";
 import { SessionHeader } from "@/components/session-header";
@@ -18,6 +19,7 @@ const MIN_GRID_WIDTH = 768;
 export default function App() {
   const { sessions, selectedSessionId, setSelectedSessionId } =
     useSessionList();
+  const { connected } = useConnectivity();
 
   // Get selected session metadata from the session list (avoids spinning up a full polling hook)
   const selectedSession = useMemo(
@@ -145,6 +147,7 @@ export default function App() {
         viewMode={effectiveViewMode}
         canShowGrid={canShowGrid}
         sessionStatus={sessionStatus}
+        connected={connected}
         onToggleViewMode={handleToggleViewMode}
         onEndSession={handleEndSession}
       />
@@ -174,6 +177,7 @@ export default function App() {
               key={s.id}
               sessionId={s.id}
               sessions={sessions}
+              connected={connected}
               showPanelHeader
               showMaximize
               showDismiss
@@ -192,6 +196,7 @@ export default function App() {
             key={selectedSessionId}
             sessionId={selectedSessionId}
             sessions={sessions}
+            connected={connected}
             className="flex-1"
           />
         </div>

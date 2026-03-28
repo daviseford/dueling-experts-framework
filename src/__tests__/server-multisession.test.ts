@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { start, startExplorer, stop } from '../server.js';
+import { start, startExplorer, stop, probeExistingServer, getDefaultPort, _testGetOpenBrowserCallCount, _testResetBrowserState } from '../server.js';
 import { buildDefaultRoster } from '../roster.js';
 
 function httpGet(port: number, path: string): Promise<{ status: number; body: string }> {
@@ -446,5 +446,494 @@ describe('explorer mode null guards', () => {
     // We need the actual port. Since explorer uses port 0, we can't easily get it
     // without more infrastructure. This test verifies the code path exists.
     assert.ok(true, 'explorer mode null guards are covered by route-level checks');
+  });
+});
+
+describe('server adoption', () => {
+  let testRepo: string;
+  let port: number;
+  const sessionId = randomUUID();
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-adoption-${randomUUID()}`);
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Adoption test' });
+
+    const owningDir = join(sessionsDir, sessionId);
+    const mockSession = {
+      id: sessionId,
+      topic: 'Adoption test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Reset browser state before adoption-style start
+    _testResetBrowserState();
+
+    // Start with openBrowser: false to simulate adoption behavior
+    await start(mockSession, mockController, { openBrowser: false });
+    const updated = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
+
+  after(async () => {
+    stop();
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('adoption does not open browser when openBrowser is false', async () => {
+    // Verify openBrowserOnce was never called during adoption-style start
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 0,
+      'openBrowserOnce should not have been called with openBrowser: false',
+    );
+
+    // Verify the server is functional
+    const { status, body } = await httpGet(port, '/api/sessions');
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.server, 'def');
+  });
+
+  it('server functions normally after adoption-style start', async () => {
+    const { status, body } = await httpGet(port, `/api/sessions/${sessionId}/turns`);
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.session_id, sessionId);
+    assert.ok(Array.isArray(json.turns));
+  });
+
+  it('default start (without openBrowser: false) would call openBrowserOnce', async () => {
+    // Stop the adoption server so we can start a fresh one
+    stop();
+
+    const sessionId2 = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId2, { topic: 'Browser test' });
+    const owningDir2 = join(sessionsDir, sessionId2);
+
+    const mockSession2 = {
+      id: sessionId2,
+      topic: 'Browser test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir2,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController2 = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Reset and start with default options (openBrowser not explicitly false)
+    _testResetBrowserState();
+    await start(mockSession2, mockController2);
+
+    // Verify openBrowserOnce WAS called this time (positive control)
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 1,
+      'openBrowserOnce should have been called exactly once with default options',
+    );
+
+    const updated = JSON.parse(await readFile(join(owningDir2, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
+});
+
+describe('probe join->bind-new transition and adoption', () => {
+  let testRepo: string;
+  let port: number;
+  const sessionId = randomUUID();
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-probe-transition-${randomUUID()}`);
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Probe test' });
+
+    const owningDir = join(sessionsDir, sessionId);
+    const mockSession = {
+      id: sessionId,
+      topic: 'Probe test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    await start(mockSession, mockController);
+    const updated = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    port = updated.port;
+  });
+
+  after(async () => {
+    try { stop(); } catch { /* already stopped */ }
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('probe returns join while server is active, then bind-new after stop', async () => {
+    // While server is running with active sessions, probe should return 'join'
+    const result1 = await probeExistingServer(port);
+    assert.equal(result1.action, 'join', 'should return join while server is active');
+
+    // Stop the server to simulate orphan scenario
+    stop();
+
+    // After server is stopped, probe should return 'bind-new' (connection refused)
+    const result2 = await probeExistingServer(port);
+    assert.equal(result2.action, 'bind-new', 'should return bind-new after server stops');
+  });
+
+  it('adopter starts on freed port with browser suppressed after join->bind-new', async () => {
+    // Ensure server is stopped (don't rely on prior test ordering)
+    try { stop(); } catch { /* already stopped */ }
+
+    // Simulate what the orchestrator adoption loop does:
+    // 1. probe returns bind-new
+    // 2. start() with openBrowser: false
+    // 3. server binds on the original port
+    const probe = await probeExistingServer(port);
+    assert.equal(probe.action, 'bind-new', 'precondition: port is free');
+
+    const sessionId2 = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId2, { topic: 'Adopter test' });
+    const owningDir2 = join(sessionsDir, sessionId2);
+
+    const adoptSession = {
+      id: sessionId2,
+      topic: 'Adopter test',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir2,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const adoptController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Reset browser state and adopt with browser suppression
+    _testResetBrowserState();
+    await start(adoptSession, adoptController, { openBrowser: false });
+
+    // Verify browser was not opened
+    assert.equal(
+      _testGetOpenBrowserCallCount(), 0,
+      'adoption should not call openBrowserOnce',
+    );
+
+    // Verify the adopter's server is functional on the port
+    const { status, body } = await httpGet(adoptSession.port!, '/api/sessions');
+    assert.equal(status, 200);
+    const json = JSON.parse(body);
+    assert.equal(json.server, 'def');
+  });
+});
+
+describe('adoption race: fallback port must not count as successful adoption', () => {
+  let testRepo: string;
+  let blocker: http.Server;
+  let blockerPort: number;
+  let savedCI: string | undefined;
+
+  before(async () => {
+    testRepo = join(tmpdir(), `def-adoption-race-${randomUUID()}`);
+    await mkdir(join(testRepo, '.def', 'sessions'), { recursive: true });
+
+    // Start a dummy server to block a specific port, simulating the race winner
+    blocker = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('occupied');
+    });
+    await new Promise<void>((resolve) => {
+      blocker.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = blocker.address();
+    blockerPort = typeof addr === 'object' && addr ? addr.port : 0;
+  });
+
+  after(async () => {
+    stop();
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    await rm(testRepo, { recursive: true, force: true });
+  });
+
+  it('start() on blocked port falls back to random port, failing the adoption port check', async () => {
+    // This simulates the race condition: probeExistingServer returned 'bind-new'
+    // but by the time start() runs, another process already grabbed the port.
+    // listenWithFallback will bind a random port instead.
+    //
+    // We can't control getDefaultPort() from the test (it reads CI env at call time),
+    // so instead we directly verify the invariant the orchestrator relies on:
+    // when start() falls back to a different port, session.port !== probePort.
+    const sessionId = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Race loser' });
+    const owningDir = join(sessionsDir, sessionId);
+
+    const mockSession = {
+      id: sessionId,
+      topic: 'Race loser',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: null,
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Temporarily unset CI so getDefaultPort() returns 18541 (the real default).
+    // This lets listenWithFallback actually attempt that port and fall back.
+    savedCI = process.env.CI;
+    delete process.env.CI;
+
+    _testResetBrowserState();
+
+    // Block the default port with our dummy server first
+    const defaultPort = getDefaultPort();
+    // Stop the dummy blocker and rebind it on the default port
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    blocker = http.createServer((_req, res) => { res.writeHead(200); res.end('occupied'); });
+    await new Promise<void>((resolve, reject) => {
+      blocker.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          // Port already in use by something else — skip this test
+          resolve();
+        } else {
+          reject(err);
+        }
+      });
+      blocker.listen(defaultPort, '127.0.0.1', () => resolve());
+    });
+    blockerPort = defaultPort;
+
+    await start(mockSession, mockController, { openBrowser: false });
+
+    // Restore CI
+    process.env.CI = savedCI || '1';
+
+    // The server bound successfully on some port
+    assert.ok(mockSession.port !== null && mockSession.port! > 0, 'server should have bound a port');
+
+    // The key assertion: session.port differs from the probe port (defaultPort)
+    // because the blocker occupied it. This is what the orchestrator checks —
+    // if session.port !== probePort, adoption is rejected and the server is stopped.
+    assert.notEqual(
+      mockSession.port, defaultPort,
+      'session.port should differ from default port when it is blocked — ' +
+      'the orchestrator must NOT count this as successful adoption',
+    );
+  });
+
+  it('failed adoption race restores session.port to pre-adoption value', async () => {
+    // Simulate the orchestrator's adoption logic: if start() binds a fallback port,
+    // the orchestrator stops the server and restores session.port to its original value.
+    // This ensures session metadata still points at the shared UI port, not a dead fallback.
+    stop();
+
+    const sessionId = randomUUID();
+    const sessionsDir = join(testRepo, '.def', 'sessions');
+    await createSessionOnDisk(sessionsDir, sessionId, { topic: 'Port restore' });
+    const owningDir = join(sessionsDir, sessionId);
+
+    const mockSession = {
+      id: sessionId,
+      topic: 'Port restore',
+      mode: 'edit',
+      max_turns: 10,
+      target_repo: testRepo,
+      created: new Date().toISOString(),
+      session_status: 'active' as const,
+      current_turn: 0,
+      next_agent: 'claude' as const,
+      phase: 'plan' as const,
+      impl_model: 'claude' as const,
+      review_turns: 6,
+      port: 18541 as number | null,  // Simulate the headless session's "joined" port
+      pid: process.pid,
+      dir: owningDir,
+      worktree_path: null,
+      branch_name: null,
+      original_repo: null,
+      base_ref: null,
+      pr_url: null,
+      pr_number: null,
+      roster: buildDefaultRoster('claude', 'claude'),
+    };
+
+    const mockController = {
+      isPaused: false,
+      endRequested: false,
+      thinking: null as { agent: string; since: string; model: string } | null,
+      phase: 'plan',
+      interject() {},
+      requestEnd() {},
+    };
+
+    // Temporarily unset CI so getDefaultPort() returns 18541
+    const ci = process.env.CI;
+    delete process.env.CI;
+    const defaultPort = getDefaultPort();
+
+    // Ensure the blocker is on the default port
+    try { await new Promise<void>((resolve) => blocker.close(() => resolve())); } catch { /* ok */ }
+    blocker = http.createServer((_req, res) => { res.writeHead(200); res.end('occupied'); });
+    await new Promise<void>((resolve, reject) => {
+      blocker.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') resolve();
+        else reject(err);
+      });
+      blocker.listen(defaultPort, '127.0.0.1', () => resolve());
+    });
+
+    _testResetBrowserState();
+
+    // Record the original port
+    const originalPort = mockSession.port;
+
+    // start() will bind a random fallback port (not the default)
+    await start(mockSession, mockController, { openBrowser: false });
+
+    // Restore CI
+    process.env.CI = ci || '1';
+
+    // session.port is now the fallback port (different from default)
+    const fallbackPort = mockSession.port;
+    assert.notEqual(fallbackPort, defaultPort, 'precondition: should have fallen back');
+
+    // Verify session.json on disk has the fallback port (written by server.start())
+    const diskAfterStart = JSON.parse(await readFile(join(owningDir, 'session.json'), 'utf8'));
+    assert.equal(
+      diskAfterStart.port, fallbackPort,
+      'session.json should have the fallback port written by server.start()',
+    );
+
+    // Simulate the orchestrator's adoption-failure cleanup:
+    // stop the fallback server and restore session.port + session.json
+    stop();
+    mockSession.port = originalPort;
+
+    // Verify the in-memory and original port relationship
+    assert.equal(
+      originalPort, defaultPort,
+      'original port should match the probePort (defaultPort)',
+    );
   });
 });

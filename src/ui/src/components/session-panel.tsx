@@ -26,6 +26,7 @@ import type { PendingInterjection, SessionSummary } from "@/lib/types"
 interface SessionPanelProps {
   sessionId: string
   sessions: SessionSummary[]
+  connected?: boolean
   showMaximize?: boolean
   showDismiss?: boolean
   showPanelHeader?: boolean
@@ -37,6 +38,7 @@ interface SessionPanelProps {
 export function SessionPanel({
   sessionId,
   sessions,
+  connected = true,
   showMaximize,
   showDismiss,
   showPanelHeader,
@@ -164,7 +166,7 @@ export function SessionPanel({
           {!isReadOnly && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50 hover:text-destructive">
+                <Button variant="ghost" size="sm" disabled={!connected} className="h-5 w-5 p-0 text-muted-foreground/50 hover:text-destructive">
                   <span className="sr-only">End session</span>
                   <X className="h-3 w-3" />
                 </Button>
@@ -221,7 +223,7 @@ export function SessionPanel({
         onTurnOpenChange={handleTurnOpenChange}
         pendingInterjections={visiblePending}
       />
-      <InterjectionInput sessionId={sessionId} disabled={isCompleted} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
+      <InterjectionInput sessionId={sessionId} disabled={isCompleted || !connected} isReadOnly={isReadOnly} onSent={handleInterjectionSent} />
       <StatusBar
         turnCount={turnCount}
         sessionTimer={sessionTimer}

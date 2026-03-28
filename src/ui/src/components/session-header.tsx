@@ -23,11 +23,12 @@ interface SessionHeaderProps {
   viewMode?: ViewMode
   canShowGrid?: boolean
   sessionStatus?: SessionStatus
+  connected?: boolean
   onToggleViewMode?: () => void
   onEndSession?: () => void
 }
 
-export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGrid, sessionStatus, onToggleViewMode, onEndSession }: SessionHeaderProps) {
+export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGrid, sessionStatus, connected = true, onToggleViewMode, onEndSession }: SessionHeaderProps) {
   const isGrid = viewMode === "grid"
   const sessionCount = sessions.length
   const isReadOnly = sessionStatus !== "active"
@@ -76,7 +77,7 @@ export function SessionHeader({ topic, sessionId, sessions, viewMode, canShowGri
                 <Button
                   variant="destructive"
                   size="sm"
-                  disabled={isCompleted}
+                  disabled={isCompleted || !connected}
                   className="h-7 px-3 text-xs"
                 >
                   End Session
