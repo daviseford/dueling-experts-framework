@@ -37,12 +37,11 @@ This creates a `.def/` session directory in the target repo, starts the agent lo
 
 ```
 --topic <string>              Conversation topic (required, or pass as positional args)
---mode <string>               edit (default) or planning (debate-only, no implementation)
+--mode <string>               `edit` (default) or `planning` (debate-only, no implementation)
 --max-turns <number>          Maximum turns, 1-100 (default: 20)
 --first <agent>               Which agent goes first: claude or codex (default: claude)
---impl-model <agent>          Which agent implements: claude or codex (default: claude)
+--impl <agent>                Which agent implements: claude or codex (default: claude)
 --review-turns <number>       Max review/fix cycles, 1-50 (default: 6)
---budget <number>              Budget cap in USD (no default -- uncapped)
 --no-pr                       Skip automatic PR creation (keeps changes local)
 --no-fast                     Disable fast-mode agent tiering
 --no-worktree                 Skip worktree creation (run in-place)
@@ -52,17 +51,20 @@ This creates a `.def/` session directory in the target repo, starts the agent lo
 ### Examples
 
 ```sh
-# Quick start — positional args become the topic
-def add dark mode to the dashboard
+# Quick start
+def "add dark mode to the dashboard"
 
 # Planning-only session, Codex goes first
-def --topic "Design a caching layer for the API" --mode planning --first codex
+def "Design a caching layer for the API" --mode planning --first codex
 
 # Limit to 6 turns, use Codex for implementation
-def --topic "Refactor auth module" --max-turns 6 --impl-model codex
+def --topic "Refactor auth module" --max-turns 6 --impl codex
 
 # Skip automatic PR creation
 def --topic "Fix error handling in src/api/" --no-pr
+
+# Avoid using worktrees
+def --topic "Implement docs/feature-01.md" --no-worktree
 ```
 
 ## What Happens When You Run DEF
@@ -75,7 +77,7 @@ In the default `edit` mode, DEF will:
 4. **Commit changes** to the worktree branch after implementation.
 5. **Push the branch and open a draft PR** on GitHub via `gh`.
 
-Use `--budget <usd>` to cap spending, `--no-pr` to skip push/PR creation, or `--mode planning` for debate-only sessions with no repo changes.
+Use `--no-pr` to skip push/PR creation, or `--mode planning` for debate-only sessions with no repo changes.
 
 ## How It Works
 
@@ -87,7 +89,7 @@ Agents alternate turns debating the topic. When both agents signal `status: deci
 
 ### 2. Implement
 
-In `edit` mode, a git worktree is created on a new branch (`def/<id>-<topic-slug>`). The implementing agent (set by `--impl-model`) gets full tool access and makes changes directly. The orchestrator captures a git diff after each implementation turn.
+In `edit` mode, a git worktree is created on a new branch (`def/<id>-<topic-slug>`). The implementing agent (set by `--impl`) gets full tool access and makes changes directly. The orchestrator captures a git diff after each implementation turn.
 
 ### 3. Review
 
@@ -111,46 +113,6 @@ Open it in a browser to:
 - Type a message to interject at the next turn boundary
 - Respond to agent escalations (`status: needs_human`)
 - End the session cleanly via the End Session button
-
-### Session Directory
-
-```
-my-app/
-└── .def/
-    └── sessions/
-        └── <session-id>/
-            ├── session.json       # Session config + runtime state
-            ├── turns/
-            │   ├── turn-0001-claude.md
-            │   ├── turn-0002-codex.md
-            │   └── ...
-            ├── artifacts/
-            │   ├── decisions.md   # Compiled decisions log
-            │   ├── diff-NNNN.patch
-            │   └── pr-body.md     # Generated PR description
-            ├── runtime/           # Ephemeral (prompt/output scratch files)
-            └── logs/              # Per-invocation debug logs
-```
-
-## Turn Schema
-
-Each turn file has YAML frontmatter:
-
-```yaml
----
-id: turn-0001-claude
-turn: 1
-from: claude
-timestamp: 2026-03-23T14:30:00.000Z
-status: complete
-phase: plan
-decisions:
-  - Use polling over fs.watch
----
-The markdown response body goes here.
-```
-
-**Status values:** `complete`, `needs_human`, `done`, `decided`, `error` (orchestrator-only)
 
 ## Development
 

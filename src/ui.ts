@@ -103,7 +103,7 @@ interface StatusPayloads {
   'pr.parse.failed':    { output: string };
   'pr.lookup.failed':   { owner: string; repo: string; number: number };
   'shutdown.recovery':  { branch: string };
-  'cost.estimate':      { maxTurns: number; budget?: number };
+  'cost.estimate':      { maxTurns: number };
 }
 
 type StatusEvent = keyof StatusPayloads;
@@ -411,7 +411,7 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
 
     // Cost estimate
     case 'cost.estimate': {
-      const { maxTurns, budget } = d as StatusPayloads['cost.estimate'];
+      const { maxTurns } = d as StatusPayloads['cost.estimate'];
       const lines: string[] = [];
       // Rough per-turn heuristic: ~$0.50-2.00 for full-tier models.
       // Actual cost depends on prompt size, model mix, and review/fix loops
@@ -420,11 +420,6 @@ function formatEvent(event: StatusEvent, d: Record<string, unknown>): string {
       const high = (maxTurns * 2.0).toFixed(2);
       lines.push(`  ${c.yellow(SYM.warn)} Rough cost guide: ~$${low}-${high} for up to ${maxTurns} turns.`);
       lines.push(`  ${c.dim(SYM.info)} Actual cost varies with prompt size, model, and review cycles.`);
-      if (budget) {
-        lines.push(`  ${c.dim(SYM.info)} Budget cap: $${budget.toFixed(2)}`);
-      } else {
-        lines.push(`  ${c.dim(SYM.info)} No budget cap set. Use --budget <usd> to limit spending.`);
-      }
       return lines.join('\n');
     }
 
