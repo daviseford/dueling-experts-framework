@@ -53,10 +53,10 @@ Session directories live at `.def/sessions/<uuid>/` with:
 Sessions are single-use — there is no resume or recovery mechanism. Each `def` invocation creates a new session. SIGINT marks the session as `completed` and cleans up.
 
 ### Plan Phase
-Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The plan turn budget keeps ticking during contested consensus (no reset).
+Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The plan turn count keeps ticking during contested consensus (no reset).
 
 ### Implement Phase
-After consensus, the agent specified by `--impl-model` (default: `claude`) receives the plan decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
+After consensus, the agent specified by `--impl` (default: `claude`) receives the plan decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
 
 ### Review Phase
 The non-implementing agent reviews the implementation. It can approve (`status: done`) or request fixes (`status: complete` with feedback). Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
@@ -137,7 +137,7 @@ The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadc
 ## Commands
 ```sh
 npm start -- --topic "Your topic"                    # Run the CLI
-npm start -- --topic "..." --impl-model codex        # Use Codex for implementation
+npm start -- --topic "..." --impl codex        # Use Codex for implementation
 npm start -- --topic "..." --review-turns 10         # Set review loop limit
 npm start -- --topic "..." --no-pr                   # Skip draft PR creation
 npm test                                              # Run tests (tsx)

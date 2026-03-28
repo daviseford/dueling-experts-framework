@@ -218,7 +218,7 @@ describe('recoverUsageState', () => {
     };
     await writeFile(join(artifactsDir, 'usage.json'), JSON.stringify(usageData), 'utf8');
 
-    const session = mockSession(tmpDir, { current_turn: 2, budget: 0.10 });
+    const session = mockSession(tmpDir, { current_turn: 2 });
     const entries = await recoverUsageState(session);
 
     // Simulate what the orchestrator does on recovery
@@ -227,8 +227,6 @@ describe('recoverUsageState', () => {
       cumulativeCostUsd += entry.cost_usd ?? 0;
     }
 
-    // Budget is $0.10, cumulative is $0.13 -- budget would be exceeded
-    assert.ok(cumulativeCostUsd >= session.budget!);
     assert.equal(cumulativeCostUsd, 0.13);
   });
 });
@@ -280,15 +278,13 @@ describe('retry usage accumulation (orchestrator pattern)', () => {
     assert.equal(artifact.totals.cost_usd, cost);
   });
 
-  it('budget enforcement sees accumulated cost, not just initial invoke cost', () => {
-    // If initial invoke cost $0.05 and retry cost $0.05, budget of $0.08 should be exceeded
+  it('accumulated cost reflects all retries, not just initial invoke', () => {
     const initial: TokenUsage = { input_tokens: 2000, output_tokens: 400 };
     const retry: TokenUsage = { input_tokens: 2000, output_tokens: 400 };
     const merged = mergeUsage(initial, retry)!;
     const totalCost = estimateCost('opus', merged)!;
     const initialCost = estimateCost('opus', initial)!;
 
-    // The initial cost alone would be under budget, but accumulated should be over
     assert.ok(totalCost > initialCost);
     assert.equal(totalCost, initialCost * 2);
   });
