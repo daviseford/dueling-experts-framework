@@ -83,15 +83,15 @@ export interface DecisionEntry {
   decision: string;
 }
 
-/** Agreement prefixes stripped during normalization (order matters: longest first). */
+/** Agreement prefixes stripped during normalization (longest first to avoid partial matches). */
 const AGREEMENT_PREFIXES = [
+  'confirmed:',
   'agreed --',
   'agreed:',
   'agreed,',
-  'confirmed:',
-  'yes,',
   'yes --',
   'yes:',
+  'yes,',
 ];
 
 /**

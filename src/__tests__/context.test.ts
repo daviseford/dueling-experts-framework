@@ -101,7 +101,7 @@ describe('assemble', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'implement' as any,
+      phase: 'implement',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
@@ -113,7 +113,7 @@ describe('assemble', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'review' as any,
+      phase: 'review',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
@@ -161,7 +161,7 @@ describe('artifact authority guardrails', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'implement' as any,
+      phase: 'implement',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('ephemeral session artifacts'));
@@ -175,7 +175,7 @@ describe('artifact authority guardrails', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'review' as any,
+      phase: 'review',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('ephemeral session artifacts'));
