@@ -77,10 +77,61 @@ export interface CanonicalTurnData {
   cost_usd?: number | null;
 }
 
-interface DecisionEntry {
+export interface DecisionEntry {
   turn: number;
   from: string;
   decision: string;
+}
+
+/** Agreement prefixes stripped during normalization (longest first to avoid partial matches). */
+const AGREEMENT_PREFIXES = [
+  'confirmed:',
+  'agreed --',
+  'agreed:',
+  'agreed,',
+  'yes --',
+  'yes:',
+  'yes,',
+];
+
+/**
+ * Remove near-duplicate decisions (e.g. "Use React" and "Agreed: use React").
+ * Normalisation is case-insensitive and strips trailing punctuation plus common
+ * agreement prefixes.  The *first* (earliest-turn) entry wins; original text and
+ * metadata are preserved in the output.
+ */
+export function deduplicateDecisions(entries: DecisionEntry[]): DecisionEntry[] {
+  const seen = new Map<string, DecisionEntry>();
+  for (const entry of entries) {
+    let normalized = entry.decision.trim().toLowerCase();
+    // Strip trailing punctuation
+    normalized = normalized.replace(/[.!;]+$/, '');
+    // Strip agreement prefixes
+    for (const prefix of AGREEMENT_PREFIXES) {
+      if (normalized.startsWith(prefix)) {
+        normalized = normalized.slice(prefix.length).trim();
+        break;
+      }
+    }
+    normalized = normalized.trim();
+    if (normalized && !seen.has(normalized)) {
+      seen.set(normalized, entry);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+// ── PR title construction ───────────────────────────────────────────
+
+/**
+ * Build the PR title, prefixing with [UNAPPROVED] when the review phase
+ * never approved the implementation.
+ */
+export function buildPrTitle(topic: string, reviewApproved: boolean): string {
+  if (!reviewApproved) {
+    return `[UNAPPROVED] def: ${topic}`;
+  }
+  return `def: ${topic}`;
 }
 
 // ── Model tier selection ────────────────────────────────────────────
@@ -139,6 +190,10 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
   // Review loop counter -- increments only on review consensus fix transitions
   let reviewLoopCount = 0;
 
+  // Review enforcement -- tracks whether the review phase approved the implementation.
+  // Prevents unreviewed PRs from being created without a warning prefix.
+  let reviewApproved = false;
+
   // Track which participants have ever emitted decided/done in the plan phase.
   // Uses a Set instead of per-agent booleans -- supports N participants.
   const decidedParticipants = new Set<string>();
@@ -181,6 +236,7 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
       // Skip the main loop and fall through to the shared finalization path
       // (generateDecisions, PR creation, worktree cleanup, session update).
       ui.status('recovery.approve', {});
+      reviewApproved = true;
       endRequested = true;
     } else if (reviewLoopCount >= session.review_turns) {
       // Review loop exhausted — skip to finalization like approve.
@@ -691,6 +747,7 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
         // Review agent emitted a verdict
         if (canonicalData.verdict === 'approve') {
           ui.status('review.approved', { turn: turnCount });
+          reviewApproved = true;
           break;
         }
 
@@ -770,11 +827,12 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
       // Use the resolved ref (may differ from session.base_ref if original was deleted)
       const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
+        const prTitle = buildPrTitle(session.topic, reviewApproved);
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,
           baseRef: effectiveBase,
-          title: `def: ${session.topic}`,
+          title: prTitle,
           sessionDir: session.dir,
           topic: session.topic,
           sessionId: session.id,
@@ -1240,8 +1298,10 @@ async function generateDecisions(session: Session): Promise<void> {
     return;
   }
 
+  const dedupedDecisions = deduplicateDecisions(decisions);
+
   const lines: string[] = ['# Decisions Log', ''];
-  for (const { turn, from, decision } of decisions) {
+  for (const { turn, from, decision } of dedupedDecisions) {
     lines.push(`${turn}. **[${from}]** ${decision}`);
   }
   lines.push('');
@@ -1250,6 +1310,6 @@ async function generateDecisions(session: Session): Promise<void> {
   await mkdir(artifactsDir, { recursive: true });
   const decisionsPath: string = join(artifactsDir, 'decisions.md');
   await atomicWrite(decisionsPath, lines.join('\n'));
-  ui.status('artifact.decisions', { path: decisionsPath, count: decisions.length });
+  ui.status('artifact.decisions', { path: decisionsPath, count: dedupedDecisions.length });
 }
 

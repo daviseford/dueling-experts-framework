@@ -101,7 +101,7 @@ describe('assemble', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'implement' as any,
+      phase: 'implement',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
@@ -113,7 +113,7 @@ describe('assemble', () => {
       mode: 'planning',
       next_agent: 'claude',
       dir: sessionDir,
-      phase: 'review' as any,
+      phase: 'review',
     });
     const prompt = await assemble(session);
     assert.ok(prompt.includes('Use ASCII-safe punctuation only'));
@@ -127,5 +127,59 @@ describe('assemble', () => {
   it('rejects unknown agent', async () => {
     const session = makeSession({ topic: 'T', mode: 'planning', next_agent: 'gpt4' as any, dir: sessionDir });
     await assert.rejects(() => assemble(session), /Unknown agent/);
+  });
+});
+
+describe('artifact authority guardrails', () => {
+  let sessionDir: string;
+
+  before(async () => {
+    sessionDir = join(tmpdir(), `def-test-artifact-${randomUUID()}`);
+    await mkdir(join(sessionDir, 'turns'), { recursive: true });
+  });
+
+  after(async () => {
+    await rm(sessionDir, { recursive: true, force: true });
+  });
+
+  it('planPrompt includes artifact authority warning', async () => {
+    const session = makeSession({
+      topic: 'Artifact test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('ephemeral session artifacts'));
+    assert.ok(prompt.includes('.def/'));
+    assert.ok(prompt.includes('repo-relative paths'));
+  });
+
+  it('implementPrompt includes artifact authority warning', async () => {
+    const session = makeSession({
+      topic: 'Artifact test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      phase: 'implement',
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('ephemeral session artifacts'));
+    assert.ok(prompt.includes('.def/'));
+    assert.ok(prompt.includes('repo-relative paths'));
+  });
+
+  it('reviewPrompt includes artifact authority warning', async () => {
+    const session = makeSession({
+      topic: 'Artifact test',
+      mode: 'planning',
+      next_agent: 'claude',
+      dir: sessionDir,
+      phase: 'review',
+    });
+    const prompt = await assemble(session);
+    assert.ok(prompt.includes('ephemeral session artifacts'));
+    assert.ok(prompt.includes('.def/'));
+    assert.ok(prompt.includes('repo-relative paths'));
   });
 });

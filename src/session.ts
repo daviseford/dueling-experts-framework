@@ -327,6 +327,18 @@ export async function listSessions(targetRepo: string): Promise<SessionSummaryIn
 
       const { alive, status: resolvedStatus, heartbeatAt } = await isSessionAlive(sessionDir);
 
+      // Reconcile stale sessions: if on-disk status is active/paused but the process is
+      // confirmed dead, persist 'interrupted' to disk.  Only reconcile when the PID is
+      // genuinely dead — a live PID with a stale heartbeat (e.g. long API call) must NOT
+      // be overwritten, as the orchestrator is still running and writing to session.json.
+      const onDiskStatus: string = data.session_status ?? 'unknown';
+      const pidConfirmedDead = data.pid ? !isProcessAlive(data.pid) : true;
+      if (!alive && pidConfirmedDead && (onDiskStatus === 'active' || onDiskStatus === 'paused') && resolvedStatus === 'interrupted') {
+        try {
+          await update(sessionDir, { session_status: 'interrupted' });
+        } catch { /* best effort — skip if write fails */ }
+      }
+
       summaries.push({
         id: data.id ?? dir,
         topic: data.topic ?? '(no topic)',

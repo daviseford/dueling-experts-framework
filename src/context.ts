@@ -24,6 +24,9 @@ interface TurnContent {
 /** Shared rule appended to all prompt templates to prevent encoding issues. */
 const ASCII_RULE = 'Use ASCII-safe punctuation only. Use - or -- instead of em-dashes or en-dashes. Do not use Unicode special characters.';
 
+/** Shared rule warning agents that .def/ and gitignored paths are ephemeral, not authoritative. */
+const ARTIFACT_AUTHORITY_RULE = 'Paths under `.def/` (sessions, worktrees, artifacts) and gitignored `docs/` directories are ephemeral session artifacts -- not authoritative project source. The canonical codebase is the tracked files in the working directory. When referencing code, use repo-relative paths, not absolute `.def/worktrees/...` paths.';
+
 // Budget: ~100K tokens x 4 chars/token = 400K chars.
 // Must stay within Haiku's 200K-token context window when fast-tier is active.
 // Code-heavy content may compress to ~3 chars/token (~133K tokens). Reserve headroom
@@ -80,7 +83,8 @@ You are collaborating on: ${topic}
 - If you believe you and the other agent have reached consensus on all key decisions, set status: decided. The other agent will then confirm or contest.
 - Always use status: complete unless the conversation is truly finished after multiple turns.
 - Do NOT include anything before the opening --- of the frontmatter.
-- ${ASCII_RULE}`;
+- ${ASCII_RULE}
+- ${ARTIFACT_AUTHORITY_RULE}`;
 }
 
 function implementPrompt(self: Participant, topic: string, decisions: string[]): string {
@@ -104,7 +108,8 @@ Make the changes directly. Do not describe what you would do -- actually do it.
 - Set status: complete when your implementation is done.
 - Summarize the changes you made (files created/modified, commands run).
 - Do NOT include anything before the opening --- of the frontmatter.
-- ${ASCII_RULE}`;
+- ${ASCII_RULE}
+- ${ARTIFACT_AUTHORITY_RULE}`;
 }
 
 function reviewPrompt(self: Participant, other: Participant, topic: string, decisions: string[], diff: string | null): string {
@@ -148,7 +153,8 @@ Review the implementation diff against the debate decisions. Check:
 - The verdict field is REQUIRED when status is decided. Must be either "approve" or "fix".
 - Be specific about what's wrong and how to fix it.
 - Do NOT include anything before the opening --- of the frontmatter.
-- ${ASCII_RULE}`;
+- ${ASCII_RULE}
+- ${ARTIFACT_AUTHORITY_RULE}`;
 }
 
 // ── Main assembly ───────────────────────────────────────────────────
