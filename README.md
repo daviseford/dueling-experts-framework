@@ -37,14 +37,16 @@ This creates a `.def/` session directory in the target repo, starts the agent lo
 
 ```
 --topic <string>              Conversation topic (required, or pass as positional args)
---mode <string>               `edit` (default) or `planning` (debate-only, no implementation)
+--mode <string>               edit (default) or planning (debate-only, no implementation)
 --max-turns <number>          Maximum turns, 1-100 (default: 20)
---first <agent>               Which agent goes first: claude or codex (default: claude)
---impl <agent>                Which agent implements: claude or codex (default: claude)
+--first <agent>               Which agent goes first (default: claude)
+--impl <agent>                Which agent implements (default: claude)
+--agents <a,b>                Comma-separated agent list (e.g., claude,codex or claude,claude)
 --review-turns <number>       Max review/fix cycles, 1-50 (default: 6)
 --no-pr                       Skip automatic PR creation (keeps changes local)
 --no-fast                     Disable fast-mode agent tiering
 --no-worktree                 Skip worktree creation (run in-place)
+--help, -h                    Print usage and exit
 --version, -v                 Print version and exit
 ```
 
@@ -59,6 +61,9 @@ def "Design a caching layer for the API" --mode planning --first codex
 
 # Limit to 6 turns, use Codex for implementation
 def --topic "Refactor auth module" --max-turns 6 --impl codex
+
+# Self-debate (Claude vs Claude)
+def --topic "Design a caching layer" --agents claude,claude
 
 # Skip automatic PR creation
 def --topic "Fix error handling in src/api/" --no-pr
@@ -97,7 +102,7 @@ The non-implementing agent reviews the changes. It can approve (`verdict: approv
 
 ### Automatic PR Creation
 
-When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
+When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **draft PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
 
 ### Watcher UI
 

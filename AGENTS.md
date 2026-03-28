@@ -25,6 +25,7 @@ src/ui/              → React frontend (Vite, TypeScript, Tailwind v4, shadcn/u
 ```
 
 Session directories live at `.def/sessions/<uuid>/` with:
+
 - `turns/` — canonical turn files (turn-NNNN-agent.md)
 - `artifacts/` — generated outputs (decisions.md, diff-NNNN.patch, pr-body.md)
 - `runtime/` — ephemeral prompt.md and output.md
@@ -34,6 +35,7 @@ Session directories live at `.def/sessions/<uuid>/` with:
 ## Hard Rules
 
 ### Do Not
+
 - **Do not hand-author canonical turn metadata.** The orchestrator overwrites `id`, `turn`, `from`, and `timestamp` regardless of what agents emit.
 - **Do not emit `status: error`.** Only the orchestrator writes error turns. Agents use `complete`, `needs_human`, `done`, or `decided`.
 - **Do not assume a clean git tree.** The worktree may have unrelated staged/unstaged changes. Never revert, discard, or commit changes you didn't make.
@@ -41,6 +43,7 @@ Session directories live at `.def/sessions/<uuid>/` with:
 - **Do not bypass frontmatter security.** `gray-matter`'s JS/CoffeeScript engines are disabled. Frontmatter is written manually via `yaml.dump()`, not `matter.stringify()`, to prevent injection via embedded `---` blocks.
 
 ### Do
+
 - **Use `atomicWrite()` from `src/util.ts` for session.json, turn files, and artifacts.** These are the crash-safety boundary. Other files (prompt.md, .gitignore, debug logs) use plain `writeFile`.
 - **Use conventional commits:** `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
 - **Add tests when adding backend logic.** Tests use the Node.js built-in test runner via tsx. Test files must be listed explicitly in `package.json` (no shell glob) for Windows compatibility.
@@ -53,34 +56,41 @@ Session directories live at `.def/sessions/<uuid>/` with:
 Sessions are single-use — there is no resume or recovery mechanism. Each `def` invocation creates a new session. SIGINT marks the session as `completed` and cleans up.
 
 ### Plan Phase
+
 Agents alternate turns debating a topic. When an agent believes consensus is reached, it emits `status: decided`. The other agent then either confirms (also emits `decided`) or contests (emits `complete`, returning to debate). Consensus requires both agents to agree. The plan turn count keeps ticking during contested consensus (no reset).
 
 ### Implement Phase
+
 After consensus, the agent specified by `--impl` (default: `claude`) receives the plan decisions and runs with full tool access in an isolated git worktree. The agent makes changes directly (reads, writes, edits files, runs commands). After the agent finishes, the orchestrator captures a `git diff` from the worktree, commits changes to the branch, and stores the diff as `artifacts/diff-NNNN.patch` for review.
 
 ### Review Phase
-The non-implementing agent reviews the implementation. It can approve (`status: done`) or request fixes (`status: complete` with feedback). Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
+
+The non-implementing agent reviews the implementation. It emits `status: decided` with a `verdict` field: `approve` to accept the changes, or `fix` to request corrections. Fix requests cycle back to the implement phase. This loops until the reviewer approves or the `--review-turns` limit (default: 6) is reached.
 
 ### Automatic PR Creation
+
 After the session completes (in `edit` mode), the orchestrator checks if the branch has commits beyond the base ref. If so, it pushes the branch and creates a draft PR via `gh pr create --draft`. The PR body includes the topic, compiled decisions, commit log, and diffstat. Use `--no-pr` to skip this step.
 
 ## Status Semantics
 
 ### Turn Schema
+
 ```yaml
 ---
-id: turn-0001-claude        # Orchestrator-assigned
-turn: 1                      # Orchestrator-assigned
-from: claude                 # claude | codex | human | system
-timestamp: 2026-03-23T...   # Orchestrator-assigned
-status: complete             # complete | needs_human | done | decided
-phase: plan                  # plan | implement | review
-decisions:                   # Optional, array of strings
+id: turn-0001-claude # Orchestrator-assigned
+turn: 1 # Orchestrator-assigned
+from: claude # Participant ID (claude, codex, claude-0, claude-1, human, system)
+timestamp: 2026-03-23T... # Orchestrator-assigned
+status: complete # complete | needs_human | done | decided
+phase: plan # plan | implement | review
+verdict: approve # Review phase only: approve | fix
+decisions: # Optional, array of strings
   - "Key decision made"
 ---
 ```
 
 ### Status Rules
+
 - **`complete`** — default. Turn is done, conversation continues.
 - **`decided`** — signals the agent believes consensus is reached. Downgraded to `complete` if `turnCount < 2`. Both agents must emit `decided` to trigger the implement phase transition.
 - **`done`** — signals end of conversation. Downgraded to `complete` if `turnCount < 2`. In review phase, means the reviewer approves the implementation.
@@ -88,6 +98,7 @@ decisions:                   # Optional, array of strings
 - **`error`** — orchestrator-only. Never emitted by agents.
 
 ### Retry & Error Handling
+
 - **Agent invocation** gets one automatic retry on failure (timeout, non-zero exit, empty output). Retry is skipped if an end-session request is pending.
 - **Frontmatter validation** gets one retry (re-invokes the agent) on parse/validation failure.
 - After both retries fail, an `error` turn is written and the session pauses (with UI) or exits (without UI).
@@ -95,6 +106,7 @@ decisions:                   # Optional, array of strings
 ## Worktree Isolation
 
 Each edit-mode session's implement phase runs in an isolated git worktree:
+
 - Worktree created at plan→implement transition: `.def/worktrees/<sessionId>`
 - Branch: `def/<short-id>-<slugified-topic>`
 - `session.target_repo` is swapped to the worktree path during implement/review
@@ -103,6 +115,7 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Session fields: `worktree_path`, `branch_name`, `original_repo`, `base_ref` (all nullable)
 
 ## Context Assembly
+
 - `context.ts` builds prompts with a **400K character budget** (~100K tokens).
 - Newest turns are prioritized; oldest are dropped first.
 - Only `decisions` arrays from truncated turns are preserved in a summary notice — no other content survives truncation.
@@ -110,6 +123,7 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 - Two modes are supported: `edit` (default, includes implement/review phases) and `planning` (plan-only, no implementation).
 
 ## Agent Invocation
+
 - **Claude plan/review:** `claude -p "instruction" --allowedTools Read Glob Grep "Bash(gh:*)" "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)" "Bash(ls *)" --dangerously-skip-permissions`, prompt piped as stdin context. Read-only tool access — agents can observe files, search code, browse git history, and query GitHub, but cannot modify anything.
 - **Claude implement:** `claude -p "instruction" --allowedTools "*" --dangerously-skip-permissions`, prompt piped as stdin context, full tool access.
 - **Codex plan/review:** `codex exec --sandbox read-only --ephemeral --skip-git-repo-check -o <path>`, prompt via stdin, output read from file. Read-only sandbox — no file modifications.
@@ -124,22 +138,35 @@ Each edit-mode session's implement phase runs in an isolated git worktree:
 The watcher UI is a React SPA. Key dependencies beyond React: `radix-ui`, `shadcn/ui`, `lucide-react`, `sonner`, `next-themes`, `clsx`, `class-variance-authority`, `tailwind-merge`.
 
 ### API Endpoints (localhost-only)
-- `GET /api/turns` — returns all turns, session status, phase, and thinking state
+
+- `GET /api/sessions` — list all sessions with liveness info
+- `GET /api/sessions/:id/turns` — returns turns for a specific session
+- `GET /api/turns` — returns turns, session status, phase, and thinking state (owning session)
+- `GET /api/events` — trace events (JSONL)
+- `GET /api/attempts` — list invocation attempts with prompt/output artifacts
 - `POST /api/interject` — inject a human message (`{ content: string }`, 10K char limit, JSON Content-Type required)
 - `POST /api/end-session` — request graceful session end (kills running agent, stops loop)
 
 ### Server Security
+
 - Binds to `127.0.0.1` only
 - Host and Origin header validation (DNS rebinding / CORS)
 - Directory traversal protection on static files
 - JSON Content-Type required on POST (CSRF defense)
 
 ## Commands
+
 ```sh
 npm start -- --topic "Your topic"                    # Run the CLI
-npm start -- --topic "..." --impl codex        # Use Codex for implementation
+npm start -- --topic "..." --impl codex              # Use Codex for implementation
+npm start -- --topic "..." --agents claude,claude     # Self-debate
 npm start -- --topic "..." --review-turns 10         # Set review loop limit
 npm start -- --topic "..." --no-pr                   # Skip draft PR creation
+npm start -- --topic "..." --no-worktree             # Run in-place (no worktree)
+npm start -- history                                  # List past sessions
+npm start -- history --json                           # List sessions as JSON
+npm start -- show <session-id>                        # Show session details
+npm start -- explorer                                 # Standalone multi-session browser UI
 npm test                                              # Run tests (tsx)
 npm run typecheck                                     # Type-check (tsc --noEmit)
 npm run dev:ui                                        # Dev UI (hot reload)
