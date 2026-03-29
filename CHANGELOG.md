@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.13...def-v0.0.14) (2026-03-29)
+
+
+### Features
+
+* cross-repo session discovery in explorer + 15min plan timeout ([#101](https://github.com/daviseford/dueling-experts-framework/issues/101)) ([bb399dd](https://github.com/daviseford/dueling-experts-framework/commit/bb399dd1c4c57224d88ccba830f852b2ee0fea80))
+
 ## [0.0.13](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.12...def-v0.0.13) (2026-03-29)
 
 
