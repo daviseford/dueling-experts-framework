@@ -177,10 +177,6 @@ ui.intro({
   noPr: opts.noPr,
 });
 
-ui.status('cost.estimate', {
-  maxTurns: session.max_turns,
-});
-
 installShutdownHandler(session.dir, targetRepo, session);
 
 // Probe for an existing shared server before starting our own
