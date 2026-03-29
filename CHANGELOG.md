@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.13](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.12...def-v0.0.13) (2026-03-29)
+
+
+### Bug Fixes
+
+* remove cost estimate display from session startup ([#99](https://github.com/daviseford/dueling-experts-framework/issues/99)) ([798a868](https://github.com/daviseford/dueling-experts-framework/commit/798a868984c462816a8cbc385de0888844ac7a28))
+
 ## [0.0.12](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.11...def-v0.0.12) (2026-03-28)
 
 
