@@ -56,8 +56,7 @@ export interface InvokeResult {
   usage?: TokenUsage;
 }
 
-const TIMEOUT_MS = 300_000; // 5 minutes for plan/review
-const IMPLEMENT_TIMEOUT_MS = 900_000; // 15 minutes for implement -- agents produce full file contents
+const TIMEOUT_MS = 900_000; // 15 minutes per agent invocation
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB -- prevent OOM from runaway agent output
 
 // ── Built-in providers ──────────────────────────────────────────────
@@ -262,7 +261,7 @@ export async function invoke(agentName: string, session: Session, tier?: ModelTi
       setTimeout(() => {
         try { killChildProcess(child, 'SIGKILL'); } catch { /* already dead */ }
       }, 5000);
-    }, session.phase === 'implement' ? IMPLEMENT_TIMEOUT_MS : TIMEOUT_MS);
+    }, TIMEOUT_MS);
 
     function settle(result: InvokeResult): void {
       if (settled) return;

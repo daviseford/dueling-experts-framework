@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { access } from 'node:fs/promises';
-import * as ui from './ui.js';
+import { listKnownRepos } from './registry.js';
 
 interface ExplorerArgs {
   idleTimeout: number;
@@ -26,18 +26,26 @@ function parseExplorerArgs(argv: string[]): ExplorerArgs {
 /**
  * `def explorer` — standalone multi-session browser UI.
  * Starts the watcher server without creating a session.
+ * Works from any directory — aggregates sessions from all known repos.
  */
 export async function run(argv: string[]): Promise<void> {
   const args = parseExplorerArgs(argv);
-  const targetRepo = resolve(process.cwd());
 
-  // Verify .def/sessions/ exists
+  // Check if CWD has local sessions; if not, verify that any known repos exist
+  const cwd = resolve(process.cwd());
+  let hasLocalSessions = false;
   try {
-    await access(resolve(targetRepo, '.def', 'sessions'));
-  } catch {
-    console.log('No sessions found in this directory.');
-    console.log('Run `def <topic>` to start a session first.');
-    process.exit(0);
+    await access(resolve(cwd, '.def', 'sessions'));
+    hasLocalSessions = true;
+  } catch { /* no local sessions */ }
+
+  if (!hasLocalSessions) {
+    const repos = await listKnownRepos();
+    if (repos.length === 0) {
+      console.log('No DEF sessions found anywhere.');
+      console.log('Run `def <topic>` in a git repo to start a session first.');
+      process.exit(0);
+    }
   }
 
   // Import server dynamically (same pattern as index.ts)
@@ -69,8 +77,8 @@ export async function run(argv: string[]): Promise<void> {
 
   console.log('Starting explorer mode...');
 
-  // Start server in explorer mode
-  await server.startExplorer(targetRepo, {
+  // Start server in global explorer mode (no targetRepo — aggregates all known repos)
+  await server.startExplorer(undefined, {
     idleTimeout: args.idleTimeout,
     port: preferredPort,
   });
