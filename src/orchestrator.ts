@@ -1093,7 +1093,7 @@ async function invokeOnce(agentName: string, session: Session, turnCount?: numbe
   const elapsedMs = Date.now() - startMs;
   const failed: boolean = result.timedOut || result.exitCode !== 0 || !result.output.trim();
   const reason: string = result.timedOut
-    ? `timeout (${session.phase === 'implement' ? '900s' : '300s'})`
+    ? `timeout (900s)`
     : result.exitCode !== 0
       ? `exit code ${result.exitCode}`
       : 'empty output';

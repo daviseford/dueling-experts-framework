@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validate } from './validation.js';
 import { update as updateSession, listTurnFiles, listSessions, findSessionDir, isSessionAlive } from './session.js';
 import type { Session } from './session.js';
+import { listAllSessions, findSessionDirGlobal } from './registry.js';
 import { readEvents, listAttempts } from './trace.js';
 import { writeInterjection, writeEndRequest } from './ipc.js';
 import * as ui from './ui.js';
@@ -240,15 +241,16 @@ export async function startReadOnly(session: Session): Promise<void> {
 /**
  * Start the server in explorer mode — no owning session, multi-session browsing only.
  * POST endpoints route to file-based IPC when session_id is provided. Serves the UI for browsing all sessions. Idle timeout starts immediately.
+ * When targetRepo is omitted, sessions are aggregated from all known repos via the global registry.
  */
-export async function startExplorer(targetRepo: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
+export async function startExplorer(targetRepo?: string, opts?: { idleTimeout?: number; port?: number }): Promise<void> {
   if (httpServer) {
     throw new Error('Server is already running');
   }
 
   sessionRef = null;
   controllerRef = null;
-  targetRepoRef = targetRepo;
+  targetRepoRef = targetRepo ?? null;
   if (opts?.idleTimeout !== undefined) idleTimeoutMs = opts.idleTimeout * 1000;
 
   httpServer = createServer(handleRequest);
@@ -614,17 +616,11 @@ async function readUsageTotals(sessionDir: string): Promise<{ tokens_in: number;
 }
 
 async function handleGetSessions(res: ServerResponse): Promise<void> {
-  if (!targetRepoRef) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'No target repo configured' }));
-    return;
-  }
-
-  const allSessions = await listSessions(targetRepoRef);
-  const repoName = basename(targetRepoRef);
-
-  // Show all sessions — users dismiss completed/interrupted sessions manually via the UI.
-  const sessionsWithRepo = allSessions.map(s => ({ ...s, repo: repoName }));
+  // When targetRepoRef is set, list sessions from that single repo.
+  // When null (global explorer mode), aggregate sessions from all known repos.
+  const sessionsWithRepo = targetRepoRef
+    ? (await listSessions(targetRepoRef)).map(s => ({ ...s, repo: basename(targetRepoRef!) }))
+    : await listAllSessions();
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -640,14 +636,16 @@ async function handleGetSessionTurns(res: ServerResponse, pathname: string): Pro
   // ['', 'api', 'sessions', ':id', 'turns']
   const sessionId = parts[3];
 
-  if (!sessionId || !targetRepoRef) {
+  if (!sessionId) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Session not found' }));
     return;
   }
 
-  // Find the session directory
-  const sessionDir = await findSessionDir(targetRepoRef, sessionId);
+  // Find the session directory — search single repo or all known repos
+  const sessionDir = targetRepoRef
+    ? await findSessionDir(targetRepoRef, sessionId)
+    : await findSessionDirGlobal(sessionId);
   if (!sessionDir) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Session not found' }));
@@ -781,7 +779,9 @@ async function handleInterject(req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
-  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  const sessionDir = targetRepoRef
+    ? await findSessionDir(targetRepoRef, sessionId, { exact: true })
+    : await findSessionDirGlobal(sessionId);
   if (!sessionDir) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Session not found' }));
@@ -859,7 +859,9 @@ async function handleEndSession(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
 
-  const sessionDir = await findSessionDir(targetRepoRef!, sessionId, { exact: true });
+  const sessionDir = targetRepoRef
+    ? await findSessionDir(targetRepoRef, sessionId, { exact: true })
+    : await findSessionDirGlobal(sessionId);
   if (!sessionDir) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Session not found' }));

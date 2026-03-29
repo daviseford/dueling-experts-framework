@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
-import { join, basename, dirname } from 'node:path';
+import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
-import { listSessions } from './session.js';
+import { listSessions, findSessionDir } from './session.js';
 import type { SessionSummaryInfo } from './session.js';
 
 const DEF_HOME = join(homedir(), '.def');
@@ -72,4 +72,17 @@ export async function listAllSessions(): Promise<(SessionSummaryInfo & { repo: s
   }
 
   return all.sort((a, b) => b.created.localeCompare(a.created));
+}
+
+/**
+ * Search all known repos for a session directory by UUID.
+ * Returns the full session directory path, or null if not found.
+ */
+export async function findSessionDirGlobal(sessionId: string): Promise<string | null> {
+  const repos = await listKnownRepos();
+  for (const repoPath of repos) {
+    const dir = await findSessionDir(repoPath, sessionId, { exact: true });
+    if (dir) return dir;
+  }
+  return null;
 }
