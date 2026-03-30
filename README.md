@@ -72,13 +72,24 @@ def --topic "Fix error handling in src/api/" --no-pr
 def --topic "Implement docs/feature-01.md" --no-worktree
 ```
 
+### Subcommands
+
+```sh
+def history              # List past sessions
+def history --json       # List sessions as JSON
+def show <session-id>    # Show session details
+def explorer             # Standalone multi-session browser UI
+```
+
+The `explorer` opens a browser dashboard that discovers sessions across all repos on your machine, showing live progress for active sessions and browsable history for completed ones.
+
 ## What Happens When You Run DEF
 
 In the default `edit` mode, DEF will:
 
 1. **Validate prerequisites** -- checks that agent CLIs, git, and `gh` are installed and authenticated before spending any API credits.
 2. **Create a git worktree** on a new branch (`def/<id>-<topic-slug>`) so your working tree stays clean.
-3. **Run the agent debate loop**, which uses paid API calls to Claude and Codex. Each turn costs roughly $0.50-$2.00 depending on prompt size and model.
+3. **Run the agent debate loop** by invoking the `claude` and `codex` CLIs. Usage counts against your existing CLI subscriptions.
 4. **Commit changes** to the worktree branch after implementation.
 5. **Push the branch and open a draft PR** on GitHub via `gh`.
 
@@ -100,6 +111,18 @@ In `edit` mode, a git worktree is created on a new branch (`def/<id>-<topic-slug
 
 The non-implementing agent reviews the changes. It can approve (`verdict: approve`) or request fixes (`verdict: fix`), cycling back to implement. This repeats until approval or the `--review-turns` limit is reached.
 
+### Model Tiers
+
+DEF uses three model tiers to balance quality and cost:
+
+| Tier | Claude | Codex | Used for |
+|------|--------|-------|----------|
+| Full | Opus | GPT-5.4 | Plan debate, implementation |
+| Mid | Sonnet | — | Review phase |
+| Fast | Haiku | GPT-5.1 Codex Mini | Consensus confirmation |
+
+Use `--no-fast` to force all turns to the full tier.
+
 ### Automatic PR Creation
 
 When the session completes with changes on the branch, DEF automatically pushes the branch and creates a **draft PR** on GitHub via the `gh` CLI. The PR body includes the topic, decisions log, commit history, and diffstat. Use `--no-pr` to skip this.
@@ -118,6 +141,19 @@ Open it in a browser to:
 - Type a message to interject at the next turn boundary
 - Respond to agent escalations (`status: needs_human`)
 - End the session cleanly via the End Session button
+
+## Security Model
+
+DEF spawns agent CLIs as child processes with `--dangerously-skip-permissions` (Claude Code) and `--full-auto` (Codex). This is required for unattended orchestration — the agents need to read, write, and run commands without interactive permission prompts.
+
+The risk is mitigated by:
+
+- **Worktree isolation.** Implementation runs in a disposable git worktree on a new branch, not your working tree. Your uncommitted work is never touched.
+- **Phase-scoped tool access.** During plan and review phases, agents get read-only access (file reads, git history, GitHub queries). Full tool access is only granted during the implement phase.
+- **Localhost-only server.** The watcher UI binds to `127.0.0.1` with host/origin validation, directory traversal protection, and CSRF defenses.
+- **No credentials passed.** DEF never reads or forwards your API keys. Agents authenticate through their own CLI configurations.
+
+If you're uncomfortable with unattended agent execution, use `--mode planning` for debate-only sessions where agents have read-only access throughout.
 
 ## Development
 
