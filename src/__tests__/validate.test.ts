@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate } from '../validation.js';
+import { validate, normalizeFrontmatterCodeFences } from '../validation.js';
 
 describe('validate', () => {
   const validTurn = [
@@ -105,6 +105,56 @@ describe('validate', () => {
     assert.equal(result.data!.decisions!.length, 2);
     assert.ok(result.data!.decisions![0].includes('session_status'));
     assert.ok(result.data!.decisions![1].includes('recovery'));
+  });
+
+  it('normalizes frontmatter wrapped in code fence with preceding ---', () => {
+    const raw = [
+      'Some preamble text',
+      '',
+      '---',
+      '',
+      '```yaml',
+      'id: turn-0001-claude',
+      'turn: 1',
+      'from: claude',
+      'timestamp: 2026-03-23T14:30:00.000Z',
+      'status: complete',
+      '```',
+      'Body text here',
+    ].join('\n');
+    const result = validate(raw);
+    assert.equal(result.valid, true, `Expected valid but got errors: ${result.errors.join(', ')}`);
+    assert.equal(result.data!.from, 'claude');
+    assert.equal(result.data!.status, 'complete');
+  });
+
+  it('normalizes frontmatter in code fence without preceding ---', () => {
+    const raw = [
+      'Thinking out loud...',
+      '',
+      '```yaml',
+      'id: turn-0001-claude',
+      'turn: 1',
+      'from: claude',
+      'timestamp: 2026-03-23T14:30:00.000Z',
+      'status: complete',
+      '```',
+      'Body text',
+    ].join('\n');
+    const result = validate(raw);
+    assert.equal(result.valid, true, `Expected valid but got errors: ${result.errors.join(', ')}`);
+    assert.equal(result.data!.from, 'claude');
+  });
+
+  it('does not normalize code fences without frontmatter keys', () => {
+    const raw = [
+      '```yaml',
+      'key: value',
+      'other: stuff',
+      '```',
+    ].join('\n');
+    const normalized = normalizeFrontmatterCodeFences(raw);
+    assert.equal(normalized, raw); // unchanged — no from:/status:
   });
 
   it('rejects missing required fields', () => {
