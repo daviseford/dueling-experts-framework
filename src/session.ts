@@ -38,6 +38,8 @@ export interface Session {
   pr_url: string | null;
   pr_number: number | null;
   heartbeat_at?: string;
+  /** AI-generated one-line summary for PR title (from plan consensus). */
+  summary?: string;
   /** Ordered list of participants in this session. */
   roster: Participant[];
   _currentChild?: ChildProcess | null;
