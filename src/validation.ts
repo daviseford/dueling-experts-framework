@@ -40,6 +40,57 @@ const SAFE_ENGINES: Record<string, { parse: (input: string) => object }> = {
 };
 
 /**
+ * Normalize agent output that wraps YAML frontmatter in code fences.
+ *
+ * Agents sometimes produce:
+ *   ---\n```yaml\n...YAML...\n```\n(body)
+ *   ```yaml\n...YAML...\n```\n(body)
+ *
+ * This converts those patterns to proper frontmatter:
+ *   ---\n...YAML...\n---\n(body)
+ *
+ * Only transforms code fences whose content looks like frontmatter
+ * (contains both "from:" and "status:" lines).
+ */
+export function normalizeFrontmatterCodeFences(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+
+  for (let i = 0; i < lines.length; i++) {
+    // Look for opening code fence: ```yaml, ```yml, or plain ```
+    if (!/^```(?:ya?ml)?$/.test(lines[i].trim())) continue;
+
+    // Scan inside the code fence for from:/status: and the closing ```
+    let hasFrom = false;
+    let hasStatus = false;
+    let closeIdx = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^```$/.test(lines[j].trim())) { closeIdx = j; break; }
+      if (/^from:\s/.test(lines[j])) hasFrom = true;
+      if (/^status:\s/.test(lines[j])) hasStatus = true;
+    }
+
+    if (!hasFrom || !hasStatus || closeIdx === -1) continue;
+
+    // Check for a preceding "---" (possibly separated by blank lines)
+    let delimIdx = -1;
+    for (let k = i - 1; k >= 0; k--) {
+      if (lines[k].trim() === '') continue;
+      if (lines[k] === '---') delimIdx = k;
+      break; // stop at first non-blank line
+    }
+
+    const beforeIdx = delimIdx !== -1 ? delimIdx : i;
+    const before = lines.slice(0, beforeIdx);
+    const yamlContent = lines.slice(i + 1, closeIdx);
+    const after = lines.slice(closeIdx + 1);
+
+    return [...before, '---', ...yamlContent, '---', ...after].join('\n');
+  }
+
+  return raw;
+}
+
+/**
  * Extract the frontmatter block from agent output.
  * Agents often emit preamble text before the "---" delimiter, or use "---"
  * as a horizontal rule. We find the real frontmatter by looking for "---"
@@ -108,8 +159,9 @@ function quoteDecisionItems(frontmatterBlock: string): string {
 export function validate(raw: string, expectedFrom?: string): ValidationResult {
   const errors: string[] = [];
 
-  // Find the frontmatter block (may be preceded by agent preamble)
-  const frontmatterBlock = extractFrontmatterBlock(raw);
+  // Normalize code-fenced YAML into proper frontmatter, then extract
+  const normalized = normalizeFrontmatterCodeFences(raw);
+  const frontmatterBlock = extractFrontmatterBlock(normalized);
   if (!frontmatterBlock) {
     return {
       valid: false,
