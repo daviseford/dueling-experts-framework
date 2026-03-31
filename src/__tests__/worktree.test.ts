@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { slugifyTopic, createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from '../worktree.js';
+import { slugifyTopic, createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch, extractCommitSummary } from '../worktree.js';
 
 describe('slugifyTopic', () => {
   it('lowercases and replaces spaces with hyphens', () => {
@@ -39,6 +39,58 @@ describe('slugifyTopic', () => {
 
   it('handles empty string', () => {
     assert.equal(slugifyTopic(''), '');
+  });
+});
+
+describe('extractCommitSummary', () => {
+  it('extracts first meaningful line from typical implement output', () => {
+    const content = '## Changes Made\n\nAdded validation helper and updated tests.\n\n- Modified src/foo.ts';
+    assert.equal(extractCommitSummary(content), 'added validation helper and updated tests.');
+  });
+
+  it('skips headings and blank lines', () => {
+    const content = '# Summary\n\n## Details\n\nCreated the config file.';
+    assert.equal(extractCommitSummary(content), 'created the config file.');
+  });
+
+  it('strips bullet markers', () => {
+    const content = '- Added new validation file\n- Updated tests';
+    assert.equal(extractCommitSummary(content), 'added new validation file');
+  });
+
+  it('strips bold and italic markers', () => {
+    const content = '**Created** the `config.ts` file with _default_ values.';
+    assert.equal(extractCommitSummary(content), 'created the config.ts file with default values.');
+  });
+
+  it('truncates long lines with ellipsis', () => {
+    const content = 'Implemented the comprehensive authentication middleware with JWT token validation and refresh token rotation for all API endpoints.';
+    const result = extractCommitSummary(content);
+    assert.ok(result.length <= 63, `expected <= 63 chars, got ${result.length}: "${result}"`);
+    assert.ok(result.endsWith('...'));
+  });
+
+  it('returns empty string for empty input', () => {
+    assert.equal(extractCommitSummary(''), '');
+  });
+
+  it('returns empty string for content that is only headings', () => {
+    assert.equal(extractCommitSummary('# Heading\n## Subheading\n\n---'), '');
+  });
+
+  it('skips code fences', () => {
+    const content = '```typescript\nconst x = 1;\n```\n\nUpdated the parser module.';
+    assert.equal(extractCommitSummary(content), 'updated the parser module.');
+  });
+
+  it('lowercases first character', () => {
+    const content = 'Refactored the routing layer.';
+    assert.equal(extractCommitSummary(content), 'refactored the routing layer.');
+  });
+
+  it('strips numbered list markers', () => {
+    const content = '1. Updated the database schema\n2. Added migration';
+    assert.equal(extractCommitSummary(content), 'updated the database schema');
   });
 });
 

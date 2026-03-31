@@ -75,7 +75,7 @@ You are collaborating on: ${topic}
 
 ## Rules
 - Respond with YAML frontmatter followed by markdown. Required frontmatter fields: id, turn, from (must be "${self.id}"), timestamp (ISO-8601), status (complete | needs_human | done | decided).
-- Optional frontmatter: decisions (array of strings -- key decisions made in this turn).
+- Optional frontmatter: decisions (array of strings -- key decisions made in this turn), summary (string -- a concise PR title describing the work, under 60 chars, e.g. "add dark mode toggle with CSS variables"). Include summary when setting status: decided.
 - Be specific and concrete. Reference files, functions, and line numbers in the target repo when relevant.
 - Challenge the other agent's assumptions. Don't just agree -- push for better solutions.
 - You have read-only tool access (Read, Glob, Grep, git). You CANNOT modify files -- that happens in the implementation phase. Do not request human help because of this limitation. When the plan is ready to implement, set status: decided.

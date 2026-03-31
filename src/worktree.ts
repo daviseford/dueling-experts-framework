@@ -118,6 +118,53 @@ export async function captureDiff(worktreePath: string): Promise<string> {
 }
 
 /**
+ * Extract a one-line commit summary from an implement agent's markdown body.
+ * Returns empty string if no meaningful line is found (caller should fall back).
+ */
+export function extractCommitSummary(content: string): string {
+  if (!content) return '';
+
+  let inCodeFence = false;
+  for (const raw of content.split('\n')) {
+    const line = raw.trim();
+
+    // Toggle code fence state
+    if (line.startsWith('```') || line.startsWith('~~~')) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) continue;
+
+    // Skip blanks, headings, horizontal rules
+    if (!line) continue;
+    if (line.startsWith('#')) continue;
+    if (/^[-*_]{3,}$/.test(line)) continue;
+
+    // Strip bullet markers (-, *, 1.)
+    let cleaned = line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '');
+
+    // Strip bold/italic markers and inline code backticks
+    cleaned = cleaned.replace(/\*\*|__/g, '').replace(/[*_`]/g, '');
+
+    cleaned = cleaned.trim();
+    if (!cleaned) continue;
+
+    // Lowercase first character (conventional commits style)
+    cleaned = cleaned[0].toLowerCase() + cleaned.slice(1);
+
+    // Truncate to 60 chars
+    if (cleaned.length > 60) {
+      const cut = cleaned.lastIndexOf(' ', 57);
+      cleaned = (cut > 20 ? cleaned.slice(0, cut) : cleaned.slice(0, 57)) + '...';
+    }
+
+    return cleaned;
+  }
+
+  return '';
+}
+
+/**
  * Commit all staged and unstaged changes in the worktree.
  * Call after captureDiff to persist changes on the branch before worktree removal.
  * No-ops if there is nothing to commit.

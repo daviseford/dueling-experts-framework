@@ -9,7 +9,7 @@ import { update as updateSession, listTurnFiles } from './session.js';
 import type { Session, SessionPhase } from './session.js';
 import { atomicWrite, killChildProcess } from './util.js';
 import { readInterjections, checkEndRequest } from './ipc.js';
-import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch } from './worktree.js';
+import { createWorktree, removeWorktree, captureDiff, commitChanges, currentBranch, rescueBranchSwitch, extractCommitSummary } from './worktree.js';
 import { pushAndCreatePr, hasBranchDelta, parsePrRef, lookupPrHeadBranch } from './pr.js';
 import { Tracer } from './trace.js';
 import type { AttemptMeta } from './trace.js';
@@ -127,11 +127,12 @@ export function deduplicateDecisions(entries: DecisionEntry[]): DecisionEntry[] 
  * Build the PR title, prefixing with [UNAPPROVED] when the review phase
  * never approved the implementation.
  */
-export function buildPrTitle(topic: string, reviewApproved: boolean): string {
+export function buildPrTitle(topic: string, reviewApproved: boolean, summary?: string): string {
+  const label = (summary && summary.trim()) || topic;
   if (!reviewApproved) {
-    return `[UNAPPROVED] def: ${topic}`;
+    return `[UNAPPROVED] def: ${label}`;
   }
-  return `def: ${topic}`;
+  return `def: ${label}`;
 }
 
 // ── Model tier selection ────────────────────────────────────────────
@@ -627,6 +628,13 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
           tracer.emit('consensus.reached', { turn: turnCount, phase, data: { agents: [pendingPlanDecided, nextAgent] } });
           ui.status('consensus.reached', { turn: turnCount });
 
+          // Capture summary for PR title (from confirming agent's frontmatter)
+          const agentSummary = (validData as Record<string, unknown>).summary as string | undefined;
+          if (agentSummary && typeof agentSummary === 'string') {
+            session.summary = agentSummary.trim().slice(0, 60);
+            await updateSession(session.dir, { summary: session.summary });
+          }
+
           // Generate plan artifact from plan-phase turns
           await generatePlan(session);
 
@@ -709,7 +717,9 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
         await writeDiffArtifact(session, turnCount, diff);
 
         // Commit changes to the branch so they survive worktree removal
-        const committed = await commitChanges(session.target_repo, `def: implement turn ${turnCount}`);
+        const commitSummary = extractCommitSummary(validation.content);
+        const commitMsg = commitSummary ? `def: ${commitSummary}` : `def: implement turn ${turnCount}`;
+        const committed = await commitChanges(session.target_repo, commitMsg);
         if (committed) {
           ui.status('changes.committed', { turn: turnCount });
         }
@@ -821,7 +831,7 @@ export async function run(session: Session, { server, ownsServer, noPr, noFast, 
       // Use the resolved ref (may differ from session.base_ref if original was deleted)
       const effectiveBase = deltaOut.resolvedRef ?? session.base_ref;
       if (delta) {
-        const prTitle = buildPrTitle(session.topic, reviewApproved);
+        const prTitle = buildPrTitle(session.topic, reviewApproved, session.summary);
         const prResult = await pushAndCreatePr({
           repoPath: session.worktree_path,
           branchName: session.branch_name,

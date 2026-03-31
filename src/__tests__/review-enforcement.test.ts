@@ -26,4 +26,22 @@ describe('buildPrTitle', () => {
     assert.equal(buildPrTitle(specialTopic, true), `def: ${specialTopic}`);
     assert.equal(buildPrTitle(specialTopic, false), `[UNAPPROVED] def: ${specialTopic}`);
   });
+
+  it('uses summary when provided', () => {
+    assert.equal(buildPrTitle(topic, true, 'add dark mode toggle'), 'def: add dark mode toggle');
+  });
+
+  it('summary takes precedence over topic', () => {
+    const title = buildPrTitle('some very long user prompt about many things', true, 'add auth flow');
+    assert.equal(title, 'def: add auth flow');
+  });
+
+  it('[UNAPPROVED] prefix works with summary', () => {
+    assert.equal(buildPrTitle(topic, false, 'fix login bug'), '[UNAPPROVED] def: fix login bug');
+  });
+
+  it('falls back to topic when summary is empty or whitespace', () => {
+    assert.equal(buildPrTitle(topic, true, ''), `def: ${topic}`);
+    assert.equal(buildPrTitle(topic, true, '   '), `def: ${topic}`);
+  });
 });
