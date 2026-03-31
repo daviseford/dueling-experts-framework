@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.15](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.14...def-v0.0.15) (2026-03-31)
+
+
+### Features
+
+* meaningful commit messages and AI-summarized PR titles ([#106](https://github.com/daviseford/dueling-experts-framework/issues/106)) ([852f6a9](https://github.com/daviseford/dueling-experts-framework/commit/852f6a94c5dcc2703639b7e0e22d6be3fa11d6f9))
+
+
+### Bug Fixes
+
+* normalize YAML frontmatter wrapped in code fences ([#104](https://github.com/daviseford/dueling-experts-framework/issues/104)) ([cea4c70](https://github.com/daviseford/dueling-experts-framework/commit/cea4c70530b19f46320253ebfba40ac007bc02b2))
+
 ## [0.0.14](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.13...def-v0.0.14) (2026-03-29)
 
 
