@@ -2,6 +2,8 @@
 
 A CLI tool that orchestrates structured, turn-based conversations between [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/) CLIs. Agents debate a topic, implement changes in an isolated git worktree, review each other's work, and open a PR — all while you watch in a browser UI.
 
+![Watcher UI showing a plan-phase debate turn with rendered markdown, code, and tables](https://raw.githubusercontent.com/daviseford/dueling-experts-framework/main/assets/watcher-debate-light.png)
+
 ## Installation
 
 ```sh
@@ -83,6 +85,8 @@ def explorer             # Standalone multi-session browser UI
 
 The `explorer` opens a browser dashboard that discovers sessions across all repos on your machine, showing live progress for active sessions and browsable history for completed ones.
 
+![Explorer grid view monitoring four sessions at once — completed, active, and paused](https://raw.githubusercontent.com/daviseford/dueling-experts-framework/main/assets/watcher-grid-dark.png)
+
 ## What Happens When You Run DEF
 
 In the default `edit` mode, DEF will:
@@ -141,6 +145,8 @@ Open it in a browser to:
 - Type a message to interject at the next turn boundary
 - Respond to agent escalations (`status: needs_human`)
 - End the session cleanly via the End Session button
+
+![Watcher UI in dark mode: an approving review verdict, the decision log, and a live thinking indicator while Claude implements](https://raw.githubusercontent.com/daviseford/dueling-experts-framework/main/assets/watcher-active-dark.png)
 
 ## Security Model
 

@@ -629,6 +629,10 @@ export const MOCK_TURNS_BY_SESSION: Record<string, Turn[]> = {
   "mock-session-2": MOCK_TURNS_SESSION_2,
   "mock-session-3": MOCK_TURNS_SESSION_3,
   "mock-session-4": MOCK_TURNS_SESSION_4,
+  // Scenario sessions (see use-mock-explorer.ts) reuse the turn sets above
+  "mock-session-loading": MOCK_TURNS,
+  "mock-session-thinking": MOCK_TURNS,
+  "mock-session-paused": MOCK_TURNS_SESSION_4,
 }
 
 /** Per-session mock metadata (prNumber, artifactNames) keyed by session ID. */

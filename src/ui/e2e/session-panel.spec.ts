@@ -28,7 +28,7 @@ test.describe("session panel", () => {
 
   test("active session shows active status and interjection input", async ({ page }) => {
     // Switch to mock-session-3 (active)
-    await page.locator("button", { hasText: "Implement WebSocket event streaming" }).click()
+    await page.getByRole("tab", { name: /Implement WebSocket event streaming/ }).click()
 
     // Status bar should show "Active" status
     await expect(page.getByText("Active").first()).toBeVisible()
@@ -39,7 +39,7 @@ test.describe("session panel", () => {
 
   test("paused session shows pause banner", async ({ page }) => {
     // Switch to mock-session-4 (paused)
-    await page.locator("button", { hasText: "Fix authentication token refresh" }).click()
+    await page.getByRole("tab", { name: /Fix authentication token refresh/ }).click()
 
     // Pause banner text should be visible (isReadOnly=true in mock mode)
     await expect(page.getByText("waiting for owner input")).toBeVisible()
