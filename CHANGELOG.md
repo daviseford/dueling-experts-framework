@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.16](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.15...def-v0.0.16) (2026-07-22)
+
+
+### Bug Fixes
+
+* repair mock scenarios, stale e2e locators, and add README screenshots ([#107](https://github.com/daviseford/dueling-experts-framework/issues/107)) ([46403f6](https://github.com/daviseford/dueling-experts-framework/commit/46403f6585a7ff7564d6d9c1910f9c72ab3f1cf7))
+
 ## [0.0.15](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.14...def-v0.0.15) (2026-03-31)
 
 
