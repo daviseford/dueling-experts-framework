@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.17](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.16...def-v0.0.17) (2026-10-09)
+
+
+### Bug Fixes
+
+* preserve concurrent project registrations ([6edf91e](https://github.com/daviseford/dueling-experts-framework/commit/6edf91eeb013895b827fe190ed9aa65fb3c92ac7))
+
 ## [0.0.16](https://github.com/daviseford/dueling-experts-framework/compare/def-v0.0.15...def-v0.0.16) (2026-07-22)
 
 
