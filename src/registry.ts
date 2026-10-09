@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdir, readFile, appendFile, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { listSessions, findSessionDir } from './session.js';
@@ -10,6 +10,8 @@ const KNOWN_REPOS_FILE = join(DEF_HOME, 'known-repos');
 /**
  * Register a repo path in the global known-repos file.
  * Appends `repoPath` if not already present. Creates the file and directory if needed.
+ * Appends instead of rewriting so concurrent starts never drop each other's entry;
+ * a racing duplicate line is possible and `listKnownRepos` dedupes it.
  * Fire-and-forget safe — errors are swallowed.
  */
 export async function registerRepo(repoPath: string): Promise<void> {
@@ -25,8 +27,8 @@ export async function registerRepo(repoPath: string): Promise<void> {
   const paths = existing.split('\n').filter(Boolean);
   if (paths.includes(repoPath)) return;
 
-  paths.push(repoPath);
-  await writeFile(KNOWN_REPOS_FILE, paths.join('\n') + '\n', 'utf8');
+  const sep = existing && !existing.endsWith('\n') ? '\n' : '';
+  await appendFile(KNOWN_REPOS_FILE, sep + repoPath + '\n', 'utf8');
 }
 
 /**
@@ -41,7 +43,7 @@ export async function listKnownRepos(): Promise<string[]> {
     return [];
   }
 
-  const paths = raw.split('\n').filter(Boolean);
+  const paths = new Set(raw.split('\n').filter(Boolean));
   const valid: string[] = [];
   for (const p of paths) {
     try {
